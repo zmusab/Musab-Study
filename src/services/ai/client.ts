@@ -62,6 +62,24 @@ export function describeAiError(error: unknown): string {
   return "L'IA n'a pas pu répondre. Réessaie.";
 }
 
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/**
+ * Modèles qui refusent le paramètre `effort` (erreur, pas une dégradation
+ * silencieuse). Haiku 4.5 appartient à la génération de modèles antérieure à
+ * l'introduction de ce réglage — le lui envoyer ferait échouer la requête.
+ */
+const EFFORT_UNSUPPORTED_MODELS = new Set(['claude-haiku-4-5']);
+
+/** Exporté pour les tests : construit le fragment de requête `output_config`, ou rien. */
+export function effortParams(
+  model: string,
+  effort: Effort | undefined,
+): { output_config: { effort: Effort } } | Record<string, never> {
+  if (!effort || EFFORT_UNSUPPORTED_MODELS.has(model)) return {};
+  return { output_config: { effort } };
+}
+
 export interface AskOptions {
   system: string;
   prompt: string;
@@ -71,6 +89,21 @@ export interface AskOptions {
   signal?: AbortSignal;
   /** Appelé au fil de la génération. Ignoré quand la recherche web est active. */
   onText?: (delta: string) => void;
+  /**
+   * Profondeur de réflexion demandée au modèle — le premier levier de
+   * vitesse : un niveau plus bas répond plus vite et consomme moins de jetons,
+   * pour un coût en qualité qui ne se voit que sur les tâches vraiment
+   * difficiles. Omis = comportement par défaut du modèle (« high »).
+   * Ignoré sans erreur sur les modèles qui ne le prennent pas en charge.
+   */
+  effort?: Effort;
+  /**
+   * Modèle à utiliser pour CET appel, à la place du modèle choisi dans les
+   * Paramètres. Sert à confier les tâches mécaniques (sélection, extraction)
+   * à un modèle plus rapide sans changer le modèle utilisé pour le contenu
+   * réellement lu par l'utilisateur — voir services/podcast/pipeline.ts.
+   */
+  model?: string;
 }
 
 /**
@@ -83,8 +116,9 @@ export interface AskOptions {
  */
 export async function ask(options: AskOptions): Promise<string> {
   const client = createClient();
-  const model = getModel();
+  const model = options.model ?? getModel();
   const maxTokens = options.maxTokens ?? 4096;
+  const tuning = effortParams(model, options.effort);
 
   try {
     if (options.webSearch) {
@@ -95,6 +129,7 @@ export async function ask(options: AskOptions): Promise<string> {
           system: options.system,
           messages: [{ role: 'user', content: options.prompt }],
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
+          ...tuning,
         },
         { signal: options.signal },
       );
@@ -111,6 +146,7 @@ export async function ask(options: AskOptions): Promise<string> {
         max_tokens: maxTokens,
         system: options.system,
         messages: [{ role: 'user', content: options.prompt }],
+        ...tuning,
       },
       { signal: options.signal },
     );

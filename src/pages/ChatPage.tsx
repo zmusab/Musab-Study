@@ -139,6 +139,13 @@ export function ChatPage() {
         prompt: trimmed,
         webSearch: mode === 'internet',
         onText: mode === 'cours' ? (delta) => setStreamed((current) => current + delta) : undefined,
+        // Le mode cours est une tâche de citation ancrée dans un contexte déjà
+        // filtré par la recherche : un effort réduit répond plus vite sans
+        // perte de fiabilité, puisque verifyCourseAnswer() rejette de toute
+        // façon toute réponse non sourcée, quel que soit l'effort demandé.
+        // Le mode internet garde l'effort par défaut : il orchestre l'outil de
+        // recherche et bénéficie d'un raisonnement plus poussé.
+        effort: mode === 'cours' ? 'medium' : undefined,
       });
 
       // 4. Vérification : c'est ici que la provenance est établie.

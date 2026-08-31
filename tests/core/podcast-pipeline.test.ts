@@ -103,6 +103,28 @@ describe('generatePodcastEpisode', () => {
     expect(episode.subjectId).toBe('sub-1');
   });
 
+  it("confie l'analyse à un modèle rapide, quel que soit le modèle de dialogue", async () => {
+    // Le levier de performance central : l'extraction des notions est une
+    // tâche mécanique déléguée à Haiku, jamais au modèle choisi par
+    // l'utilisateur pour la qualité du dialogue.
+    askMock
+      .mockResolvedValueOnce(JSON.stringify([{ label: 'Composition', refs: ['S1'] }]))
+      .mockResolvedValueOnce(
+        JSON.stringify([{ speaker: 'B', type: 'concept', source: 'cours', text: 'Fait [S1].' }]),
+      );
+
+    await generatePodcastEpisode(baseInput());
+
+    const analysisCallOptions = askMock.mock.calls[0]![0];
+    const dialogueCallOptions = askMock.mock.calls[1]![0];
+
+    expect(analysisCallOptions.model).toBe('claude-haiku-4-5');
+    // L'appel de dialogue n'impose PAS de modèle : il utilise celui choisi
+    // par l'utilisateur dans les Paramètres.
+    expect(dialogueCallOptions.model).toBeUndefined();
+    expect(dialogueCallOptions.effort).toBe('medium');
+  });
+
   it('ne transmet à l’étape « dialogue » que les extraits utilisés par une notion retenue', async () => {
     askMock
       .mockResolvedValueOnce(
