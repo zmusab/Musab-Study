@@ -130,7 +130,7 @@ référence fonctionnelle et point de retour. Il n'est jamais modifié.
 | 2. Architecture et socle | ✅ |
 | 3. Cours et documents | ✅ |
 | 4. IA et RAG | ✅ |
-| 5. Flashcards | ⏳ |
+| 5. Flashcards | ✅ |
 | 6. Répétition espacée | ⏳ |
 | 7. Quiz | ⏳ |
 | 8. Calendrier | ⏳ |

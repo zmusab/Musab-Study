@@ -33,6 +33,9 @@ const PodcastEpisodePage = lazy(() =>
   import('@/pages/PodcastEpisodePage').then((m) => ({ default: m.PodcastEpisodePage })),
 );
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const FlashcardsPage = lazy(() =>
+  import('@/pages/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -76,17 +79,7 @@ function AnimatedRoutes() {
               />
             }
           />
-          <Route
-            path="/flashcards"
-            element={
-              <PlaceholderPage
-                title="Flashcards"
-                icon="🃏"
-                phase="Phase 5"
-                description="Génération assistée par l'IA carte par carte, bibliothèque, recherche et suivi de maîtrise. Les cartes créées depuis le Podcast apparaîtront ici dès que cette page sera construite."
-              />
-            }
-          />
+          <Route path="/flashcards" element={<FlashcardsPage />} />
           <Route
             path="/quiz"
             element={
