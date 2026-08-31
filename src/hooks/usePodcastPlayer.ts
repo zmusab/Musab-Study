@@ -59,13 +59,18 @@ export function usePodcastPlayer(
 
   const segments = episode?.segments ?? [];
 
-  // Réinitialise le lecteur à chaque nouvel épisode.
+  // Réinitialise le lecteur à chaque nouvel épisode, en reprenant à la
+  // réplique où l'écoute s'était arrêtée plutôt qu'au début. Volontairement
+  // ancré sur `episode?.id` seul : `lastSegmentIndex` change à chaque
+  // progression persistée par l'appelant (voir PodcastEpisodePage), et le
+  // réinclure ici relancerait le lecteur au milieu de sa propre écoute.
   useEffect(() => {
     provider.stop();
-    setCurrentIndex(0);
+    setCurrentIndex(episode?.lastSegmentIndex ?? 0);
     setPlaying(false);
     setFinished(false);
     setElapsedInSegment(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode?.id, provider]);
 
   useEffect(() => {

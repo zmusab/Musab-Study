@@ -171,6 +171,7 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
           pageOffsets: [],
           thumbnail: null,
           lastReadPage: 1,
+          lastOpenedAt: null,
           charCount: text.length,
           createdAt: asString(doc.createdAt, createdFallback),
         });

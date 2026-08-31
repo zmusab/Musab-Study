@@ -158,6 +158,8 @@ export async function generatePodcastEpisode(input: GeneratePodcastInput): Promi
     concepts,
     segments,
     estimatedDurationSec: estimateTotalDuration(segments),
+    lastSegmentIndex: 0,
+    lastPlayedAt: null,
     createdAt: nowISO(),
   };
 

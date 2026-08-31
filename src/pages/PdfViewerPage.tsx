@@ -9,7 +9,7 @@ import { PdfSearchPanel } from '@/components/features/courses/PdfSearchPanel';
 import { PdfAiPanel } from '@/components/features/courses/PdfAiPanel';
 import { springSoft } from '@/components/motion/transitions';
 import { db } from '@/data/db';
-import { getDocumentFile, updateLastReadPage } from '@/data/repositories/documents';
+import { getDocumentFile, recordDocumentOpened, updateLastReadPage } from '@/data/repositories/documents';
 import { openPdfDocument } from '@/services/pdf/render';
 import { useProfile } from '@/hooks/useProfile';
 
@@ -58,6 +58,12 @@ export function PdfViewerPage() {
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [panel, setPanel] = useState<'search' | 'ai' | null>(null);
+
+  // Marque le document comme consulté — alimente « Continuer mes cours » sur
+  // l'accueil, indépendamment de la présence ou non du PDF original.
+  useEffect(() => {
+    if (documentId) void recordDocumentOpened(documentId);
+  }, [documentId]);
 
   // Ouvre le PDF original (pas le texte) dès que le blob est disponible.
   useEffect(() => {

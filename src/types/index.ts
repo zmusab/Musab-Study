@@ -77,6 +77,8 @@ export interface StudyDocument {
   thumbnail: Blob | null;
   /** Dernière page consultée dans le lecteur — reprend la lecture là où elle s'est arrêtée. */
   lastReadPage: number;
+  /** Dernière ouverture dans le lecteur — alimente « Continuer mes cours » sur l'accueil. Null si jamais ouvert. */
+  lastOpenedAt: ISODateTime | null;
   createdAt: ISODateTime;
 }
 
@@ -341,6 +343,10 @@ export interface PodcastEpisode {
   concepts: PodcastConcept[];
   segments: PodcastSegment[];
   estimatedDurationSec: number;
+  /** Réplique où la lecture s'est arrêtée — reprend l'écoute au bon endroit. */
+  lastSegmentIndex: number;
+  /** Dernière écoute — alimente « Continuer l'écoute » sur l'accueil. Null si jamais lancé. */
+  lastPlayedAt: ISODateTime | null;
   createdAt: ISODateTime;
 }
 

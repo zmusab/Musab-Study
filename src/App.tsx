@@ -45,6 +45,7 @@ const RevisionsPage = lazy(() =>
 const PdfViewerPage = lazy(() =>
   import('@/pages/PdfViewerPage').then((m) => ({ default: m.PdfViewerPage })),
 );
+const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
 
 function RouteFallback() {
   return (
@@ -63,17 +64,7 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait" initial={false}>
       <Suspense fallback={<RouteFallback />}>
         <Routes location={location} key={location.pathname}>
-          <Route
-            path="/"
-            element={
-              <PlaceholderPage
-                title="Accueil"
-                icon="🏠"
-                phase="Phase 9"
-                description="Le tableau de bord affichera tes cartes dues, la matière à travailler en priorité et tes prochains examens, à partir de tes données réelles."
-              />
-            }
-          />
+          <Route path="/" element={<HomePage />} />
           <Route path="/cours" element={<CoursesPage />} />
           <Route path="/cours/:subjectId" element={<SubjectDetailPage />} />
           <Route path="/document/:documentId" element={<PdfViewerPage />} />

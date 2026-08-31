@@ -84,6 +84,7 @@ export async function addDocument(input: AddDocumentInput): Promise<StudyDocumen
     charCount: text.length,
     thumbnail,
     lastReadPage: 1,
+    lastOpenedAt: null,
     createdAt: nowISO(),
   };
 
@@ -120,6 +121,20 @@ export async function getDocumentFile(documentId: ID): Promise<DocumentFile | un
 /** Mémorise la page atteinte, pour reprendre la lecture là où elle s'est arrêtée. */
 export async function updateLastReadPage(documentId: ID, page: number): Promise<void> {
   await db.documents.update(documentId, { lastReadPage: page });
+}
+
+/** Marque le document comme consulté maintenant — alimente « Continuer mes cours » sur l'accueil. */
+export async function recordDocumentOpened(documentId: ID, now: Date = new Date()): Promise<void> {
+  await db.documents.update(documentId, { lastOpenedAt: now.toISOString() });
+}
+
+/** Documents les plus récemment ouverts dans le lecteur, tous chapitres confondus. */
+export async function listRecentlyOpenedDocuments(limit: number): Promise<DocumentSummary[]> {
+  const docs = await db.documents.filter((doc) => doc.lastOpenedAt !== null).toArray();
+  return docs
+    .sort((a, b) => (b.lastOpenedAt ?? '').localeCompare(a.lastOpenedAt ?? ''))
+    .slice(0, limit)
+    .map(toSummary);
 }
 
 export async function renameDocument(id: ID, name: string): Promise<void> {

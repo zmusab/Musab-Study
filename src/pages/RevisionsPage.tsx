@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
@@ -8,6 +8,7 @@ import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import { springSoft } from '@/components/motion/transitions';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
 import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/cards';
+import { db } from '@/data/db';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 
 /**
@@ -161,6 +162,7 @@ export function RevisionsPage() {
   const overviews = useSubjectOverviews();
   const [queue, setQueue] = useState<Flashcard[] | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const subjectName = (id: ID) => subjects?.find((s) => s.id === id)?.name ?? 'Matière';
 
@@ -178,6 +180,29 @@ export function RevisionsPage() {
     setSummary(null);
     setQueue(await listDueCards(subjectId));
   };
+
+  const startCards = async (ids: ID[]) => {
+    setSummary(null);
+    const cards = await db.flashcards.bulkGet(ids);
+    setQueue(cards.filter((card): card is Flashcard => card !== undefined));
+  };
+
+  // Points d'entrée depuis l'accueil : « Commencer ma session » saute
+  // directement dans la file due, « Voir mes points faibles » ouvre une
+  // session composée exactement des cartes fragiles identifiées — sans
+  // obliger à revenir cliquer manuellement sur un bouton ici.
+  const consumedParamsRef = useRef(false);
+  useEffect(() => {
+    if (consumedParamsRef.current) return;
+    const cardIds = searchParams.get('cards');
+    const autostart = searchParams.get('autostart');
+    if (!cardIds && !autostart) return;
+    consumedParamsRef.current = true;
+    setSearchParams({}, { replace: true });
+    if (cardIds) void startCards(cardIds.split(',').filter(Boolean));
+    else void startAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   if (subjects && subjects.length === 0) {
     return (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { Button, Card, Chip, EmptyState, Icon, useConfirm, useToast } from '@/components/ui';
@@ -6,7 +6,7 @@ import { TranscriptView } from '@/components/features/podcast/TranscriptView';
 import { PlayerControls } from '@/components/features/podcast/PlayerControls';
 import { usePodcastEpisode } from '@/hooks/usePodcasts';
 import { usePodcastPlayer } from '@/hooks/usePodcastPlayer';
-import { deletePodcastEpisode } from '@/data/repositories/podcasts';
+import { deletePodcastEpisode, updatePodcastProgress } from '@/data/repositories/podcasts';
 import { createFlashcards } from '@/data/repositories/cards';
 import { conceptToFlashcard } from '@/services/podcast/toFlashcards';
 import { db } from '@/data/db';
@@ -21,6 +21,22 @@ export function PodcastEpisodePage() {
   const episode = usePodcastEpisode(episodeId);
   const player = usePodcastPlayer(episode ?? null);
   const [creatingCards, setCreatingCards] = useState(false);
+
+  // Mémorise la progression pour « Continuer l'écoute » sur l'accueil — mais
+  // seulement une fois l'écoute réellement lancée : ouvrir la page ne doit
+  // pas, à lui seul, marquer l'épisode comme « en cours ».
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (player.playing) startedRef.current = true;
+  }, [player.playing]);
+
+  useEffect(() => {
+    if (!episode || !startedRef.current) return undefined;
+    const timer = window.setTimeout(() => {
+      void updatePodcastProgress(episode.id, player.currentIndex);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [episode, player.currentIndex]);
 
   if (episode === null) {
     return (

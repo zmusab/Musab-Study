@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import {
@@ -45,10 +45,11 @@ export function ChatPage() {
   const profile = useProfile();
   const { notify } = useToast();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [subjectId, setSubjectId] = useState<ID | ''>('');
   const [chapterId, setChapterId] = useState<ID | 'all'>('all');
   const [mode, setMode] = useState<Mode>('cours');
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState(() => searchParams.get('prompt') ?? '');
   const [pending, setPending] = useState<string | null>(null);
   const [streamed, setStreamed] = useState('');
 
@@ -59,6 +60,18 @@ export function ChatPage() {
   useEffect(() => {
     if (!subjectId && subjects && subjects.length > 0) setSubjectId(subjects[0]!.id);
   }, [subjects, subjectId]);
+
+  // Une question passée depuis l'accueil (« Que veux-tu faire ? ») pré-remplit
+  // le champ plutôt que d'être envoyée seule : la matière n'est pas encore
+  // choisie à ce stade, l'envoi reste un geste explicite.
+  useEffect(() => {
+    const prompt = searchParams.get('prompt');
+    if (prompt) {
+      setQuestion(prompt);
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Le chapitre choisi doit toujours appartenir à la matière courante.
   useEffect(() => {
