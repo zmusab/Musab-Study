@@ -7,19 +7,28 @@ import { fileURLToPath } from 'node:url';
 /*
  * Chemin de base, adapté à l'hébergeur qui construit le site.
  *
- * - Vercel sert le site à la racine de son domaine (musab-study.vercel.app/) :
- *   la variable d'environnement VERCEL, définie automatiquement par leur
- *   build, indique qu'il faut utiliser '/'.
- * - GitHub Pages sert le site sous /<nom-du-depot>/, et ce chemin est SENSIBLE
- *   À LA CASSE : le dépôt s'appelle « Musab-Study », donc « /musab-study/ »
- *   renverrait une page blanche. La valeur est dérivée de GITHUB_REPOSITORY
- *   plutôt que codée en dur, pour survivre à un renommage du dépôt.
- * - BASE_PATH reste disponible pour surcharger manuellement au besoin.
+ * Le défaut est '/' — ce qui convient à Vercel, à un développement local, et à
+ * n'importe quel hébergeur qui sert le site à la racine de son domaine. Il n'y
+ * a qu'UNE exception : GitHub Pages, qui sert le site sous /<nom-du-dépôt>/.
+ * On la détecte via `GITHUB_ACTIONS`, une variable que les exécuteurs GitHub
+ * Actions définissent TOUJOURS, sans réglage à activer côté projet — contrairement
+ * à `VERCEL`, exposée uniquement si l'option « Automatically expose System
+ * Environment Variables » est active dans les réglages du projet Vercel. Se
+ * reposer sur `VERCEL` faisait donc silencieusement retomber le chemin sur
+ * /Musab-Study/ dès que ce réglage était désactivé — exactement le genre
+ * d'erreur invisible en local et qui casse tout une fois déployé.
+ *
+ * Ce chemin est aussi SENSIBLE À LA CASSE sur GitHub Pages : le dépôt
+ * s'appelle « Musab-Study », donc « /musab-study/ » renverrait une page
+ * blanche. La valeur est dérivée de GITHUB_REPOSITORY plutôt que codée en
+ * dur, pour survivre à un renommage du dépôt.
+ *
+ * BASE_PATH reste disponible pour surcharger manuellement au besoin.
  */
 const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1];
 const base =
   process.env.BASE_PATH ??
-  (process.env.VERCEL ? '/' : repositoryName ? `/${repositoryName}/` : '/Musab-Study/');
+  (process.env.GITHUB_ACTIONS ? `/${repositoryName ?? 'Musab-Study'}/` : '/');
 
 export default defineConfig({
   base,
