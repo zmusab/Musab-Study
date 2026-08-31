@@ -46,6 +46,7 @@ const PdfViewerPage = lazy(() =>
   import('@/pages/PdfViewerPage').then((m) => ({ default: m.PdfViewerPage })),
 );
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
+const AnatomyPage = lazy(() => import('@/pages/AnatomyPage').then((m) => ({ default: m.AnatomyPage })));
 
 function RouteFallback() {
   return (
@@ -95,17 +96,7 @@ function AnimatedRoutes() {
               />
             }
           />
-          <Route
-            path="/anatomie"
-            element={
-              <PlaceholderPage
-                title="Anatomie"
-                icon="🫀"
-                phase="Phase 12"
-                description="Structures anatomiques reliées à tes cours, avec une architecture prête à recevoir un modèle 3D sous licence."
-              />
-            }
-          />
+          <Route path="/anatomie" element={<AnatomyPage />} />
           <Route
             path="/calendrier"
             element={

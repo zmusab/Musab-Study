@@ -134,8 +134,17 @@ function MobileTabBar() {
   );
 }
 
+// Routes dont le contenu doit occuper toute la largeur/hauteur disponible,
+// sans la mise en page centrée et paddée par défaut — l'explorateur 3D
+// Anatomie a besoin de tout l'espace pour que le modèle reste la partie
+// dominante de l'interface (§21 du cahier des charges), la navigation
+// restant néanmoins visible (contrairement au lecteur PDF, en plein écran
+// total, qui est une expérience de lecture ponctuelle plutôt qu'une section).
+const FULL_BLEED_PREFIXES = ['/anatomie'];
+
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
+  const fullBleed = FULL_BLEED_PREFIXES.some((prefix) => location.pathname.startsWith(prefix));
 
   return (
     <div className="flex min-h-dvh">
@@ -144,11 +153,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main
           key={location.pathname}
           className={cn(
-            'mx-auto w-full max-w-3xl flex-1',
-            'px-4 pt-6 sm:px-6 md:px-8 md:pt-10',
-            // Dégage la barre d'onglets fixe sur téléphone.
-            'pb-28 md:pb-16',
-            'pt-safe',
+            'flex-1',
+            fullBleed
+              ? 'flex min-h-0 flex-col pb-20 pt-safe md:pb-0'
+              : 'mx-auto w-full max-w-3xl px-4 pt-6 sm:px-6 md:px-8 md:pt-10 pb-28 md:pb-16 pt-safe',
           )}
         >
           {children}

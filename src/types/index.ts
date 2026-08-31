@@ -239,12 +239,17 @@ export interface CalendarEvent {
 
 // ───────────────────────────── Anatomie ─────────────────────────────
 
-export type AnatomyCategory = 'squelette' | 'muscles' | 'organes' | 'nerfs';
+export type AnatomyCategory = 'squelette' | 'muscles' | 'organes' | 'nerfs' | 'vaisseaux';
 
 /**
- * Une structure anatomique. `model3dRef` est le point d'accroche prévu pour un
- * futur atlas 3D sous licence : il contiendra l'identifiant de maillage du
- * fournisseur, sans qu'aucune autre partie du modèle ne change.
+ * Une structure anatomique. `model3dRef` est désormais réellement utilisé :
+ * c'est le nom du noeud correspondant dans le `.glb` de sa catégorie/région
+ * (voir `data/anatomy/headNeckCatalog.json`), null si aucun maillage 3D sous
+ * licence ouverte n'est disponible pour cette structure — la structure reste
+ * alors réelle et exploitable (recherche, IA, flashcards), simplement non
+ * représentée visuellement dans la scène 3D. `region` distingue la région du
+ * corps (ex. `'tete-et-cou'`) pour permettre plus tard d'autres régions sans
+ * dupliquer le schéma.
  */
 export interface AnatomyStructure {
   id: ID;
@@ -253,6 +258,7 @@ export interface AnatomyStructure {
   category: AnatomyCategory;
   subjectId: ID | null;
   model3dRef: string | null;
+  region: string | null;
   createdAt: ISODateTime;
 }
 

@@ -304,7 +304,8 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
       structure.category === 'squelette' ||
       structure.category === 'muscles' ||
       structure.category === 'organes' ||
-      structure.category === 'nerfs'
+      structure.category === 'nerfs' ||
+      structure.category === 'vaisseaux'
         ? structure.category
         : 'muscles';
 
@@ -315,6 +316,7 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
       category,
       subjectId: asString(structure.subjectId) || null,
       model3dRef: null,
+      region: null,
       createdAt: createdFallback,
     });
 

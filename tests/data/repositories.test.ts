@@ -33,6 +33,15 @@ import {
   updateNote,
 } from '@/data/repositories/notes';
 import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/notions';
+import {
+  getAnatomySheet,
+  getStructure,
+  HEAD_NECK_CATALOG,
+  linkStructureToSubject,
+  listStructures,
+  saveAnatomySheet,
+  seedHeadNeckCatalog,
+} from '@/data/repositories/anatomy';
 
 const LONG_TEXT = 'Le muscle masséter élève la mandibule et participe à la mastication. '.repeat(30);
 
@@ -442,5 +451,72 @@ describe('analyses de chapitre (notions)', () => {
     expect(await db.chapterAnalyses.count()).toBe(1);
     expect((await getChapterAnalysis(chapter.id))!.notions).toHaveLength(1);
     expect((await getChapterAnalysis(chapter.id))!.notions[0]!.label).toBe('Temporal');
+  });
+});
+
+describe('catalogue Anatomie Tête et Cou', () => {
+  it('peuple la base depuis le catalogue statique, un maillage réel par entrée avec maillage', async () => {
+    await seedHeadNeckCatalog();
+    const structures = await listStructures({ region: 'tete-et-cou' });
+    expect(structures.length).toBe(HEAD_NECK_CATALOG.length);
+
+    const withMesh = HEAD_NECK_CATALOG.filter((c) => c.hasMesh);
+    for (const entry of withMesh) {
+      const structure = await getStructure(entry.id);
+      expect(structure!.model3dRef).toBe(entry.id);
+    }
+    const withoutMesh = HEAD_NECK_CATALOG.filter((c) => !c.hasMesh);
+    for (const entry of withoutMesh) {
+      const structure = await getStructure(entry.id);
+      expect(structure!.model3dRef).toBeNull();
+    }
+  });
+
+  it('le mandibule et un maximum de dents sont bien catalogués (couverture dentisterie)', async () => {
+    await seedHeadNeckCatalog();
+    const teeth = await listStructures({ region: 'tete-et-cou', category: 'squelette' });
+    const toothEntries = teeth.filter((s) => /^dent_/.test(s.id));
+    expect(toothEntries.length).toBeGreaterThanOrEqual(28);
+    expect(teeth.some((s) => s.id === 'mandibule')).toBe(true);
+  });
+
+  it('rejouer le seed ne crée jamais de doublon et conserve le lien vers une matière', async () => {
+    await seedHeadNeckCatalog();
+    const subject = await createSubject('Anatomie céphalique', '#4F5BD5');
+    await linkStructureToSubject('mandibule', subject.id);
+
+    await seedHeadNeckCatalog();
+
+    const countAfter = (await listStructures({ region: 'tete-et-cou' })).length;
+    expect(countAfter).toBe(HEAD_NECK_CATALOG.length);
+    expect((await getStructure('mandibule'))!.subjectId).toBe(subject.id);
+  });
+
+  it('filtre par système anatomique via l’index existant', async () => {
+    await seedHeadNeckCatalog();
+    const vessels = await listStructures({ category: 'vaisseaux' });
+    expect(vessels.every((s) => s.category === 'vaisseaux')).toBe(true);
+    expect(vessels.length).toBeGreaterThan(0);
+  });
+
+  it('enregistre une fiche cours puis internet séparément, sans les mélanger', async () => {
+    await seedHeadNeckCatalog();
+    await saveAnatomySheet('masseter_superficiel_droit', 'course', 'Contenu cours', []);
+    await saveAnatomySheet('masseter_superficiel_droit', 'internet', 'Contenu internet', []);
+
+    const course = await getAnatomySheet('masseter_superficiel_droit', 'course');
+    const internet = await getAnatomySheet('masseter_superficiel_droit', 'internet');
+    expect(course!.content).toBe('Contenu cours');
+    expect(internet!.content).toBe('Contenu internet');
+    expect(course!.id).not.toBe(internet!.id);
+  });
+
+  it('régénérer une fiche remplace l’ancienne plutôt que d’empiler des doublons', async () => {
+    await seedHeadNeckCatalog();
+    const first = await saveAnatomySheet('mandibule', 'course', 'Version 1', []);
+    const second = await saveAnatomySheet('mandibule', 'course', 'Version 2', []);
+    expect(second.id).toBe(first.id);
+    expect(await db.anatomySheets.count()).toBe(1);
+    expect((await getAnatomySheet('mandibule', 'course'))!.content).toBe('Version 2');
   });
 });

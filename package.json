@@ -13,18 +13,22 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs && node tests/e2e/podcast.mjs && node tests/e2e/modal-typing.mjs && node tests/e2e/flashcards.mjs && node tests/e2e/recherche.mjs && node tests/e2e/revisions.mjs && node tests/e2e/pdf-viewer.mjs && node tests/e2e/home.mjs && node tests/e2e/course-hub.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs && node tests/e2e/podcast.mjs && node tests/e2e/modal-typing.mjs && node tests/e2e/flashcards.mjs && node tests/e2e/recherche.mjs && node tests/e2e/revisions.mjs && node tests/e2e/pdf-viewer.mjs && node tests/e2e/home.mjs && node tests/e2e/course-hub.mjs && node tests/e2e/anatomy.mjs",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "camera-controls": "^3.1.2",
     "dexie": "^4.4.5",
     "dexie-react-hooks": "^1.1.7",
     "motion": "^12.43.0",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

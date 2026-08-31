@@ -19,6 +19,7 @@ export function useSearchIndex(): SearchableItem[] | undefined {
       quizQuestions,
       podcastEpisodes,
       anatomyStructures,
+      anatomySheets,
       calendarEvents,
     ] = await Promise.all([
       db.subjects.toArray(),
@@ -29,8 +30,12 @@ export function useSearchIndex(): SearchableItem[] | undefined {
       db.quizQuestions.toArray(),
       db.podcastEpisodes.toArray(),
       db.anatomyStructures.toArray(),
+      db.anatomySheets.toArray(),
       db.calendarEvents.toArray(),
     ]);
+    const courseSheetByStructure = new Map(
+      anatomySheets.filter((s) => s.origin === 'course').map((s) => [s.structureId, s.content]),
+    );
 
     const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
     const chapterName = new Map(chapters.map((c) => [c.id, c.name]));
@@ -116,7 +121,8 @@ export function useSearchIndex(): SearchableItem[] | undefined {
         kind: 'anatomy',
         title: structure.name,
         subtitle: structure.latinName || 'Anatomie',
-        to: '/anatomie',
+        body: courseSheetByStructure.get(structure.id),
+        to: `/anatomie?structure=${structure.id}`,
       });
     }
 

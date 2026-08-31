@@ -1,0 +1,129 @@
+import { mkdir } from 'node:fs/promises';
+import { chromium, devices } from 'playwright';
+
+/**
+ * Explorateur 3D Anatomie — modèle réel BodyParts3D (voir
+ * src/data/anatomy/SOURCES.md), canevas WebGL rendu même en Chromium
+ * headless (SwiftShader). Ce test vérifie le comportement piloté par
+ * l'application (toggles, recherche, panneau, IA/flashcard honnêtes) —
+ * pas le rendu pixel du modèle lui-même.
+ *
+ * Prérequis : `npm run build` puis `npm run preview`.
+ */
+
+const BASE = process.env.E2E_BASE ?? 'http://localhost:4173/';
+const SHOT = process.env.SCREENSHOT_DIR ?? './dist-screenshots';
+const results = [];
+const errors = [];
+
+function check(name, ok, detail = '') {
+  results.push({ name, ok });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+}
+
+await mkdir(SHOT, { recursive: true });
+
+const browser = await chromium.launch(
+  process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
+);
+const context = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
+const page = await context.newPage();
+page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+await page.goto(`${BASE}#/anatomie`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(2500);
+
+// ---------- Corps entier / systèmes par défaut ----------
+check('La page Anatomie 3D s’ouvre', await page.getByText('Anatomie 3D').isVisible());
+check('Le fil d’Ariane démarre sur Tête et cou', await page.getByText('Tête et cou').isVisible());
+check('Un canevas WebGL est rendu', await page.locator('canvas').isVisible());
+check('Squelette actif par défaut', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'true');
+check('Muscles actif par défaut', (await page.getByRole('button', { name: 'Muscles', exact: true }).getAttribute('aria-pressed')) === 'true');
+check('Vaisseaux actif par défaut', (await page.getByRole('button', { name: 'Vaisseaux', exact: true }).getAttribute('aria-pressed')) === 'true');
+check('Organes actif par défaut', (await page.getByRole('button', { name: 'Organes', exact: true }).getAttribute('aria-pressed')) === 'true');
+check('Nerfs signalé sans maillage 3D (données ouvertes insuffisantes) — honnête, pas simulé', await page.getByText('(cours)').isVisible());
+
+await page.screenshot({ path: `${SHOT}/anatomy-default.png`, fullPage: false });
+
+// ---------- Toggles indépendants, combinables ----------
+await page.getByRole('button', { name: 'Muscles', exact: true }).click();
+await page.waitForTimeout(300);
+check('Muscles désactivable indépendamment', (await page.getByRole('button', { name: 'Muscles', exact: true }).getAttribute('aria-pressed')) === 'false');
+check('Squelette reste actif — les systèmes ne sont pas exclusifs', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'true');
+
+await page.getByRole('button', { name: 'Tout masquer' }).click();
+await page.waitForTimeout(300);
+check('« Tout masquer » désactive tous les systèmes', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'false');
+
+await page.getByRole('button', { name: 'Tout afficher' }).click();
+await page.waitForTimeout(300);
+check('« Tout afficher » réactive tous les systèmes', (await page.getByRole('button', { name: 'Organes', exact: true }).getAttribute('aria-pressed')) === 'true');
+
+await page.getByRole('button', { name: 'Squelette + Nerfs' }).click();
+await page.waitForTimeout(300);
+check(
+  'Le préréglage « Squelette + Nerfs » applique exactement cette combinaison',
+  (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'true' &&
+    (await page.getByRole('button', { name: 'Muscles', exact: true }).getAttribute('aria-pressed')) === 'false',
+);
+await page.getByRole('button', { name: 'Tout afficher' }).click();
+await page.waitForTimeout(300);
+
+// ---------- Recherche → sélection → panneau ----------
+await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
+await page.waitForTimeout(500);
+const searchResult = page.getByText('Masséter', { exact: false }).first();
+check('La recherche approximative trouve « masséter »', await searchResult.isVisible());
+await searchResult.click();
+await page.waitForTimeout(1200);
+
+check('Le fil d’Ariane affiche la structure sélectionnée', await page.getByText(/Masséter/).first().isVisible());
+// Le panneau attend une requête Dexie asynchrone (chunks + lookup) avant de
+// monter — un délai fixe serait fragile, on attend explicitement le titre.
+const panelOpened = await page
+  .getByText('Informations de ton cours')
+  .waitFor({ state: 'visible', timeout: 5000 })
+  .then(() => true)
+  .catch(() => false);
+check('Le panneau d’information s’ouvre', panelOpened);
+check('Le bouton Isoler apparaît une fois une structure sélectionnée', await page.getByRole('button', { name: 'Isoler' }).isVisible());
+
+await page.screenshot({ path: `${SHOT}/anatomy-selected.png`, fullPage: false });
+
+// ---------- Isolation / restauration ----------
+await page.getByRole('button', { name: 'Isoler' }).click();
+await page.waitForTimeout(300);
+check('Isoler affiche Restaurer à la place', await page.getByRole('button', { name: 'Restaurer' }).isVisible());
+await page.getByRole('button', { name: 'Restaurer' }).click();
+await page.waitForTimeout(300);
+check('Restaurer ramène le bouton Isoler', await page.getByRole('button', { name: 'Isoler' }).isVisible());
+
+// ---------- Information insuffisante / IA sans clé — honnête ----------
+await page.getByRole('button', { name: '✨ Générer depuis mes cours' }).click();
+await page.waitForTimeout(400);
+check('Sans clé API, générer une fiche échoue clairement plutôt que d’inventer du contenu',
+  await page.getByText(/clé API dans Paramètres/).last().isVisible());
+
+await page.getByPlaceholder(/Pose une question sur/).fill('Pourquoi ce muscle est-il important ?');
+await page.getByRole('button', { name: 'Demander à l’IA' }).click();
+await page.waitForTimeout(400);
+check('Sans clé API, la question à l’IA échoue clairement', await page.getByText(/clé API dans Paramètres/).last().isVisible());
+
+await page.getByRole('button', { name: '🃏 Créer une flashcard' }).click();
+await page.waitForTimeout(400);
+check('Sans clé API, la génération de flashcard échoue clairement', await page.getByText(/clé API dans Paramètres/).last().isVisible());
+
+check('« Me tester » mène honnêtement vers /quiz (encore un placeholder)', await page.getByRole('link', { name: '❓ Me tester' }).isVisible());
+
+// ---------- Fermeture du panneau, breadcrumb ----------
+await page.getByRole('button', { name: 'Fermer le panneau' }).click();
+await page.waitForTimeout(300);
+check('Fermer le panneau retire la structure du fil d’Ariane', !(await page.getByText('Informations de ton cours').isVisible().catch(() => false)));
+
+console.log('\n--- Erreurs console ---');
+console.log(errors.length === 0 ? 'aucune' : errors.join('\n'));
+const failed = results.filter((r) => !r.ok);
+console.log(`\n${results.length - failed.length}/${results.length} vérifications passées`);
+await browser.close();
+process.exit(failed.length === 0 && errors.length === 0 ? 0 : 1);

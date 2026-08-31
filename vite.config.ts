@@ -42,10 +42,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       workbox: {
-        // pdf.js et le SDK sont volumineux : on autorise leur mise en cache
-        // pour que l'app démarre hors ligne.
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // pdf.js, le SDK et les modèles 3D Anatomie sont volumineux : on
+        // autorise leur mise en cache pour que l'app démarre hors ligne.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,glb}'],
       },
       manifest: {
         name: 'Musab Study',
