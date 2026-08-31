@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
@@ -73,8 +73,21 @@ function ResultRow({ result }: { result: SearchResult }) {
 export function RecherchePage() {
   const index = useSearchIndex();
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
-  const results = useMemo(() => (index ? searchItems(index, query) : []), [index, query]);
+  // Le champ reste réactif à chaque frappe ; seul le calcul du score (mot par
+  // mot sur le corps de chaque document, potentiellement volumineux) attend
+  // une courte pause — sur une grosse bibliothèque de cours, recalculer à
+  // chaque caractère tapé donnerait une sensation de saccade.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 150);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const results = useMemo(
+    () => (index ? searchItems(index, debouncedQuery) : []),
+    [index, debouncedQuery],
+  );
 
   const groups = useMemo(() => {
     return KIND_ORDER.map((kind) => ({ kind, items: results.filter((r) => r.kind === kind) })).filter(

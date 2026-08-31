@@ -16,12 +16,16 @@ import { renderPageToCanvas } from '@/services/pdf/render';
 export function PdfPageCanvas({
   doc,
   pageNumber,
-  targetWidth,
+  boxWidth,
+  renderWidth,
   registerRef,
 }: {
   doc: PDFDocumentProxy;
   pageNumber: number;
-  targetWidth: number;
+  /** Largeur CSS de la carte — suit le zoom en direct, coût nul (pas de nouveau rendu). */
+  boxWidth: number;
+  /** Largeur utilisée pour le rendu réel du canevas — voir PdfViewerPage : volontairement amortie pendant un pincement continu. */
+  renderWidth: number;
   registerRef?: (pageNumber: number, el: HTMLDivElement | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -29,6 +33,11 @@ export function PdfPageCanvas({
   const [nearViewport, setNearViewport] = useState(false);
   const [rendered, setRendered] = useState(false);
   const [aspect, setAspect] = useState<number | null>(null);
+  // Évite de redessiner un canevas déjà correct à cette largeur : sans ce
+  // garde-fou, ressortir puis rerentrer dans la marge de préchargement en
+  // faisant défiler (sans changement de zoom) relançait `page.render()` pour
+  // rien à chaque passage.
+  const renderedAtWidthRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -54,11 +63,13 @@ export function PdfPageCanvas({
 
   useEffect(() => {
     if (!nearViewport || !canvasRef.current) return undefined;
+    if (renderedAtWidthRef.current === renderWidth) return undefined;
     let cancelled = false;
     setRendered(false);
 
-    void renderPageToCanvas(doc, pageNumber, canvasRef.current, targetWidth).then(() => {
+    void renderPageToCanvas(doc, pageNumber, canvasRef.current, renderWidth).then(() => {
       if (cancelled || !canvasRef.current) return;
+      renderedAtWidthRef.current = renderWidth;
       setAspect(canvasRef.current.height / canvasRef.current.width);
       setRendered(true);
     });
@@ -66,16 +77,16 @@ export function PdfPageCanvas({
     return () => {
       cancelled = true;
     };
-  }, [nearViewport, doc, pageNumber, targetWidth]);
+  }, [nearViewport, doc, pageNumber, renderWidth]);
 
-  const height = aspect ? targetWidth * aspect : targetWidth * 1.414; // ratio A4 par défaut, avant le premier rendu
+  const height = aspect ? boxWidth * aspect : boxWidth * 1.414; // ratio A4 par défaut, avant le premier rendu
 
   return (
     <div
       ref={containerRef}
       data-page={pageNumber}
       className="relative mx-auto flex items-center justify-center overflow-hidden rounded-[var(--radius-card)] bg-white shadow-[var(--shadow-soft)]"
-      style={{ width: targetWidth, height }}
+      style={{ width: boxWidth, height }}
     >
       {nearViewport ? (
         <canvas ref={canvasRef} className="block max-w-full" />

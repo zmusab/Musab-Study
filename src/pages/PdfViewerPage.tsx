@@ -117,6 +117,18 @@ export function PdfViewerPage() {
 
   const targetWidth = Math.round(baseWidth * zoom);
 
+  // Amortit la largeur transmise au RENDU (pas à la mise en page) : un
+  // pincement à deux doigts déclenche `setZoom` à chaque frame, et redessiner
+  // chaque page visible à pleine résolution 60 fois par seconde serait
+  // franchement perceptible comme une lenteur sur iPad. La carte elle-même
+  // suit `targetWidth` en direct pour un retour visuel fluide ; seul le
+  // rendu pdf.js — le vrai coût — attend que le geste se stabilise.
+  const [renderWidth, setRenderWidth] = useState(targetWidth);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRenderWidth(targetWidth), 150);
+    return () => window.clearTimeout(timer);
+  }, [targetWidth]);
+
   const registerPageRef = (pageNumber: number, el: HTMLDivElement | null) => {
     if (el) pageRefs.current.set(pageNumber, el);
     else pageRefs.current.delete(pageNumber);
@@ -339,7 +351,8 @@ export function PdfViewerPage() {
                   key={pageNumber}
                   doc={pdfDoc}
                   pageNumber={pageNumber}
-                  targetWidth={targetWidth}
+                  boxWidth={targetWidth}
+                  renderWidth={renderWidth}
                   registerRef={registerPageRef}
                 />
               ))}

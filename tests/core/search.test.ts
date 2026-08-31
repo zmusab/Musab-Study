@@ -132,4 +132,63 @@ describe('searchItems', () => {
     const results = searchItems(ITEMS, 'histologie');
     expect(results[0]!.id).toBe('event-1');
   });
+
+  describe('recherche dans le corps mot par mot (pas seulement en phrase exacte)', () => {
+    const COURSE_ITEMS: SearchableItem[] = [
+      {
+        id: 'doc-trijumeau',
+        kind: 'document',
+        title: 'Cours 03 — Nerfs crâniens.pdf',
+        subtitle: 'Anatomie › Tête et cou',
+        body: "Le nerf trijumeau assure l'innervation sensitive de la face. Il se divise en trois branches principales : ophtalmique, maxillaire et mandibulaire.",
+        to: '/document/doc-trijumeau',
+      },
+      {
+        id: 'doc-facial',
+        kind: 'document',
+        title: 'Cours 04 — Nerf facial.pdf',
+        subtitle: 'Anatomie › Tête et cou',
+        body: 'Le nerf facial innerve les muscles de la mimique. Ses branches traversent la parotide.',
+        to: '/document/doc-facial',
+      },
+      {
+        id: 'doc-repete',
+        kind: 'document',
+        title: 'Cours 05 — Divers.pdf',
+        subtitle: 'Anatomie › Divers',
+        body: 'branche branche branche branche branche branche branche branche branche branche du sujet, sans rapport avec le trijumeau ni ses vraies branches anatomiques.',
+        to: '/document/doc-repete',
+      },
+    ];
+
+    it("retrouve un passage même quand les mots de la requête n'apparaissent pas consécutivement", () => {
+      // Le point central de la demande utilisateur : « trijumeau branches » ne
+      // forme pas une sous-chaîne exacte dans le corps (« branches » apparaît
+      // bien plus loin), mais les DEUX mots y sont bel et bien présents.
+      const results = searchItems(COURSE_ITEMS, 'trijumeau branches');
+      expect(results.some((r) => r.id === 'doc-trijumeau')).toBe(true);
+    });
+
+    it('classe devant le document qui couvre tous les mots de la requête', () => {
+      const results = searchItems(COURSE_ITEMS, 'nerf trijumeau branches');
+      const trijumeauIndex = results.findIndex((r) => r.id === 'doc-trijumeau');
+      const facialIndex = results.findIndex((r) => r.id === 'doc-facial');
+      expect(trijumeauIndex).toBeGreaterThanOrEqual(0);
+      expect(facialIndex).toBeGreaterThanOrEqual(0);
+      expect(trijumeauIndex).toBeLessThan(facialIndex);
+    });
+
+    it('fournit un extrait même sans correspondance de phrase exacte', () => {
+      const results = searchItems(COURSE_ITEMS, 'trijumeau branches');
+      const doc = results.find((r) => r.id === 'doc-trijumeau');
+      expect(doc?.excerpt).toBeTruthy();
+    });
+
+    it('ne laisse pas un mot répété artificiellement dominer un document réellement pertinent', () => {
+      const results = searchItems(COURSE_ITEMS, 'trijumeau branches');
+      const trijumeauIndex = results.findIndex((r) => r.id === 'doc-trijumeau');
+      const repeteIndex = results.findIndex((r) => r.id === 'doc-repete');
+      expect(trijumeauIndex).toBeLessThan(repeteIndex);
+    });
+  });
 });
