@@ -34,13 +34,24 @@ export function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
+  // `onClose` est presque toujours une fonction fléchée en ligne côté appelant
+  // (`onClose={() => setCreating(false)}`), recréée à chaque rendu du parent —
+  // y compris à chaque frappe dans un champ contrôlé par ce même parent. La
+  // garder dans les dépendances de l'effet ci-dessous relançait donc l'effet à
+  // chaque lettre tapée : sa fonction de nettoyage renvoyait alors
+  // immédiatement le focus vers l'élément qui avait ouvert la modale, éjectant
+  // l'utilisateur du champ après chaque caractère. La ref maintient toujours
+  // la dernière version de `onClose` sans jamais faire partie des dépendances.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return undefined;
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
 
@@ -57,7 +68,10 @@ export function Modal({
       window.clearTimeout(focusTimer);
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose]);
+    // `open` seul suffit : l'effet ne doit s'exécuter qu'à l'ouverture et à la
+    // fermeture, jamais à chaque rendu du contenu affiché à l'intérieur.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
 

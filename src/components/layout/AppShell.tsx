@@ -27,16 +27,12 @@ function NavItem({ entry, indicatorId }: { entry: NavEntry; indicatorId: string 
     <NavLink
       to={entry.to}
       end={entry.to === '/'}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2.5',
-          'text-[0.9rem] font-medium transition-colors duration-150',
-          '[-webkit-tap-highlight-color:transparent]',
-          isActive
-            ? 'text-[var(--accent-ink)]'
-            : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]',
-        )
-      }
+      style={{ color: entry.color }}
+      className={cn(
+        'group relative flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2.5',
+        'text-[0.9rem] font-medium transition-colors duration-150',
+        '[-webkit-tap-highlight-color:transparent] hover:bg-[var(--surface-2)]',
+      )}
     >
       {({ isActive }) => (
         <>
@@ -85,7 +81,10 @@ function MobileTabBar() {
   const reduced = useReducedMotion();
   const indicatorId = useId();
   const primary = NAV_ENTRIES.filter((entry) => entry.primary);
-  const tabs: NavEntry[] = [...primary, { to: '/plus', label: 'Plus', icon: 'more' }];
+  const tabs: NavEntry[] = [
+    ...primary,
+    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--nav-settings)' },
+  ];
 
   return (
     <nav
@@ -107,16 +106,18 @@ function MobileTabBar() {
                 'relative flex flex-1 flex-col items-center gap-0.5 py-2',
                 'text-[0.66rem] font-medium transition-colors duration-150',
                 '[-webkit-tap-highlight-color:transparent]',
-                isActive ? 'text-[var(--accent-ink)]' : 'text-[var(--ink-faint)]',
+                !isActive && 'text-[var(--ink-faint)]',
               )
             }
+            style={({ isActive }) => (isActive ? { color: entry.color } : undefined)}
           >
             {({ isActive }) => (
               <>
                 {isActive && !reduced && (
                   <motion.span
                     layoutId={indicatorId}
-                    className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-[var(--accent)]"
+                    className="absolute inset-x-3 top-0 h-0.5 rounded-full"
+                    style={{ backgroundColor: entry.color }}
                     transition={springSoft}
                   />
                 )}
