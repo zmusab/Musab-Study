@@ -39,7 +39,7 @@ src/
 │  ├─ db.ts        Schéma IndexedDB (Dexie)
 │  └─ repositories/  ← SEUL point à réécrire pour passer à Supabase
 ├─ services/     🔌 Services externes
-│  ├─ ai/          Client Anthropic et réglages
+│  ├─ ai/          Client Anthropic, réglages, vérification des citations
 │  ├─ rag/         Découpage en fragments, tokenisation, récupération
 │  ├─ backup.ts    Export / import
 │  └─ legacyImport.ts  Migration depuis le prototype HTML
@@ -99,8 +99,8 @@ référence fonctionnelle et point de retour. Il n'est jamais modifié.
 |---|---|
 | 1. Analyse du prototype | ✅ |
 | 2. Architecture et socle | ✅ |
-| 3. Cours et documents | ⏳ |
-| 4. IA et RAG | ⏳ |
+| 3. Cours et documents | ✅ |
+| 4. IA et RAG | ✅ |
 | 5. Flashcards | ⏳ |
 | 6. Répétition espacée | ⏳ |
 | 7. Quiz | ⏳ |

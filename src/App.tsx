@@ -6,6 +6,9 @@ import { ThemeProvider } from '@/hooks/useTheme';
 import { MorePage } from '@/pages/MorePage';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { ChatPage } from '@/pages/ChatPage';
+import { CoursesPage } from '@/pages/CoursesPage';
+import { SubjectDetailPage } from '@/pages/SubjectDetailPage';
 
 /**
  * Routage en HashRouter.
@@ -35,28 +38,9 @@ function AnimatedRoutes() {
             />
           }
         />
-        <Route
-          path="/cours"
-          element={
-            <PlaceholderPage
-              title="Cours"
-              icon="📚"
-              phase="Phase 3"
-              description="Matières, chapitres et import de PDF — la prochaine étape de construction."
-            />
-          }
-        />
-        <Route
-          path="/ia"
-          element={
-            <PlaceholderPage
-              title="Assistant IA"
-              icon="🤖"
-              phase="Phase 4"
-              description="Poser des questions à tes propres cours, avec des sources vérifiables et une distinction stricte entre ton cours et Internet."
-            />
-          }
-        />
+        <Route path="/cours" element={<CoursesPage />} />
+        <Route path="/cours/:subjectId" element={<SubjectDetailPage />} />
+        <Route path="/ia" element={<ChatPage />} />
         <Route
           path="/revisions"
           element={
