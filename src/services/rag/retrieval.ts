@@ -91,6 +91,7 @@ export interface RetrievedContext {
     chapterName: string;
     subjectName: string;
     excerpt: string;
+    page: number | null;
   }[];
 }
 
@@ -135,8 +136,9 @@ export function buildContext(
     const chapterName = chapter?.name ?? 'Chapitre';
     const subjectName = subject?.name ?? 'Matière';
 
+    const pageLabel = chunk.pageStart === null ? '' : ` (page ${chunk.pageStart})`;
     blocks.push(
-      `[${ref}] ${subjectName} › ${chapterName} › ${documentName}\n${text}`,
+      `[${ref}] ${subjectName} › ${chapterName} › ${documentName}${pageLabel}\n${text}`,
     );
     sources.push({
       ref,
@@ -147,6 +149,7 @@ export function buildContext(
       chapterName,
       subjectName,
       excerpt: text.slice(0, 320),
+      page: chunk.pageStart,
     });
 
     remaining -= text.length;

@@ -17,6 +17,12 @@ import type { ID } from '@/types';
  * Les PDF universitaires contiennent souvent des en-têtes et des numéros de
  * page répétés ; pouvoir les retirer améliore directement la qualité des
  * réponses de l'IA et des cartes générées.
+ *
+ * Modifier ce texte invalide sa correspondance page par page (les offsets
+ * calculés à l'extraction ne s'appliquent plus après une coupe) : un
+ * document dont le texte a été édité n'aura donc pas de numéro de page dans
+ * les citations de l'IA, plutôt qu'un numéro faux — la même règle que pour
+ * une affirmation non sourcée, appliquée ici à la pagination.
  */
 export function DocumentImporter({
   subjectId,
@@ -33,20 +39,29 @@ export function DocumentImporter({
 
   const [name, setName] = useState('');
   const [text, setText] = useState('');
+  const [rawText, setRawText] = useState('');
   const [progress, setProgress] = useState<{ page: number; pageCount: number } | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
+  const [pageOffsets, setPageOffsets] = useState<number[]>([]);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handleFile = async (file: File) => {
     setProgress({ page: 0, pageCount: 0 });
     setText('');
+    setPdfFile(null);
     if (name.trim().length === 0) setName(file.name.replace(/\.pdf$/i, ''));
 
     try {
       const result = await extractPdfText(file, setProgress);
       const description = describeExtraction(result);
       setText(result.text);
+      setRawText(result.text);
       setPageCount(result.pageCount);
+      setPageOffsets(result.pageOffsets);
+      // Le PDF original est gardé tel quel — c'est LUI que l'utilisateur
+      // consultera dans le lecteur, `text` ne sert qu'à l'IA.
+      setPdfFile(file);
       notify(description.message, description.tone);
     } catch (error) {
       const message =
@@ -67,6 +82,8 @@ export function DocumentImporter({
       return;
     }
 
+    const edited = trimmed !== rawText.trim();
+
     setSaving(true);
     try {
       await addDocument({
@@ -76,16 +93,26 @@ export function DocumentImporter({
         text: trimmed,
         source: pageCount === null ? 'paste' : 'pdf',
         pageCount,
+        pageOffsets: edited ? [] : pageOffsets,
+        file: pdfFile ?? undefined,
       });
-      notify('Document ajouté et indexé pour l’IA.', 'success');
+      notify(
+        pdfFile ? 'PDF conservé et indexé pour l’IA.' : 'Document ajouté et indexé pour l’IA.',
+        'success',
+      );
       setName('');
       setText('');
+      setRawText('');
       setPageCount(null);
+      setPageOffsets([]);
+      setPdfFile(null);
       onDone?.();
     } finally {
       setSaving(false);
     }
   };
+
+  const textEdited = pdfFile !== null && text.trim() !== rawText.trim();
 
   const percent =
     progress && progress.pageCount > 0
@@ -151,11 +178,13 @@ export function DocumentImporter({
       </AnimatePresence>
 
       <Textarea
-        label="Texte du document"
+        label="Texte du document (couche IA)"
         hint={
-          text.length > 0
-            ? `${text.length.toLocaleString('fr-FR')} caractères — relis et retire les en-têtes ou numéros de page répétés avant d’enregistrer.`
-            : 'Importe un PDF ci-dessus, ou colle directement le texte de ton cours.'
+          textEdited
+            ? `${text.length.toLocaleString('fr-FR')} caractères — texte modifié : les citations de l’IA pour ce document n’auront pas de numéro de page (la correspondance page par page ne s’applique plus après une coupe).`
+            : text.length > 0
+              ? `${text.length.toLocaleString('fr-FR')} caractères — relis et retire les en-têtes ou numéros de page répétés si besoin. Le PDF original, lui, reste intact et consultable tel quel.`
+              : 'Importe un PDF ci-dessus, ou colle directement le texte de ton cours.'
         }
         rows={7}
         value={text}

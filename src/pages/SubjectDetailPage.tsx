@@ -16,6 +16,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { DocumentImporter } from '@/components/features/courses/DocumentImporter';
+import { DocumentThumbnail } from '@/components/features/courses/DocumentThumbnail';
 import {
   useChapters,
   useSubject,
@@ -188,22 +189,28 @@ export function SubjectDetailPage() {
                               {documents.map((document) => (
                                 <li
                                   key={document.id}
-                                  className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3.5 py-2.5"
+                                  className="flex items-center gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5"
                                 >
-                                  <div className="min-w-0">
-                                    <p className="truncate text-[0.88rem] font-medium">
-                                      {document.name}
-                                    </p>
-                                    <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.75rem] text-[var(--ink-faint)]">
-                                      <span>
-                                        {document.charCount.toLocaleString('fr-FR')} caractères
-                                      </span>
-                                      {document.pageCount !== null && (
-                                        <span>· {document.pageCount} pages</span>
-                                      )}
-                                      <span>· ajouté {formatRelativePast(document.createdAt)}</span>
-                                    </p>
-                                  </div>
+                                  <Link
+                                    to={`/document/${document.id}`}
+                                    className="flex min-w-0 flex-1 items-center gap-3"
+                                  >
+                                    <DocumentThumbnail
+                                      blob={document.thumbnail}
+                                      className="h-14 w-11 shrink-0"
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-[0.88rem] font-medium">
+                                        {document.name}
+                                      </p>
+                                      <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.75rem] text-[var(--ink-faint)]">
+                                        {document.pageCount !== null && (
+                                          <span>{document.pageCount} pages</span>
+                                        )}
+                                        <span>· ajouté {formatRelativePast(document.createdAt)}</span>
+                                      </p>
+                                    </div>
+                                  </Link>
                                   <Button
                                     size="sm"
                                     variant="danger"

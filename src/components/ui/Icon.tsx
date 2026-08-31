@@ -29,7 +29,13 @@ export type IconName =
   | 'pause'
   | 'skipBack'
   | 'skipForward'
-  | 'volume';
+  | 'volume'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'close'
+  | 'chevronLeft'
+  | 'chevronRight'
+  | 'sparkles';
 
 const PATHS: Record<IconName, string> = {
   home: 'M3 10.2 12 3.5l9 6.7M5.5 8.8V20h13V8.8M9.8 20v-5.4h4.4V20',
@@ -53,6 +59,12 @@ const PATHS: Record<IconName, string> = {
   skipBack: 'M12.4 6 6.2 12l6.2 6M6.6 6v12M19 6l-6.2 6 6.2 6',
   skipForward: 'M11.6 6l6.2 6-6.2 6M17.4 6v12M5 6l6.2 6-6.2 6',
   volume: 'M4.4 9.6h3.2L12 6v12l-4.4-3.6H4.4ZM15.6 9a3.6 3.6 0 0 1 0 6M17.8 6.8a6.8 6.8 0 0 1 0 10.4',
+  zoomIn: 'M10.8 17.6a6.8 6.8 0 1 0 0-13.6 6.8 6.8 0 0 0 0 13.6ZM15.8 15.8l4.4 4.4M10.8 7.6v6.4M7.6 10.8h6.4',
+  zoomOut: 'M10.8 17.6a6.8 6.8 0 1 0 0-13.6 6.8 6.8 0 0 0 0 13.6ZM15.8 15.8l4.4 4.4M7.6 10.8h6.4',
+  close: 'M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4',
+  chevronLeft: 'M14.5 5 8 12l6.5 7',
+  chevronRight: 'M9.5 5 16 12l-6.5 7',
+  sparkles: 'M12 3.5v3M12 17.5v3M4.5 12h3M16.5 12h3M6.5 6.5l2 2M15.5 15.5l2 2M17.5 6.5l-2 2M8.5 15.5l-2 2',
 };
 
 export function Icon({

@@ -1,5 +1,5 @@
 import * as pdfjs from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import '@/services/pdf/workerSrc';
 
 /**
  * Extraction du texte d'un PDF, dans le navigateur.
@@ -8,7 +8,6 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
  * depuis un CDN comme le faisait le prototype : l'extraction fonctionne donc
  * hors ligne, et ne dépend pas de la disponibilité d'un tiers.
  */
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export interface ExtractionProgress {
   page: number;
@@ -20,6 +19,12 @@ export interface ExtractedPdf {
   pageCount: number;
   /** Pages dont l'extraction n'a produit aucun texte (PDF scanné, image). */
   emptyPages: number[];
+  /**
+   * Offset (dans `text`) où commence chaque page, page 1 en premier —
+   * `pageOffsets[i]` est le début de la page `i+1`. C'est ce qui permet de
+   * retrouver, pour un passage donné du texte, la page du PDF d'où il vient.
+   */
+  pageOffsets: number[];
 }
 
 export class PdfExtractionError extends Error {
@@ -109,10 +114,24 @@ export async function extractPdfText(
     await document.destroy();
   }
 
+  // Reconstruit les offsets de page sur le texte final (après le même
+  // `.join('\n\n')` que la valeur retournée) plutôt que d'accumuler pendant
+  // la boucle : le `.trim()` final décale tout de la longueur retirée en
+  // tête, et un seul calcul évite de dupliquer cette logique.
+  const joined = pages.join('\n\n');
+  const leadingTrim = joined.length - joined.trimStart().length;
+  const pageOffsets: number[] = [];
+  let cursor = 0;
+  for (const page of pages) {
+    pageOffsets.push(Math.max(0, cursor - leadingTrim));
+    cursor += page.length + 2; // +2 pour le séparateur "\n\n"
+  }
+
   return {
-    text: pages.join('\n\n').trim(),
+    text: joined.trim(),
     pageCount: document.numPages,
     emptyPages,
+    pageOffsets,
   };
 }
 

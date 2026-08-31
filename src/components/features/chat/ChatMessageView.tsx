@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Chip } from '@/components/ui';
 import { springSoft } from '@/components/motion/transitions';
@@ -80,9 +81,19 @@ export function ChatMessageView({ message }: { message: ChatMessage }) {
                     key={`${citation.chunkId}-${index}`}
                     className="rounded-[var(--radius-control)] border-l-2 border-[var(--accent)] bg-[var(--surface-2)] px-3.5 py-2.5"
                   >
-                    <p className="font-mono text-[0.72rem] text-[var(--ink-faint)]">
-                      {citation.subjectName} › {citation.chapterName} › {citation.documentName}
-                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-mono text-[0.72rem] text-[var(--ink-faint)]">
+                        {citation.subjectName} › {citation.chapterName} › {citation.documentName}
+                      </p>
+                      {citation.page !== null && (
+                        <Link
+                          to={`/document/${citation.documentId}?page=${citation.page}`}
+                          className="shrink-0 rounded-full border border-[var(--accent)]/40 bg-[var(--accent-tint)] px-2.5 py-1 text-[0.72rem] font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-tint)]/70"
+                        >
+                          📄 page {citation.page}
+                        </Link>
+                      )}
+                    </div>
                     {/* L'extrait exact rend l'affirmation contrôlable : tu peux
                         vérifier la réponse sans rouvrir le PDF. */}
                     <p className="mt-1.5 text-[0.82rem] italic leading-relaxed text-[var(--ink-soft)]">

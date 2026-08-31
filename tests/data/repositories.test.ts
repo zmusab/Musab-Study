@@ -9,7 +9,13 @@ import {
   listChapters,
   listSubjects,
 } from '@/data/repositories/subjects';
-import { addDocument, listChapterDocuments, deleteDocument } from '@/data/repositories/documents';
+import {
+  addDocument,
+  listChapterDocuments,
+  deleteDocument,
+  getDocumentFile,
+  updateLastReadPage,
+} from '@/data/repositories/documents';
 import {
   createFlashcard,
   countDueCards,
@@ -137,6 +143,87 @@ describe('documents et indexation RAG', () => {
     });
     await deleteDocument(doc.id);
     expect(await db.chunks.count()).toBe(0);
+  });
+
+  it('numérote les fragments par page à partir de pageOffsets', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+    // Suffisamment long pour que chaque page dépasse une taille de fragment
+    // et force le découpage à produire au moins un fragment par page.
+    const page1 = 'Le nerf trijumeau possède trois branches principales. '.repeat(30);
+    const page2 = 'La branche mandibulaire porte des fibres motrices. '.repeat(30);
+    const text = [page1, page2].join('\n\n');
+
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      name: 'Cours.pdf',
+      text,
+      source: 'pdf',
+      pageOffsets: [0, page1.length + 2],
+    });
+
+    const chunks = await db.chunks.where('documentId').equals(doc.id).toArray();
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((c) => c.pageStart !== null)).toBe(true);
+    expect(chunks.some((c) => c.pageStart === 1)).toBe(true);
+    expect(chunks.some((c) => c.pageStart === 2)).toBe(true);
+  });
+
+  it('conserve le PDF original, séparément du texte, et le supprime avec le document', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+    const file = new File(['%PDF-1.4 contenu factice'], 'Cours.pdf', { type: 'application/pdf' });
+
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      name: 'Cours.pdf',
+      text: LONG_TEXT,
+      source: 'pdf',
+      pageCount: 3,
+      file,
+    });
+
+    // `fake-indexeddb` (environnement de test) ne clone pas fidèlement les
+    // Blob — le contenu binaire n'est donc pas vérifiable ici. Ce qui compte
+    // dans ce test, c'est la présence/absence de l'entrée et son cycle de vie,
+    // qu'un vrai IndexedDB (Safari, Chrome) stocke intégralement.
+    const stored = await getDocumentFile(doc.id);
+    expect(stored).toBeDefined();
+    expect(stored!.documentId).toBe(doc.id);
+
+    await deleteDocument(doc.id);
+    expect(await getDocumentFile(doc.id)).toBeUndefined();
+  });
+
+  it("sans fichier PDF, aucune entrée n'est créée dans documentFiles", async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      name: 'Notes collées',
+      text: LONG_TEXT,
+      source: 'paste',
+    });
+    expect(await getDocumentFile(doc.id)).toBeUndefined();
+  });
+
+  it('mémorise la dernière page lue', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      name: 'Cours.pdf',
+      text: LONG_TEXT,
+      source: 'pdf',
+    });
+    expect(doc.lastReadPage).toBe(1);
+
+    await updateLastReadPage(doc.id, 17);
+    expect((await db.documents.get(doc.id))!.lastReadPage).toBe(17);
   });
 });
 

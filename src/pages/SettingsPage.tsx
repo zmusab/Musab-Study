@@ -297,7 +297,9 @@ export function SettingsPage() {
             <CardSubtitle>
               Tes données vivent sur cet appareil. Exporte régulièrement — c’est ta seule copie.
               L’import accepte aussi les sauvegardes de ton ancien prototype HTML, historique de
-              révision compris.
+              révision compris. Les fichiers PDF originaux ne sont pas inclus dans la
+              sauvegarde (elle resterait trop volumineuse) — seuls leurs textes extraits le sont ;
+              ré-importe les PDF eux-mêmes si tu changes d’appareil.
             </CardSubtitle>
             <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
               <Button variant="secondary" loading={busy} onClick={handleExport}>

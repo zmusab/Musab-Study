@@ -42,6 +42,9 @@ const RecherchePage = lazy(() =>
 const RevisionsPage = lazy(() =>
   import('@/pages/RevisionsPage').then((m) => ({ default: m.RevisionsPage })),
 );
+const PdfViewerPage = lazy(() =>
+  import('@/pages/PdfViewerPage').then((m) => ({ default: m.PdfViewerPage })),
+);
 
 function RouteFallback() {
   return (
@@ -73,6 +76,7 @@ function AnimatedRoutes() {
           />
           <Route path="/cours" element={<CoursesPage />} />
           <Route path="/cours/:subjectId" element={<SubjectDetailPage />} />
+          <Route path="/document/:documentId" element={<PdfViewerPage />} />
           <Route path="/ia" element={<ChatPage />} />
           <Route path="/revisions" element={<RevisionsPage />} />
           <Route path="/flashcards" element={<FlashcardsPage />} />

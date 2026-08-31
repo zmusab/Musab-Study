@@ -14,6 +14,7 @@ const CONTEXT: RetrievedContext = {
       chapterName: 'Muscles',
       subjectName: 'Anatomie',
       excerpt: 'Le masséter est innervé par le nerf massétérique.',
+      page: null,
     },
   ],
 };

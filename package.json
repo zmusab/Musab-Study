@@ -13,7 +13,7 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs && node tests/e2e/podcast.mjs && node tests/e2e/modal-typing.mjs && node tests/e2e/flashcards.mjs && node tests/e2e/recherche.mjs && node tests/e2e/revisions.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs && node tests/e2e/podcast.mjs && node tests/e2e/modal-typing.mjs && node tests/e2e/flashcards.mjs && node tests/e2e/recherche.mjs && node tests/e2e/revisions.mjs && node tests/e2e/pdf-viewer.mjs",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

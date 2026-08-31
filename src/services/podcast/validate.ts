@@ -59,6 +59,7 @@ export function validateConcepts(
         chapterName: source.chapterName,
         subjectName: source.subjectName,
         excerpt: source.excerpt,
+        page: source.page,
       };
     });
 
@@ -147,6 +148,7 @@ export function validateSegments(
           chapterName: source.chapterName,
           subjectName: source.subjectName,
           excerpt: source.excerpt,
+          page: source.page,
         };
       });
     } else if (REQUIRES_SOURCE.has(type)) {

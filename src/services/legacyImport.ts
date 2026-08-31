@@ -164,9 +164,13 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
           chapterId: chapter.id!,
           name: asString(doc.name, 'Document sans nom'),
           text,
-          // L'ancien format ne distinguait pas PDF et collage.
+          // L'ancien format ne distinguait pas PDF et collage, et ne
+          // conservait de toute façon aucun fichier original.
           source: 'paste',
           pageCount: null,
+          pageOffsets: [],
+          thumbnail: null,
+          lastReadPage: 1,
           charCount: text.length,
           createdAt: asString(doc.createdAt, createdFallback),
         });

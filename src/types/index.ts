@@ -57,12 +57,41 @@ export interface StudyDocument {
   subjectId: ID;
   chapterId: ID;
   name: string;
-  /** Texte intégral extrait. Volumineux : jamais chargé pour du simple affichage. */
+  /**
+   * Texte intégral extrait — la COUCHE IA, jamais ce que l'utilisateur lit.
+   * Volumineux : jamais chargé pour du simple affichage.
+   */
   text: string;
+  /**
+   * Offset (dans `text`) où commence chaque page, page 1 en premier —
+   * `text.slice(pageOffsets[i], pageOffsets[i+1])` est le texte de la page
+   * `i+1`. Permet de retrouver le numéro de page d'un passage cité par l'IA,
+   * sans dupliquer le texte par page. Vide pour un document collé à la main
+   * (`source: 'paste'`), qui n'a pas de pagination.
+   */
+  pageOffsets: number[];
   source: DocumentSource;
   pageCount: number | null;
   charCount: number;
+  /** Petite couverture (première page rendue), affichée dans la liste des cours. Null pour un document collé. */
+  thumbnail: Blob | null;
+  /** Dernière page consultée dans le lecteur — reprend la lecture là où elle s'est arrêtée. */
+  lastReadPage: number;
   createdAt: ISODateTime;
+}
+
+/**
+ * Le PDF ORIGINAL, intact — la COUCHE DOCUMENT que l'utilisateur consulte.
+ *
+ * Séparée de `documents` à dessein : les écrans qui listent des documents
+ * (compteurs, bibliothèque) ne doivent jamais charger un fichier de plusieurs
+ * mégaoctets pour afficher un nom. C'est aussi ce qui rend une migration vers
+ * Supabase directe — cette table devient un objet dans un bucket Storage
+ * (`documentId` comme clé), `documents` reste une table Postgres ordinaire.
+ */
+export interface DocumentFile {
+  documentId: ID;
+  blob: Blob;
 }
 
 /**
@@ -81,6 +110,9 @@ export interface DocumentChunk {
   /** Position de départ dans le texte du document (pour retrouver la source). */
   charStart: number;
   charEnd: number;
+  /** Page du PDF où commence/finit ce fragment. Null si le document n'a pas de pagination (`source: 'paste'`). */
+  pageStart: number | null;
+  pageEnd: number | null;
   /** Fréquences des termes normalisés, pré-calculées pour la recherche BM25. */
   termFreq: Record<string, number>;
   tokenCount: number;
@@ -241,6 +273,8 @@ export interface Citation {
   subjectName: string;
   /** Extrait exact cité, pour que l'affirmation soit contrôlable. */
   excerpt: string;
+  /** Page du PDF d'où vient l'extrait — « → page 42 » ramène au bon endroit. Null sans pagination. */
+  page: number | null;
 }
 
 /** Provenance d'une réponse de l'assistant — jamais devinée, toujours calculée. */

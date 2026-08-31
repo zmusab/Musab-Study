@@ -13,6 +13,8 @@ function makeChunks(documentId: string, text: string): DocumentChunk[] {
     text: chunk.text,
     charStart: chunk.charStart,
     charEnd: chunk.charEnd,
+    pageStart: chunk.pageStart,
+    pageEnd: chunk.pageEnd,
     termFreq: chunk.termFreq,
     tokenCount: chunk.tokenCount,
     embedding: null,

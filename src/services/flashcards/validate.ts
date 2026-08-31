@@ -55,6 +55,7 @@ export function validateCardDrafts(
         chapterName: source.chapterName,
         subjectName: source.subjectName,
         excerpt: source.excerpt,
+        page: source.page,
       };
     });
 

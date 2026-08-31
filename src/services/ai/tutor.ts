@@ -119,6 +119,7 @@ export function verifyCourseAnswer(
       chapterName: source.chapterName,
       subjectName: source.subjectName,
       excerpt: source.excerpt,
+      page: source.page,
     };
   });
 
@@ -163,6 +164,7 @@ export function verifyInternetAnswer(
         chapterName: source.chapterName,
         subjectName: source.subjectName,
         excerpt: source.excerpt,
+        page: source.page,
       };
     });
 

@@ -50,7 +50,15 @@ export async function exportBackup(): Promise<BackupBundle> {
     chapters,
     // Les fragments ne sont pas exportés : ils sont recalculés à l'import.
     // Cela divise la taille du fichier par deux sans perte d'information.
-    documents,
+    //
+    // Le PDF original (documentFiles) et les miniatures (thumbnail) NE SONT
+    // PAS inclus : ce sont des Blob binaires, ils n'ont pas leur place dans
+    // un fichier JSON et le gonfleraient de plusieurs dizaines de mégaoctets
+    // par cours. `thumbnail` est donc explicitement mis à null ici — sans
+    // cela, `JSON.stringify` le sérialiserait en `{}`, une valeur qui n'est
+    // plus un Blob et casserait le lecteur au réimport. C'est une limite
+    // assumée, indiquée à l'utilisateur dans Paramètres plutôt que cachée.
+    documents: documents.map((doc) => ({ ...doc, thumbnail: null })),
     flashcards,
     quizQuestions,
     reviewLogs,
@@ -79,7 +87,7 @@ export interface ImportReport {
 
 function rebuildChunks(documents: StudyDocument[]): DocumentChunk[] {
   return documents.flatMap((doc) =>
-    chunkDocument(doc.text).map((chunk) => ({
+    chunkDocument(doc.text, doc.pageOffsets ?? []).map((chunk) => ({
       id: uid('chk'),
       documentId: doc.id,
       chapterId: doc.chapterId,
@@ -88,6 +96,8 @@ function rebuildChunks(documents: StudyDocument[]): DocumentChunk[] {
       text: chunk.text,
       charStart: chunk.charStart,
       charEnd: chunk.charEnd,
+      pageStart: chunk.pageStart,
+      pageEnd: chunk.pageEnd,
       termFreq: chunk.termFreq,
       tokenCount: chunk.tokenCount,
       embedding: null,

@@ -1,4 +1,5 @@
 import { termFrequencies, tokenize } from '@/services/rag/tokenize';
+import { pageAtOffset } from '@/services/pdf/pages';
 
 /**
  * Découpage d'un document en fragments récupérables.
@@ -20,9 +21,12 @@ export interface ChunkDraft {
   text: string;
   charStart: number;
   charEnd: number;
+  pageStart: number | null;
+  pageEnd: number | null;
   termFreq: Record<string, number>;
   tokenCount: number;
 }
+
 
 /** Segments de texte alignés sur les paragraphes, puis les phrases si besoin. */
 function splitIntoSegments(text: string): { text: string; start: number }[] {
@@ -48,7 +52,12 @@ function splitIntoSegments(text: string): { text: string; start: number }[] {
   return segments;
 }
 
-export function chunkDocument(text: string): ChunkDraft[] {
+/**
+ * @param pageOffsets Offsets de début de page (voir `ExtractedPdf.pageOffsets`).
+ *   Omis pour un document sans pagination (`source: 'paste'`) : les chunks
+ *   produits ont alors `pageStart`/`pageEnd` à `null`.
+ */
+export function chunkDocument(text: string, pageOffsets: number[] = []): ChunkDraft[] {
   if (text.trim().length === 0) return [];
 
   const segments = splitIntoSegments(text);
@@ -67,6 +76,8 @@ export function chunkDocument(text: string): ChunkDraft[] {
       text: trimmed,
       charStart: bufferStart,
       charEnd: end,
+      pageStart: pageOffsets.length > 0 ? pageAtOffset(bufferStart, pageOffsets) : null,
+      pageEnd: pageOffsets.length > 0 ? pageAtOffset(Math.max(bufferStart, end - 1), pageOffsets) : null,
       termFreq: termFrequencies(tokens),
       tokenCount: tokens.length,
     });

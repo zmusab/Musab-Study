@@ -91,4 +91,31 @@ describe('chunkDocument', () => {
       expect(chunk.charStart).toBeGreaterThanOrEqual(0);
     }
   });
+
+  describe('pagination', () => {
+    it('sans pageOffsets, les fragments ne portent aucun numéro de page', () => {
+      for (const chunk of chunkDocument('Une phrase. '.repeat(300))) {
+        expect(chunk.pageStart).toBeNull();
+        expect(chunk.pageEnd).toBeNull();
+      }
+    });
+
+    it('attribue à chaque fragment la page du PDF où il commence', () => {
+      // Trois pages, chacune un paragraphe distinct — comme le produit
+      // extractPdfText avec un pageOffsets aligné sur les sauts "\n\n".
+      const page1 = 'Introduction au nerf trijumeau et à ses trois branches. '.repeat(3);
+      const page2 = 'La branche ophtalmique V1 traverse la fissure orbitaire supérieure. '.repeat(3);
+      const page3 = 'La branche mandibulaire V3 est la seule à porter des fibres motrices. '.repeat(3);
+      const text = [page1, page2, page3].join('\n\n');
+      const pageOffsets = [0, page1.length + 2, page1.length + 2 + page2.length + 2];
+
+      const chunks = chunkDocument(text, pageOffsets);
+      expect(chunks.length).toBeGreaterThan(0);
+
+      const page1Chunks = chunks.filter((c) => c.charStart < pageOffsets[1]!);
+      const page3Chunks = chunks.filter((c) => c.charStart >= pageOffsets[2]!);
+      expect(page1Chunks.every((c) => c.pageStart === 1)).toBe(true);
+      expect(page3Chunks.every((c) => c.pageStart === 3)).toBe(true);
+    });
+  });
 });

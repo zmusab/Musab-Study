@@ -6,6 +6,7 @@ import type {
   Chapter,
   ChatMessage,
   DocumentChunk,
+  DocumentFile,
   Flashcard,
   Note,
   PodcastEpisode,
@@ -32,6 +33,7 @@ export class MusabStudyDatabase extends Dexie {
   subjects!: EntityTable<Subject, 'id'>;
   chapters!: EntityTable<Chapter, 'id'>;
   documents!: EntityTable<StudyDocument, 'id'>;
+  documentFiles!: EntityTable<DocumentFile, 'documentId'>;
   chunks!: EntityTable<DocumentChunk, 'id'>;
   flashcards!: EntityTable<Flashcard, 'id'>;
   quizQuestions!: EntityTable<QuizQuestion, 'id'>;
@@ -63,6 +65,16 @@ export class MusabStudyDatabase extends Dexie {
       anatomySheets: 'id, structureId, origin, [structureId+origin]',
       chatMessages: 'id, subjectId, at',
       podcastEpisodes: 'id, subjectId, chapterId, createdAt',
+    });
+
+    // v2 : le PDF original est désormais conservé (table séparée, voir
+    // DocumentFile) au lieu d'être jeté après extraction du texte. Aucune
+    // transformation des données existantes n'est nécessaire : `documents`
+    // garde le même schéma indexé, ses nouveaux champs (thumbnail,
+    // pageOffsets, lastReadPage) sont simplement absents sur les anciennes
+    // lignes et le code les traite comme tels.
+    this.version(2).stores({
+      documentFiles: 'documentId',
     });
   }
 }

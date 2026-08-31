@@ -27,6 +27,8 @@ function makeChunk(index: number, text: string): DocumentChunk {
     text,
     charStart: 0,
     charEnd: text.length,
+    pageStart: null,
+    pageEnd: null,
     termFreq: {},
     tokenCount: text.split(' ').length,
     embedding: null,
