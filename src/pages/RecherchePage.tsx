@@ -31,12 +31,12 @@ const KIND_ORDER: SearchItemKind[] = [
 ];
 
 const KIND_META: Record<SearchItemKind, { label: string; plural: string; icon: IconName; color: string }> = {
-  subject: { label: 'Matière', plural: 'Matières', icon: 'courses', color: 'var(--nav-blue)' },
-  chapter: { label: 'Chapitre', plural: 'Chapitres', icon: 'courses', color: 'var(--nav-blue)' },
-  document: { label: 'Document', plural: 'Documents', icon: 'courses', color: 'var(--nav-blue)' },
+  subject: { label: 'Matière', plural: 'Matières', icon: 'courses', color: 'var(--nav-turquoise)' },
+  chapter: { label: 'Chapitre', plural: 'Chapitres', icon: 'courses', color: 'var(--nav-turquoise)' },
+  document: { label: 'Document', plural: 'Documents', icon: 'courses', color: 'var(--nav-turquoise)' },
   note: { label: 'Note', plural: 'Notes', icon: 'notes', color: 'var(--nav-orange)' },
-  flashcard: { label: 'Flashcard', plural: 'Flashcards', icon: 'cards', color: 'var(--nav-yellow)' },
-  quiz: { label: 'Question de quiz', plural: 'Quiz', icon: 'quiz', color: 'var(--nav-yellow)' },
+  flashcard: { label: 'Flashcard', plural: 'Flashcards', icon: 'cards', color: 'var(--nav-purple)' },
+  quiz: { label: 'Question de quiz', plural: 'Quiz', icon: 'quiz', color: 'var(--nav-rose)' },
   podcast: { label: 'Podcast', plural: 'Podcasts', icon: 'podcast', color: 'var(--nav-green)' },
   anatomy: { label: 'Structure anatomique', plural: 'Anatomie', icon: 'anatomy', color: 'var(--nav-red)' },
   calendar: { label: 'Événement', plural: 'Calendrier', icon: 'calendar', color: 'var(--nav-red)' },

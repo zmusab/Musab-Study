@@ -62,17 +62,16 @@
   --mastery-4: #4f5bd5;
 
   /*
-   * Couleurs de section, groupées par paire comme demandé : Recherche+Cours
-   * en bleu, IA+Révisions en mauve, Flashcards+Quiz en jaune, Podcast+
-   * Progression en vert, Anatomie+Calendrier en rouge, Notes+Paramètres en
-   * orange. Accueil reste « blanc » au sens neutre : un blanc littéral serait
-   * invisible sur le fond clair du rail latéral, donc il suit --ink comme le
-   * reste du texte — sans couleur propre, ce qui EST son identité.
+   * Couleurs de section, groupées par paire comme demandé : Accueil+Recherche
+   * en bleu, Cours+IA en turquoise, Révisions+Flashcards en mauve, Quiz seul
+   * en rose (le « QCM » demandé EST le Quiz, pas une section séparée),
+   * Podcast+Progression en vert, Anatomie+Calendrier en rouge, Notes+
+   * Paramètres en orange.
    */
-  --nav-neutral: var(--ink);
   --nav-blue: #2568c4;
+  --nav-turquoise: #0e8f89;
   --nav-purple: #7c3aed;
-  --nav-yellow: #a3860b;
+  --nav-rose: #c22368;
   --nav-green: #1a8a4e;
   --nav-red: #c1272d;
   --nav-orange: #c2540a;
@@ -116,10 +115,10 @@
   --mastery-4: #8b95f5;
 
   /* Éclaircies pour rester lisibles sur fond sombre, même regroupement qu'en clair. */
-  --nav-neutral: var(--ink);
   --nav-blue: #5b9de6;
+  --nav-turquoise: #3ecfc4;
   --nav-purple: #a884f5;
-  --nav-yellow: #d6b545;
+  --nav-rose: #f2559c;
   --nav-green: #4fc384;
   --nav-red: #e8746f;
   --nav-orange: #e8935a;

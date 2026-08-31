@@ -83,7 +83,9 @@ function MobileTabBar() {
   const primary = NAV_ENTRIES.filter((entry) => entry.primary);
   const tabs: NavEntry[] = [
     ...primary,
-    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--nav-neutral)' },
+    // « Plus » n'appartient à aucune des 7 paires de couleur : c'est un tiroir
+    // synthétique, pas une section — il suit la couleur du texte, neutre.
+    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--ink)' },
   ];
 
   return (
