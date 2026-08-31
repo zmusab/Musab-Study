@@ -1,22 +1,28 @@
 import { Icon } from '@/components/ui';
+import { subregionMeta } from '@/services/anatomy/regions';
 
 /**
- * Fil d'Ariane — « Corps entier > Tête et cou > Structure ». Un seul niveau
- * de région existe pour l'instant (Phase 1 : Tête et Cou) ; la structure est
- * ajoutée au fil dès qu'une sélection est active. Chaque niveau cliquable
- * revient en arrière, comme demandé (§8).
+ * Fil d'Ariane — « Corps entier > Tête et cou > sous-région > Structure ».
+ * Chaque niveau cliquable revient en arrière (§8). La sous-région reflète un
+ * vrai regroupement de structures déjà cataloguées (`services/anatomy/regions.ts`),
+ * pas un niveau de navigation décoratif.
  */
 export function RegionBreadcrumb({
+  subregionId,
   structureName,
   onGoToBody,
   onGoToRegion,
+  onGoToSubregion,
 }: {
+  subregionId: string | null;
   structureName: string | null;
   onGoToBody: () => void;
   onGoToRegion: () => void;
+  onGoToSubregion: () => void;
 }) {
+  const subregion = subregionMeta(subregionId);
   return (
-    <nav aria-label="Navigation anatomique" className="flex items-center gap-1 text-[0.82rem] text-[var(--ink-soft)]">
+    <nav aria-label="Navigation anatomique" className="flex flex-wrap items-center gap-1 text-[0.82rem] text-[var(--ink-soft)]">
       <button type="button" onClick={onGoToBody} className="rounded px-1 hover:text-[var(--ink)] hover:underline">
         Corps entier
       </button>
@@ -24,10 +30,30 @@ export function RegionBreadcrumb({
       <button
         type="button"
         onClick={onGoToRegion}
-        className={structureName ? 'rounded px-1 hover:text-[var(--ink)] hover:underline' : 'rounded px-1 font-medium text-[var(--ink)]'}
+        className={
+          subregion || structureName
+            ? 'rounded px-1 hover:text-[var(--ink)] hover:underline'
+            : 'rounded px-1 font-medium text-[var(--ink)]'
+        }
       >
         Tête et cou
       </button>
+      {subregion && (
+        <>
+          <Icon name="chevronRight" size={12} className="text-[var(--ink-faint)]" />
+          <button
+            type="button"
+            onClick={onGoToSubregion}
+            className={
+              structureName
+                ? 'rounded px-1 hover:text-[var(--ink)] hover:underline'
+                : 'rounded px-1 font-medium text-[var(--ink)]'
+            }
+          >
+            {subregion.icon} {subregion.label}
+          </button>
+        </>
+      )}
       {structureName && (
         <>
           <Icon name="chevronRight" size={12} className="text-[var(--ink-faint)]" />

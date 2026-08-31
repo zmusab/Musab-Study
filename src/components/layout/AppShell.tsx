@@ -147,7 +147,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fullBleed = FULL_BLEED_PREFIXES.some((prefix) => location.pathname.startsWith(prefix));
 
   return (
-    <div className="flex min-h-dvh">
+    // Anatomie force le thème sombre sur toute la coquille (rail compris),
+    // quel que soit le réglage clair/sombre choisi par l'utilisateur — une
+    // section « cockpit » immersive, comme le lecteur PDF force son propre
+    // plein écran. `[data-theme]` s'applique à n'importe quel élément, pas
+    // seulement à la racine du document : cette valeur l'emporte sur celle
+    // héritée de `<html>` pour tout ce sous-arbre, sans nouvelle feuille de
+    // style — les mêmes variables déjà utilisées partout ailleurs.
+    <div className="flex min-h-dvh" data-theme={fullBleed ? 'dark' : undefined} style={fullBleed ? { background: 'var(--bg)' } : undefined}>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <main

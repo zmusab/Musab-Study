@@ -317,6 +317,7 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
       subjectId: asString(structure.subjectId) || null,
       model3dRef: null,
       region: null,
+      subregion: null,
       createdAt: createdFallback,
     });
 

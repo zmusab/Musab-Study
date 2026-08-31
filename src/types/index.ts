@@ -249,7 +249,10 @@ export type AnatomyCategory = 'squelette' | 'muscles' | 'organes' | 'nerfs' | 'v
  * alors réelle et exploitable (recherche, IA, flashcards), simplement non
  * représentée visuellement dans la scène 3D. `region` distingue la région du
  * corps (ex. `'tete-et-cou'`) pour permettre plus tard d'autres régions sans
- * dupliquer le schéma.
+ * dupliquer le schéma ; `subregion` affine la navigation hiérarchique à
+ * l'intérieur d'une région (ex. `'crane' | 'machoire' | 'face' | 'cou' | 'dents'`
+ * pour tête-et-cou) — un regroupement de structures déjà réelles, pas une
+ * nouvelle géométrie.
  */
 export interface AnatomyStructure {
   id: ID;
@@ -259,6 +262,7 @@ export interface AnatomyStructure {
   subjectId: ID | null;
   model3dRef: string | null;
   region: string | null;
+  subregion: string | null;
   createdAt: ISODateTime;
 }
 

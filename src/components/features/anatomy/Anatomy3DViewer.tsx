@@ -1,6 +1,17 @@
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode, type RefObject } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  forwardRef,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { CameraControls, useGLTF } from '@react-three/drei';
+import { CameraControls, Html, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { computeVisibility, type SystemVisibility } from '@/services/anatomy/visibility';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
@@ -27,6 +38,15 @@ const SYSTEM_FILES: Partial<Record<AnatomyCategory, string>> = {
   // 'nerfs' : aucun maillage réel disponible dans le jeu de données intégré — voir SOURCES.md.
 };
 
+export interface Anatomy3DViewerHandle {
+  /** Cadre la caméra sur la boîte englobante réelle des structures données (sous-région, résultat de recherche). */
+  flyToStructures: (ids: ID[]) => void;
+  resetView: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  toggleFullscreen: () => void;
+}
+
 export interface Anatomy3DViewerProps {
   structures: AnatomyStructure[];
   activeSystems: SystemVisibility;
@@ -35,7 +55,10 @@ export interface Anatomy3DViewerProps {
   onSelectStructure: (id: ID | null) => void;
   /** Incrémenté à chaque fois qu'un vol de caméra vers `selectedId` est demandé (recherche, marqueur, fil d'Ariane). */
   flyToToken: number;
+  /** Structures dont le point interactif doit être affiché (sous-région actuellement ouverte) — vide = aucun marqueur. */
+  markerStructureIds: ID[];
   reducedMotion: boolean;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
 }
 
 /** Un système chargé : applique la visibilité calculée à chaque maillage nommé, matériaux clonés (jamais partagés entre structures). */
@@ -47,6 +70,7 @@ function SystemModel({
   selectedId,
   isolated,
   onSelectStructure,
+  onHover,
   registerMesh,
 }: {
   url: string;
@@ -56,6 +80,7 @@ function SystemModel({
   selectedId: ID | null;
   isolated: boolean;
   onSelectStructure: (id: ID | null) => void;
+  onHover: (id: ID | null) => void;
   registerMesh: (id: ID, object: THREE.Object3D) => void;
 }) {
   const { scene } = useGLTF(url);
@@ -106,8 +131,30 @@ function SystemModel({
     [structuresById, onSelectStructure],
   );
 
+  const handlePointerOver = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      const name = event.object.name;
+      if (name && structuresById.has(name)) {
+        onHover(name);
+        document.body.style.cursor = 'pointer';
+      }
+    },
+    [structuresById, onHover],
+  );
+  const handlePointerOut = useCallback(() => {
+    onHover(null);
+    document.body.style.cursor = 'auto';
+  }, [onHover]);
+
   if (activeSystems[category] !== true) return null;
-  return <primitive object={cloned} onClick={handleClick} />;
+  return (
+    <primitive
+      object={cloned}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
+    />
+  );
 }
 
 /** Corrige l'axe vertical des données BodyParts3D (Z-haut) vers la convention Three.js (Y-haut). */
@@ -123,6 +170,81 @@ function ToneMapping() {
     gl.toneMappingExposure = 1.15;
   }, [gl]);
   return null;
+}
+
+/**
+ * Points interactifs (§4/§6) — un marqueur par structure de la sous-région
+ * actuellement ouverte, positionné sur la position RÉELLE du maillage chargé
+ * (centre de sa boîte englobante monde), jamais une coordonnée inventée.
+ * `registryVersion` force une réévaluation quand de nouveaux maillages
+ * s'enregistrent (chargement asynchrone du `.glb`).
+ */
+function Markers({
+  ids,
+  meshRegistry,
+  registryVersion,
+  structuresById,
+  selectedId,
+  onSelectStructure,
+}: {
+  ids: ID[];
+  meshRegistry: RefObject<Map<ID, THREE.Object3D>>;
+  registryVersion: number;
+  structuresById: Map<ID, AnatomyStructure>;
+  selectedId: ID | null;
+  onSelectStructure: (id: ID) => void;
+}) {
+  const markers = useMemo(() => {
+    const box = new THREE.Box3();
+    const center = new THREE.Vector3();
+    const out: { id: ID; position: [number, number, number] }[] = [];
+    for (const id of ids) {
+      const object = meshRegistry.current.get(id);
+      if (!object || !object.visible) continue;
+      box.setFromObject(object);
+      if (box.isEmpty()) continue;
+      box.getCenter(center);
+      out.push({ id, position: [center.x, center.y, center.z] });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, registryVersion]);
+
+  return (
+    <>
+      {markers.map((marker) => {
+        const structure = structuresById.get(marker.id);
+        if (!structure) return null;
+        const isSelected = selectedId === marker.id;
+        return (
+          <Html key={marker.id} position={marker.position} center zIndexRange={[10, 0]}>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectStructure(marker.id);
+              }}
+              aria-label={structure.name}
+              data-touch-target
+              className={
+                'group flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.72rem] font-medium whitespace-nowrap shadow-lg backdrop-blur transition-all duration-150 ' +
+                (isSelected
+                  ? 'scale-110 border-[var(--accent)] bg-[var(--accent)] text-white'
+                  : 'border-white/40 bg-black/55 text-white hover:scale-105 hover:border-[var(--accent)]')
+              }
+            >
+              <span
+                className={
+                  'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)] animate-pulse')
+                }
+              />
+              {structure.name}
+            </button>
+          </Html>
+        );
+      })}
+    </>
+  );
 }
 
 function CameraRig({
@@ -177,19 +299,27 @@ function CameraRig({
   return null;
 }
 
-export function Anatomy3DViewer({
-  structures,
-  activeSystems,
-  selectedId,
-  isolated,
-  onSelectStructure,
-  flyToToken,
-  reducedMotion,
-}: Anatomy3DViewerProps) {
+export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewerProps>(function Anatomy3DViewer(
+  {
+    structures,
+    activeSystems,
+    selectedId,
+    isolated,
+    onSelectStructure,
+    flyToToken,
+    markerStructureIds,
+    reducedMotion,
+    onFullscreenChange,
+  },
+  forwardedRef,
+) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<CameraControls | null>(null);
   const meshRegistry = useRef<Map<ID, THREE.Object3D>>(new Map());
   const [hasFramed, setHasFramed] = useState(false);
   const [everActivated, setEverActivated] = useState<Set<AnatomyCategory>>(new Set());
+  const [registryVersion, setRegistryVersion] = useState(0);
+  const [hoveredId, setHoveredId] = useState<ID | null>(null);
 
   const structuresById = useMemo(() => new Map(structures.map((s) => [s.id, s])), [structures]);
 
@@ -209,15 +339,60 @@ export function Anatomy3DViewer({
 
   const registerMesh = useCallback((id: ID, object: THREE.Object3D) => {
     meshRegistry.current.set(id, object);
+    setRegistryVersion((v) => v + 1);
   }, []);
 
-  const resetView = () => {
+  const resetView = useCallback(() => {
     setHasFramed(false);
     void controlsRef.current?.reset(!reducedMotion);
-  };
+  }, [reducedMotion]);
+
+  useImperativeHandle(
+    forwardedRef,
+    (): Anatomy3DViewerHandle => ({
+      flyToStructures: (ids) => {
+        if (!controlsRef.current) return;
+        const box = new THREE.Box3();
+        let found = false;
+        for (const id of ids) {
+          const object = meshRegistry.current.get(id);
+          if (!object) continue;
+          box.union(new THREE.Box3().setFromObject(object));
+          found = true;
+        }
+        if (!found || box.isEmpty()) return;
+        void controlsRef.current.fitToBox(box, !reducedMotion, {
+          paddingLeft: 0.4,
+          paddingRight: 0.4,
+          paddingTop: 0.4,
+          paddingBottom: 0.4,
+        });
+      },
+      resetView,
+      zoomIn: () => void controlsRef.current?.dolly(40, !reducedMotion),
+      zoomOut: () => void controlsRef.current?.dolly(-40, !reducedMotion),
+      toggleFullscreen: () => {
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else {
+          void wrapperRef.current?.requestFullscreen();
+        }
+      },
+    }),
+    [resetView, reducedMotion],
+  );
+
+  useEffect(() => {
+    const onChange = () => onFullscreenChange?.(document.fullscreenElement === wrapperRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, [onFullscreenChange]);
+
+  const hoveredStructure = hoveredId ? structuresById.get(hoveredId) : null;
 
   return (
     <div
+      ref={wrapperRef}
       className="relative h-full w-full"
       style={{ background: 'radial-gradient(ellipse at 50% 40%, #182338 0%, #0a0f1c 70%, #05070d 100%)' }}
     >
@@ -249,12 +424,27 @@ export function Anatomy3DViewer({
                   selectedId={selectedId}
                   isolated={isolated}
                   onSelectStructure={onSelectStructure}
+                  onHover={setHoveredId}
                   registerMesh={registerMesh}
                 />
               ) : null,
             )}
           </Suspense>
         </AxisCorrection>
+        {/* Hors du groupe `AxisCorrection` : `Markers` calcule déjà des
+            positions MONDE (`Box3.setFromObject`, post-correction) — les
+            re-nester dans le groupe appliquerait la rotation une seconde
+            fois et enverrait chaque marqueur hors champ. */}
+        {markerStructureIds.length > 0 && (
+          <Markers
+            ids={markerStructureIds}
+            meshRegistry={meshRegistry}
+            registryVersion={registryVersion}
+            structuresById={structuresById}
+            selectedId={selectedId}
+            onSelectStructure={onSelectStructure}
+          />
+        )}
         <CameraRig
           controlsRef={controlsRef}
           meshRegistry={meshRegistry}
@@ -266,17 +456,11 @@ export function Anatomy3DViewer({
         />
       </Canvas>
 
-      <div className="absolute bottom-3 right-3 flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={resetView}
-          data-touch-target
-          aria-label="Revenir à la vue initiale"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60"
-        >
-          ⟲
-        </button>
-      </div>
+      {hoveredStructure && !selectedId && (
+        <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1.5 text-[0.8rem] font-medium text-white backdrop-blur">
+          {hoveredStructure.name}
+        </div>
+      )}
     </div>
   );
-}
+});

@@ -11,6 +11,7 @@ export interface CatalogEntry {
   latinName: string;
   category: AnatomyCategory;
   region: string;
+  subregion: string;
   fmaId: string | null;
   hasMesh: boolean;
   fdi?: string;
@@ -41,6 +42,7 @@ export async function seedHeadNeckCatalog(): Promise<void> {
       subjectId: previous?.subjectId ?? null,
       model3dRef: entry.hasMesh ? entry.id : null,
       region: entry.region,
+      subregion: entry.subregion,
       createdAt: previous?.createdAt ?? nowISO(),
     };
   });
