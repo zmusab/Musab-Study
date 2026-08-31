@@ -62,25 +62,20 @@
   --mastery-4: #4f5bd5;
 
   /*
-   * Couleurs de section — une identité par destination de la navigation, pour
-   * qu'un coup d'œil au rail latéral suffise à repérer une section (Anatomie
-   * en rouge, Podcast en vert émeraude, etc.). Accueil et Paramètres restent
-   * volontairement plus neutres : ce sont des utilitaires, pas des matières
-   * d'étude.
+   * Couleurs de section, groupées par paire comme demandé : Recherche+Cours
+   * en bleu, IA+Révisions en mauve, Flashcards+Quiz en jaune, Podcast+
+   * Progression en vert, Anatomie+Calendrier en rouge, Notes+Paramètres en
+   * orange. Accueil reste « blanc » au sens neutre : un blanc littéral serait
+   * invisible sur le fond clair du rail latéral, donc il suit --ink comme le
+   * reste du texte — sans couleur propre, ce qui EST son identité.
    */
-  --nav-home: #4f5bd5;
-  --nav-courses: #2568c4;
-  --nav-ai: #7c3aed;
-  --nav-review: #0d8577;
-  --nav-cards: #b8650a;
-  --nav-quiz: #c22672;
-  --nav-podcast: #047a56;
-  --nav-progress: #5a8a0f;
-  --nav-anatomy: #c1272d;
-  --nav-calendar: #c2540a;
-  --nav-notes: #a3760a;
-  --nav-search: #0a7f96;
-  --nav-settings: #5b6472;
+  --nav-neutral: var(--ink);
+  --nav-blue: #2568c4;
+  --nav-purple: #7c3aed;
+  --nav-yellow: #a3860b;
+  --nav-green: #1a8a4e;
+  --nav-red: #c1272d;
+  --nav-orange: #c2540a;
 
   --shadow-soft: 0 1px 2px rgb(23 25 28 / 0.04), 0 4px 16px rgb(23 25 28 / 0.05);
   --shadow-lift: 0 2px 6px rgb(23 25 28 / 0.06), 0 12px 32px rgb(23 25 28 / 0.09);
@@ -120,20 +115,14 @@
   --mastery-3: #5cb87c;
   --mastery-4: #8b95f5;
 
-  /* Éclaircies pour rester lisibles sur fond sombre, même hiérarchie qu'en clair. */
-  --nav-home: #8b95f5;
-  --nav-courses: #5b9de6;
-  --nav-ai: #a884f5;
-  --nav-review: #3fc4b0;
-  --nav-cards: #e0a352;
-  --nav-quiz: #ea6fae;
-  --nav-podcast: #3fc98c;
-  --nav-progress: #a3d158;
-  --nav-anatomy: #e8746f;
-  --nav-calendar: #e8935a;
-  --nav-notes: #d6ad5c;
-  --nav-search: #4fc3dc;
-  --nav-settings: #97a1ae;
+  /* Éclaircies pour rester lisibles sur fond sombre, même regroupement qu'en clair. */
+  --nav-neutral: var(--ink);
+  --nav-blue: #5b9de6;
+  --nav-purple: #a884f5;
+  --nav-yellow: #d6b545;
+  --nav-green: #4fc384;
+  --nav-red: #e8746f;
+  --nav-orange: #e8935a;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.28);
   --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);

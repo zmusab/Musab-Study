@@ -36,6 +36,9 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ de
 const FlashcardsPage = lazy(() =>
   import('@/pages/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage })),
 );
+const RecherchePage = lazy(() =>
+  import('@/pages/RecherchePage').then((m) => ({ default: m.RecherchePage })),
+);
 
 function RouteFallback() {
   return (
@@ -137,17 +140,7 @@ function AnimatedRoutes() {
               />
             }
           />
-          <Route
-            path="/recherche"
-            element={
-              <PlaceholderPage
-                title="Recherche"
-                icon="🔎"
-                phase="Phase 10"
-                description="Recherche unifiée dans tes cours, notes, cartes, questions et structures anatomiques."
-              />
-            }
-          />
+          <Route path="/recherche" element={<RecherchePage />} />
           <Route path="/plus" element={<MorePage />} />
           <Route path="/parametres" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

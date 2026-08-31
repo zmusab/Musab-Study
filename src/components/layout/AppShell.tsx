@@ -83,7 +83,7 @@ function MobileTabBar() {
   const primary = NAV_ENTRIES.filter((entry) => entry.primary);
   const tabs: NavEntry[] = [
     ...primary,
-    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--nav-settings)' },
+    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--nav-neutral)' },
   ];
 
   return (
