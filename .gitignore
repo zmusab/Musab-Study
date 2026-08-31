@@ -11,3 +11,4 @@ coverage/
 .vite/
 dev-dist/
 dist-screenshots/
+*.tsbuildinfo

@@ -8,6 +8,7 @@ import type {
   DocumentChunk,
   Flashcard,
   Note,
+  PodcastEpisode,
   Profile,
   QuizQuestion,
   ReviewLog,
@@ -40,6 +41,7 @@ export class MusabStudyDatabase extends Dexie {
   anatomyStructures!: EntityTable<AnatomyStructure, 'id'>;
   anatomySheets!: EntityTable<AnatomySheet, 'id'>;
   chatMessages!: EntityTable<ChatMessage, 'id'>;
+  podcastEpisodes!: EntityTable<PodcastEpisode, 'id'>;
 
   constructor() {
     super('musab-study');
@@ -60,6 +62,7 @@ export class MusabStudyDatabase extends Dexie {
       anatomyStructures: 'id, category, subjectId, name',
       anatomySheets: 'id, structureId, origin, [structureId+origin]',
       chatMessages: 'id, subjectId, at',
+      podcastEpisodes: 'id, subjectId, chapterId, createdAt',
     });
   }
 }

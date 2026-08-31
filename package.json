@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/courses.mjs && node tests/e2e/podcast.mjs",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

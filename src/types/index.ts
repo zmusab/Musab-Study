@@ -256,6 +256,60 @@ export interface ChatMessage {
   at: ISODateTime;
 }
 
+// ──────────────────────── Podcast d'étude ────────────────────────
+
+export type PodcastLength = 'quick' | 'normal' | 'deep';
+export type PodcastSpeakerId = 'A' | 'B';
+
+/** Notion identifiée dans le cours comme méritant d'être retenue. */
+export interface PodcastConcept {
+  id: string;
+  label: string;
+  importance: Importance;
+  /** Vrai si l'IA l'a signalée comme source de confusion fréquente. */
+  isPitfall: boolean;
+  citations: Citation[];
+}
+
+export type PodcastSegmentType =
+  | 'intro'
+  | 'concept'
+  | 'explanation'
+  | 'example'
+  | 'pitfall'
+  | 'connection'
+  | 'recap'
+  | 'quiz';
+
+export interface PodcastSegment {
+  id: string;
+  speaker: PodcastSpeakerId;
+  type: PodcastSegmentType;
+  text: string;
+  /**
+   * Provenance établie par vérification des citations, jamais déclarée par le
+   * modèle — même principe que pour l'assistant IA. Null pour les répliques
+   * qui ne portent pas d'affirmation factuelle (transition, exemple fictif).
+   */
+  provenance: AnswerProvenance | null;
+  citations: Citation[];
+  /** Durée estimée en secondes, pour la barre de progression du lecteur. */
+  estimatedDurationSec: number;
+}
+
+export interface PodcastEpisode {
+  id: ID;
+  subjectId: ID;
+  chapterId: ID | null;
+  title: string;
+  length: PodcastLength;
+  enrichedWithInternet: boolean;
+  concepts: PodcastConcept[];
+  segments: PodcastSegment[];
+  estimatedDurationSec: number;
+  createdAt: ISODateTime;
+}
+
 // ─────────────────────────── Sauvegarde ───────────────────────────
 
 /** Format d'export/import complet. `v` permet les migrations futures. */
@@ -274,4 +328,5 @@ export interface BackupBundle {
   anatomyStructures: AnatomyStructure[];
   anatomySheets: AnatomySheet[];
   chatMessages: ChatMessage[];
+  podcastEpisodes: PodcastEpisode[];
 }

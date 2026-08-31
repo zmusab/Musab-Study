@@ -5,15 +5,21 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
 
 /*
- * GitHub Pages sert le site sous /<nom-du-depot>/, et ce chemin est SENSIBLE À
- * LA CASSE : le dépôt s'appelle « Musab-Study », donc « /musab-study/ »
- * renverrait une page blanche.
+ * Chemin de base, adapté à l'hébergeur qui construit le site.
  *
- * En intégration continue, la valeur est dérivée de GITHUB_REPOSITORY plutôt
- * que codée en dur : renommer le dépôt ne cassera pas le déploiement.
+ * - Vercel sert le site à la racine de son domaine (musab-study.vercel.app/) :
+ *   la variable d'environnement VERCEL, définie automatiquement par leur
+ *   build, indique qu'il faut utiliser '/'.
+ * - GitHub Pages sert le site sous /<nom-du-depot>/, et ce chemin est SENSIBLE
+ *   À LA CASSE : le dépôt s'appelle « Musab-Study », donc « /musab-study/ »
+ *   renverrait une page blanche. La valeur est dérivée de GITHUB_REPOSITORY
+ *   plutôt que codée en dur, pour survivre à un renommage du dépôt.
+ * - BASE_PATH reste disponible pour surcharger manuellement au besoin.
  */
 const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1];
-const base = process.env.BASE_PATH ?? (repositoryName ? `/${repositoryName}/` : '/Musab-Study/');
+const base =
+  process.env.BASE_PATH ??
+  (process.env.VERCEL ? '/' : repositoryName ? `/${repositoryName}/` : '/Musab-Study/');
 
 export default defineConfig({
   base,

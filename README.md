@@ -84,6 +84,35 @@ pas incluse dans les sauvegardes.
 > pour une application personnelle — à condition de ne pas y mettre une clé
 > partagée, et de la révoquer si besoin depuis la console Anthropic.
 
+## Déploiement
+
+Deux hébergeurs statiques sont pris en charge, sans configuration supplémentaire :
+
+- **GitHub Pages** — `.github/workflows/deploy.yml` construit et publie à chaque
+  poussée. Nécessite un réglage manuel unique et ponctuel : Settings → Pages →
+  Source : *GitHub Actions*.
+- **Vercel** — `vercel.json` est prêt pour un import direct du dépôt. Le chemin
+  de base est détecté automatiquement selon l'hébergeur (variable `VERCEL` ou
+  `GITHUB_REPOSITORY`).
+
+## Podcast d'étude
+
+Transforme un cours en conversation à deux voix entre un étudiant qui
+interroge et un étudiant qui explique, avec exemples cliniques fictifs
+clairement identifiés comme tels, pièges à connaître, et mini-interrogation
+finale.
+
+Pipeline en quatre étapes, chacune vérifiable :
+`Cours → Analyse (sélection des notions, sourcées) → Plan (durée choisie) →
+Dialogue (sourcé phrase par phrase) → Validation (comme pour l'IA : une
+réplique invérifiable n'est jamais présentée comme venant du cours)`.
+
+La lecture audio utilise l'API native du navigateur (Web Speech API) — un vrai
+son, sans clé ni coût supplémentaire, avec deux voix françaises distinctes
+quand l'appareil en propose plusieurs. `services/tts/types.ts` définit
+l'interface qu'un fournisseur cloud pourra implémenter plus tard sans changer
+le lecteur ni le pipeline.
+
 **Exporte régulièrement** depuis Paramètres : c'est la seule copie. L'import
 accepte aussi les sauvegardes de l'ancien prototype HTML, historique de
 révision compris.
@@ -106,6 +135,7 @@ référence fonctionnelle et point de retour. Il n'est jamais modifié.
 | 7. Quiz | ⏳ |
 | 8. Calendrier | ⏳ |
 | 9. Dashboard | ⏳ |
+| Podcast d'étude (hors ordre initial) | ✅ pipeline + lecteur, en attente des Phases 5-7 pour les intégrations complètes |
 | 10. Notes et recherche | ⏳ |
 | 11. Progression | ⏳ |
 | 12. Anatomie | ⏳ |
