@@ -1,0 +1,212 @@
+@import 'tailwindcss';
+@import './fonts.css';
+
+/*
+ * Musab Study — système de design.
+ *
+ * Direction : papier chaud et calme en clair, encre profonde en sombre.
+ * Bordures en cheveu, profondeur discrète, aucune ombre lourde. L'application
+ * doit rester reposante après quatre heures de révision, pas « démontrer »
+ * qu'elle est jolie.
+ */
+
+/* Mode sombre piloté par l'attribut, pas par la préférence système seule :
+   le choix explicite de l'utilisateur doit gagner dans les deux sens. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --font-sans: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Courbes d'animation : décélération naturelle, jamais de rebond gadget. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --radius-card: 0.875rem;
+  --radius-control: 0.625rem;
+}
+
+:root {
+  color-scheme: light;
+
+  --bg: #f6f5f2;
+  --bg-elevated: #fbfaf8;
+  --surface: #ffffff;
+  --surface-2: #f1efea;
+  --surface-hover: #ebe9e3;
+
+  --ink: #17191c;
+  --ink-soft: #5f646b;
+  --ink-faint: #8b9098;
+
+  --line: #e3e0d8;
+  --line-strong: #d3cfc4;
+
+  --accent: #4f5bd5;
+  --accent-hover: #4049bd;
+  --accent-tint: #eceefc;
+  --accent-ink: #3a45b8;
+
+  --success: #1f8a5f;
+  --success-tint: #e4f3ec;
+  --warning: #c2620f;
+  --warning-tint: #fbeddc;
+  --danger: #c33d3d;
+  --danger-tint: #fae7e7;
+
+  --mastery-0: #c9483f;
+  --mastery-1: #d4802f;
+  --mastery-2: #c9a520;
+  --mastery-3: #3f9459;
+  --mastery-4: #4f5bd5;
+
+  --shadow-soft: 0 1px 2px rgb(23 25 28 / 0.04), 0 4px 16px rgb(23 25 28 / 0.05);
+  --shadow-lift: 0 2px 6px rgb(23 25 28 / 0.06), 0 12px 32px rgb(23 25 28 / 0.09);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #121417;
+  --bg-elevated: #17191d;
+  --surface: #1c1f23;
+  --surface-2: #23272c;
+  --surface-hover: #2a2e34;
+
+  --ink: #eceded;
+  --ink-soft: #a0a6ad;
+  --ink-faint: #767c84;
+
+  --line: #2b2f35;
+  --line-strong: #3a3f46;
+
+  --accent: #8b95f5;
+  --accent-hover: #9ba4f8;
+  --accent-tint: #242847;
+  --accent-ink: #a8b0f8;
+
+  --success: #4cb384;
+  --success-tint: #172b23;
+  --warning: #e0a065;
+  --warning-tint: #2e2318;
+  --danger: #e07070;
+  --danger-tint: #2f1e1e;
+
+  --mastery-0: #e06a62;
+  --mastery-1: #e5a35c;
+  --mastery-2: #ddc257;
+  --mastery-3: #5cb87c;
+  --mastery-4: #8b95f5;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.28);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    /* Empêche iOS de gonfler le texte au passage en paysage. */
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Évite le rebond de défilement du document en PWA plein écran. */
+    overscroll-behavior-y: none;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  /*
+   * 16px minimum sur tous les champs : en dessous, Safari iOS zoome
+   * automatiquement au focus. C'était l'un des défauts les plus pénibles du
+   * prototype sur iPad.
+   */
+  input, textarea, select, button {
+    font-family: inherit;
+    font-size: 1rem;
+  }
+
+  /* Sélection au clavier visible, mais jamais au clic à la souris. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Cible tactile confortable : Apple recommande 44 pt. */
+  @media (pointer: coarse) {
+    button, a[role='button'], [data-touch-target] {
+      min-height: 44px;
+    }
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .surface-card {
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+
+  /* Zones sûres iPhone/iPad en mode application installée. */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
+
+  /* Le défilement tactile ne doit pas entraîner la page derrière. */
+  .scroll-contain {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/*
+ * Accessibilité : quand l'utilisateur demande moins d'animation, on ne
+ * SUPPRIME pas les transitions — on les réduit à un temps quasi nul. Les
+ * animations d'apparition restent ainsi fonctionnelles (l'élément finit
+ * visible) sans jamais bouger à l'écran.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

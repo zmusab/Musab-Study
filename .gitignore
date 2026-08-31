@@ -10,3 +10,4 @@ coverage/
 *.log
 .vite/
 dev-dist/
+dist-screenshots/
