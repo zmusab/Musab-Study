@@ -82,6 +82,12 @@ export async function countAllDueCards(now: Date = new Date()): Promise<number> 
   return db.flashcards.where('due').belowOrEqual(now.toISOString()).count();
 }
 
+/** Cartes dues de TOUTES les matières, pour une session de révision globale. */
+export async function listAllDueCards(now: Date = new Date()): Promise<Flashcard[]> {
+  const cards = await db.flashcards.where('due').belowOrEqual(now.toISOString()).toArray();
+  return buildDueQueue(cards, now);
+}
+
 /**
  * Enregistre une réponse : met à jour la planification de la carte ET journalise
  * la révision, atomiquement. Une planification avancée sans trace dans le

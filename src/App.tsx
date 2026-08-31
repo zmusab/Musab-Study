@@ -39,6 +39,9 @@ const FlashcardsPage = lazy(() =>
 const RecherchePage = lazy(() =>
   import('@/pages/RecherchePage').then((m) => ({ default: m.RecherchePage })),
 );
+const RevisionsPage = lazy(() =>
+  import('@/pages/RevisionsPage').then((m) => ({ default: m.RevisionsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -71,17 +74,7 @@ function AnimatedRoutes() {
           <Route path="/cours" element={<CoursesPage />} />
           <Route path="/cours/:subjectId" element={<SubjectDetailPage />} />
           <Route path="/ia" element={<ChatPage />} />
-          <Route
-            path="/revisions"
-            element={
-              <PlaceholderPage
-                title="Révisions"
-                icon="🧠"
-                phase="Phase 6"
-                description="La session de répétition espacée. L'algorithme est déjà écrit et testé — il attend son interface."
-              />
-            }
-          />
+          <Route path="/revisions" element={<RevisionsPage />} />
           <Route path="/flashcards" element={<FlashcardsPage />} />
           <Route
             path="/quiz"
