@@ -1,4 +1,6 @@
-import { ask, extractJsonArray, AiRequestError } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
+import { extractJsonArray } from '@/services/ai/parsing';
+import { AiRequestError } from '@/services/ai/types';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { LENGTH_PRESETS } from './plan';
 import { analysisSystemPrompt, dialogueSystemPrompt } from './prompts';
@@ -21,16 +23,6 @@ import type { DocumentChunk, ID, PodcastEpisode, PodcastLength } from '@/types';
 
 /** Budget de contexte plus large que le chat : le podcast doit couvrir tout le chapitre, pas répondre à une question ciblée. */
 const ANALYSIS_CONTEXT_BUDGET = 32_000;
-
-/**
- * Modèle utilisé pour l'étape d'analyse, quel que soit le modèle choisi par
- * l'utilisateur dans les Paramètres pour le dialogue. Sélectionner des
- * notions dans un texte déjà transmis est une tâche mécanique d'extraction,
- * pas une tâche qui bénéficie d'un modèle plus capable — et validateConcepts()
- * rejette de toute façon toute notion sans citation vérifiable, quel que soit
- * le modèle qui l'a proposée. C'est ce filet qui rend le choix sûr.
- */
-const FAST_ANALYSIS_MODEL = 'claude-haiku-4-5';
 
 export class InsufficientCourseContentError extends Error {
   constructor() {
@@ -75,21 +67,15 @@ export async function generatePodcastEpisode(input: GeneratePodcastInput): Promi
     ANALYSIS_CONTEXT_BUDGET,
   );
 
-  const rawAnalysis = await ask({
+  // Le modèle rapide imposé pour cette étape (quel que soit le modèle choisi
+  // par l'utilisateur pour le dialogue) est décrit dans la table de routage
+  // — voir TASK_ROUTES['podcast-analysis'] dans services/ai/taskRouter.ts.
+  const rawAnalysis = await aiOrchestrator.ask({
     system: analysisSystemPrompt(preset, analysisContext),
     prompt: `Sélectionne les ${preset.conceptCount} notions les plus importantes de ce chapitre pour un podcast "${preset.label}".`,
     maxTokens: 2048,
     signal: input.signal,
-    // Sélectionner des notions dans un texte déjà fourni est une tâche
-    // d'extraction et de classification, pas un problème de raisonnement
-    // profond — exactement le type de tâche que la référence de l'API
-    // recommande à faible effort. On confie donc CETTE étape à un modèle
-    // rapide et économique, quel que soit le modèle choisi par l'utilisateur
-    // pour la qualité du dialogue : validateConcepts() est le vrai filet de
-    // sécurité (une notion sans citation vérifiable est rejetée quoi qu'il
-    // arrive), pas la prudence du modèle. C'est ce filet qui rend la
-    // dégradation de vitesse sans risque.
-    model: FAST_ANALYSIS_MODEL,
+    task: 'podcast-analysis',
   });
   const rawConcepts = extractJsonArray<RawConcept>(rawAnalysis);
   const concepts = validateConcepts(rawConcepts, analysisContext, preset.conceptCount);
@@ -123,18 +109,13 @@ export async function generatePodcastEpisode(input: GeneratePodcastInput): Promi
 
   // ── 3. Dialogue ──
   input.onStage?.('dialogue');
-  const rawDialogue = await ask({
+  const rawDialogue = await aiOrchestrator.ask({
     system: dialogueSystemPrompt(preset, concepts, dialogueContext, input.enrichedWithInternet),
     prompt: `Écris le dialogue complet, en respectant le format JSON demandé.`,
     maxTokens: 8192,
     webSearch: input.enrichedWithInternet,
     signal: input.signal,
-    // Ici la qualité compte (c'est le contenu que l'étudiant écoute), donc on
-    // garde le modèle choisi dans les Paramètres. « medium » reste plus rapide
-    // que le « high » par défaut sans dégradation notable : la structure est
-    // déjà contrainte par les notions validées à l'étape précédente, ce qui
-    // laisse moins de place à l'improvisation qu'une génération libre.
-    effort: 'medium',
+    task: 'podcast-dialogue',
   });
   const rawSegments = extractJsonArray<RawSegment>(rawDialogue);
 

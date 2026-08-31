@@ -1,4 +1,5 @@
-import { ask, extractJsonArray } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
+import { extractJsonArray } from '@/services/ai/parsing';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { validateCardDrafts, type CardDraft, type RawCardDraft } from './validate';
 import type { DocumentChunk, Difficulty, Importance } from '@/types';
@@ -49,16 +50,12 @@ export async function generateCardDrafts(input: GenerateCardsInput): Promise<Car
 
   const context = buildContext(chunksInReadingOrder(input.chunks), input.lookup, CONTEXT_BUDGET);
 
-  const raw = await ask({
+  const raw = await aiOrchestrator.ask({
     system: systemPrompt(input.count, context.text),
     prompt: `Génère les ${input.count} flashcards demandées, au format JSON.`,
     maxTokens: 3072,
     signal: input.signal,
-    // Extraire des paires question/réponse d'un texte déjà fourni est une
-    // tâche mécanique : un effort réduit répond plus vite sans perte de
-    // fiabilité, puisque validateCardDrafts() rejette de toute façon toute
-    // carte sans citation vérifiable.
-    effort: 'medium',
+    task: 'flashcards-generate',
   });
 
   const rawDrafts = extractJsonArray<RawCardDraft>(raw);

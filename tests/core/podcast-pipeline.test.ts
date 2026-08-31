@@ -3,19 +3,23 @@ import type { ContextLookup } from '@/services/rag/retrieval';
 import type { Chapter, DocumentChunk, StudyDocument, Subject } from '@/types';
 
 /**
- * Test d'intégration du pipeline, sans appel réseau réel : `ask()` est
- * simulé pour renvoyer des réponses canoniques, ce qui permet de vérifier
+ * Test d'intégration du pipeline, sans appel réseau réel : `aiOrchestrator.ask()`
+ * est simulé pour renvoyer des réponses canoniques, ce qui permet de vérifier
  * l'ORCHESTRATION (ordre des étapes, filtrage du contexte entre l'analyse et
- * le dialogue, propagation des erreurs) sans dépendre d'une clé API.
+ * le dialogue, propagation des erreurs) sans dépendre d'une clé API — et sans
+ * dépendre de quel fournisseur répondrait réellement.
  */
 const askMock = vi.fn();
-vi.mock('@/services/ai/client', async () => {
-  const actual = await vi.importActual<typeof import('@/services/ai/client')>('@/services/ai/client');
-  return { ...actual, ask: (...args: unknown[]) => askMock(...args) };
+vi.mock('@/services/ai/orchestrator', async () => {
+  const actual = await vi.importActual<typeof import('@/services/ai/orchestrator')>('@/services/ai/orchestrator');
+  return {
+    ...actual,
+    aiOrchestrator: { ...actual.aiOrchestrator, ask: (...args: unknown[]) => askMock(...args) },
+  };
 });
 
 const { generatePodcastEpisode, InsufficientCourseContentError } = await import('@/services/podcast/pipeline');
-const { AiRequestError } = await import('@/services/ai/client');
+const { AiRequestError } = await import('@/services/ai/types');
 
 function makeChunk(index: number, text: string): DocumentChunk {
   return {
@@ -105,10 +109,13 @@ describe('generatePodcastEpisode', () => {
     expect(episode.subjectId).toBe('sub-1');
   });
 
-  it("confie l'analyse à un modèle rapide, quel que soit le modèle de dialogue", async () => {
-    // Le levier de performance central : l'extraction des notions est une
-    // tâche mécanique déléguée à Haiku, jamais au modèle choisi par
-    // l'utilisateur pour la qualité du dialogue.
+  it("distingue la tâche d'analyse de la tâche de dialogue auprès de l'orchestrateur", async () => {
+    // Le pipeline ne décide plus lui-même du modèle ou du niveau de qualité —
+    // il déclare seulement QUELLE tâche il exécute ; c'est la table de
+    // routage (tests/core/ai-task-router.test.ts) qui décide que l'analyse
+    // va au modèle rapide et que le dialogue reste sur le modèle choisi par
+    // l'utilisateur, et l'orchestrateur (tests/core/ai-orchestrator.test.ts)
+    // qui applique réellement ce choix.
     askMock
       .mockResolvedValueOnce(JSON.stringify([{ label: 'Composition', refs: ['S1'] }]))
       .mockResolvedValueOnce(
@@ -120,11 +127,8 @@ describe('generatePodcastEpisode', () => {
     const analysisCallOptions = askMock.mock.calls[0]![0];
     const dialogueCallOptions = askMock.mock.calls[1]![0];
 
-    expect(analysisCallOptions.model).toBe('claude-haiku-4-5');
-    // L'appel de dialogue n'impose PAS de modèle : il utilise celui choisi
-    // par l'utilisateur dans les Paramètres.
-    expect(dialogueCallOptions.model).toBeUndefined();
-    expect(dialogueCallOptions.effort).toBe('medium');
+    expect(analysisCallOptions.task).toBe('podcast-analysis');
+    expect(dialogueCallOptions.task).toBe('podcast-dialogue');
   });
 
   it('ne transmet à l’étape « dialogue » que les extraits utilisés par une notion retenue', async () => {

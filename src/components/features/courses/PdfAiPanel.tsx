@@ -4,7 +4,7 @@ import { db } from '@/data/db';
 import { listChunks } from '@/data/repositories/documents';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { courseSystemPrompt, verifyCourseAnswer } from '@/services/ai/tutor';
-import { ask, describeAiError } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { hasApiKey } from '@/services/ai/settings';
 import type { Citation, ID } from '@/types';
 
@@ -86,16 +86,16 @@ export function PdfAiPanel({
           ? `Explique cette page de mon cours en langage clair et pédagogique, comme à un étudiant qui la découvre.`
           : `Résume ce chapitre : dégage les idées principales et les points importants à retenir, de façon structurée.`;
 
-      const raw = await ask({
+      const raw = await aiOrchestrator.ask({
         system: courseSystemPrompt(context, program),
         prompt,
-        effort: 'medium',
+        task: scope === 'page' ? 'pdf-explain-page' : 'pdf-summarize-chapter',
       });
 
       const verified = verifyCourseAnswer(raw, context);
       setAnswer({ text: verified.text, citations: verified.citations });
     } catch (error) {
-      notify(describeAiError(error), 'error');
+      notify(aiOrchestrator.describeAiError(error), 'error');
     } finally {
       setLoading(null);
     }

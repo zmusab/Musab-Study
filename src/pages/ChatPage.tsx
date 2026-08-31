@@ -26,7 +26,7 @@ import {
   verifyCourseAnswer,
   verifyInternetAnswer,
 } from '@/services/ai/tutor';
-import { ask, describeAiError } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { hasApiKey } from '@/services/ai/settings';
 import type { ChatMessage, ID } from '@/types';
 
@@ -142,9 +142,10 @@ export function ChatPage() {
         return;
       }
 
-      // 3. Interrogation du modèle.
+      // 3. Interrogation du modèle, via l'orchestrateur — cette page ne sait
+      // pas quel fournisseur répond, seulement quelle tâche elle demande.
       const program = profile.program || 'dentisterie';
-      const raw = await ask({
+      const raw = await aiOrchestrator.ask({
         system:
           mode === 'cours'
             ? courseSystemPrompt(context, program)
@@ -152,13 +153,7 @@ export function ChatPage() {
         prompt: trimmed,
         webSearch: mode === 'internet',
         onText: mode === 'cours' ? (delta) => setStreamed((current) => current + delta) : undefined,
-        // Le mode cours est une tâche de citation ancrée dans un contexte déjà
-        // filtré par la recherche : un effort réduit répond plus vite sans
-        // perte de fiabilité, puisque verifyCourseAnswer() rejette de toute
-        // façon toute réponse non sourcée, quel que soit l'effort demandé.
-        // Le mode internet garde l'effort par défaut : il orchestre l'outil de
-        // recherche et bénéficie d'un raisonnement plus poussé.
-        effort: mode === 'cours' ? 'medium' : undefined,
+        task: mode === 'cours' ? 'chat-course' : 'chat-internet',
       });
 
       // 4. Vérification : c'est ici que la provenance est établie.
@@ -183,7 +178,7 @@ export function ChatPage() {
       await appendChatMessage({
         subjectId,
         role: 'assistant',
-        text: describeAiError(error),
+        text: aiOrchestrator.describeAiError(error),
         provenance: 'error',
       });
     } finally {

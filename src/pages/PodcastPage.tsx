@@ -21,7 +21,7 @@ import { savePodcastEpisode } from '@/data/repositories/podcasts';
 import { generatePodcastEpisode, InsufficientCourseContentError } from '@/services/podcast/pipeline';
 import { LENGTH_PRESETS, formatDuration } from '@/services/podcast/plan';
 import { hasApiKey } from '@/services/ai/settings';
-import { describeAiError } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { useProfile } from '@/hooks/useProfile';
 import { formatRelativePast } from '@/lib/date';
 import type { ContextLookup } from '@/services/rag/retrieval';
@@ -107,7 +107,7 @@ export function PodcastPage() {
       notify('Épisode généré.', 'success');
     } catch (error) {
       const message =
-        error instanceof InsufficientCourseContentError ? error.message : describeAiError(error);
+        error instanceof InsufficientCourseContentError ? error.message : aiOrchestrator.describeAiError(error);
       notify(message, 'error');
     } finally {
       setStage(null);

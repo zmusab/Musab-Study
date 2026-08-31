@@ -23,7 +23,7 @@ import { createFlashcard, deleteCard, updateCard } from '@/data/repositories/car
 import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
 import { hasApiKey } from '@/services/ai/settings';
-import { describeAiError } from '@/services/ai/client';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { masteryLevel, masteryPct, MASTERY_COLOR_VARS, MASTERY_LABELS } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
 import type { ContextLookup } from '@/services/rag/retrieval';
@@ -122,7 +122,7 @@ export function FlashcardsPage() {
       }
     } catch (error) {
       notify(
-        error instanceof NoIndexedContentError ? error.message : describeAiError(error),
+        error instanceof NoIndexedContentError ? error.message : aiOrchestrator.describeAiError(error),
         'error',
       );
     } finally {
