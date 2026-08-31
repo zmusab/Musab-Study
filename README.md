@@ -11,7 +11,7 @@ anatomie, calendrier, notes, recherche et progression.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173/musab-study/
+npm run dev          # http://localhost:5173/Musab-Study/
 ```
 
 | Commande | Rôle |

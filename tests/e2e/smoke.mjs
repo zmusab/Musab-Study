@@ -14,7 +14,7 @@ import { chromium, devices } from 'playwright';
  * Lancement : `npm run test:e2e`
  */
 
-const BASE = 'http://localhost:4173/musab-study/';
+const BASE = process.env.E2E_BASE ?? 'http://localhost:4173/Musab-Study/';
 const SHOT = process.env.SCREENSHOT_DIR ?? './dist-screenshots';
 await mkdir(SHOT, { recursive: true });
 

@@ -4,9 +4,16 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
 
-// GitHub Pages sert le site sous /<nom-du-depot>/.
-// Surchargeable via BASE_PATH pour un déploiement à la racine d'un domaine.
-const base = process.env.BASE_PATH ?? '/musab-study/';
+/*
+ * GitHub Pages sert le site sous /<nom-du-depot>/, et ce chemin est SENSIBLE À
+ * LA CASSE : le dépôt s'appelle « Musab-Study », donc « /musab-study/ »
+ * renverrait une page blanche.
+ *
+ * En intégration continue, la valeur est dérivée de GITHUB_REPOSITORY plutôt
+ * que codée en dur : renommer le dépôt ne cassera pas le déploiement.
+ */
+const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1];
+const base = process.env.BASE_PATH ?? (repositoryName ? `/${repositoryName}/` : '/Musab-Study/');
 
 export default defineConfig({
   base,
