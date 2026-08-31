@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
 import { Button, Card, Chip, EmptyState, Icon, SegmentedControl, Swatch } from '@/components/ui';
+import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import { springSoft } from '@/components/motion/transitions';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
 import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/cards';
@@ -218,6 +219,8 @@ export function RevisionsPage() {
         title="Révisions"
         subtitle="Les cartes les moins maîtrisées reviennent en premier, automatiquement."
       />
+
+      <WisdomQuote className="mb-6" />
 
       {summary && (
         <FadeUp className="mb-6 rounded-[var(--radius-card)] border border-[var(--success)]/40 bg-[var(--success-tint)] p-5 text-center">

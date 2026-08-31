@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
+import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import {
   Button,
   Card,
@@ -203,6 +204,8 @@ export function FlashcardsPage() {
         title="Flashcards"
         subtitle="Générées depuis tes cours, sourcées, ou créées à la main."
       />
+
+      <WisdomQuote className="mb-6" />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <Select label="Matière" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
