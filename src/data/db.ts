@@ -4,6 +4,7 @@ import type {
   AnatomyStructure,
   CalendarEvent,
   Chapter,
+  ChapterAnalysis,
   ChatMessage,
   DocumentChunk,
   DocumentFile,
@@ -44,6 +45,7 @@ export class MusabStudyDatabase extends Dexie {
   anatomySheets!: EntityTable<AnatomySheet, 'id'>;
   chatMessages!: EntityTable<ChatMessage, 'id'>;
   podcastEpisodes!: EntityTable<PodcastEpisode, 'id'>;
+  chapterAnalyses!: EntityTable<ChapterAnalysis, 'id'>;
 
   constructor() {
     super('musab-study');
@@ -75,6 +77,16 @@ export class MusabStudyDatabase extends Dexie {
     // lignes et le code les traite comme tels.
     this.version(2).stores({
       documentFiles: 'documentId',
+    });
+
+    // v3 : notes liées à une page précise d'un document (nouvel index
+    // `documentId`, nécessaire pour lister les notes d'un document sans
+    // scanner toute la table) + `chapterAnalyses`, une ligne par chapitre
+    // dont les notions ont été détectées et vérifiées (voir
+    // services/courses/notions.ts).
+    this.version(3).stores({
+      notes: 'id, subjectId, chapterId, documentId, updatedAt',
+      chapterAnalyses: 'id, subjectId, chapterId',
     });
   }
 }

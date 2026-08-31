@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
 import {
@@ -44,6 +44,7 @@ export function PodcastPage() {
   const subjects = useSubjects();
   const profile = useProfile();
   const { notify } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [subjectId, setSubjectId] = useState<ID | ''>('');
   const [chapterId, setChapterId] = useState<ID | 'all'>('all');
@@ -55,9 +56,18 @@ export function PodcastPage() {
   const chapters = useChapters(subjectId || undefined);
   const episodes = usePodcastEpisodes(subjectId || undefined);
 
+  // Une matière passée depuis la page de cours (« 🎙️ Podcast ») présélectionne
+  // directement cette matière plutôt que la première de la liste.
   useEffect(() => {
-    if (!subjectId && subjects && subjects.length > 0) setSubjectId(subjects[0]!.id);
-  }, [subjects, subjectId]);
+    if (subjectId || !subjects || subjects.length === 0) return;
+    const fromParam = searchParams.get('subject');
+    if (fromParam && subjects.some((s) => s.id === fromParam)) {
+      setSubjectId(fromParam);
+      setSearchParams({}, { replace: true });
+    } else {
+      setSubjectId(subjects[0]!.id);
+    }
+  }, [subjects, subjectId, searchParams, setSearchParams]);
 
   useEffect(() => setChapterId('all'), [subjectId]);
 

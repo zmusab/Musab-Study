@@ -251,6 +251,8 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
         id: note.id,
         subjectId,
         chapterId: resolveChapter(note.chapterId),
+        documentId: null,
+        page: null,
         title: '',
         text,
         createdAt,

@@ -14,6 +14,7 @@ import {
   listChapterDocuments,
   deleteDocument,
   getDocumentFile,
+  moveDocument,
   updateLastReadPage,
 } from '@/data/repositories/documents';
 import {
@@ -24,6 +25,14 @@ import {
   deleteCard,
 } from '@/data/repositories/cards';
 import { getProfile, saveProfile } from '@/data/repositories/profile';
+import {
+  createNote,
+  deleteNote,
+  listNotesForDocument,
+  listNotesForSubject,
+  updateNote,
+} from '@/data/repositories/notes';
+import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/notions';
 
 const LONG_TEXT = 'Le muscle masséter élève la mandibule et participe à la mastication. '.repeat(30);
 
@@ -340,5 +349,98 @@ describe('getSubjectStats', () => {
       dueCards: 1,
       quizQuestions: 0,
     });
+  });
+});
+
+describe('déplacer un document entre chapitres', () => {
+  it('met à jour le document ET ses fragments, pour rester cohérent avec l’analyse par chapitre', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapterA = await createChapter(subject.id, 'Muscles');
+    const chapterB = await createChapter(subject.id, 'Squelette');
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapterA.id,
+      name: 'Cours.pdf',
+      text: LONG_TEXT,
+      source: 'pdf',
+    });
+
+    await moveDocument(doc.id, chapterB.id);
+
+    expect((await db.documents.get(doc.id))!.chapterId).toBe(chapterB.id);
+    const chunks = await db.chunks.where('documentId').equals(doc.id).toArray();
+    expect(chunks.every((c) => c.chapterId === chapterB.id)).toBe(true);
+  });
+});
+
+describe('notes liées à une page', () => {
+  it('crée une note associée à un document et une page, puis la retrouve par document', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+    const doc = await addDocument({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      name: 'Cours.pdf',
+      text: LONG_TEXT,
+      source: 'pdf',
+    });
+
+    const note = await createNote({
+      subjectId: subject.id,
+      chapterId: chapter.id,
+      documentId: doc.id,
+      page: 12,
+      title: 'Page 12',
+      text: 'Le masséter élève la mandibule.',
+    });
+
+    expect((await listNotesForDocument(doc.id)).map((n) => n.id)).toEqual([note.id]);
+    expect((await listNotesForSubject(subject.id)).map((n) => n.id)).toEqual([note.id]);
+  });
+
+  it('conserve documentId/page à null pour une note générale', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const note = await createNote({
+      subjectId: subject.id,
+      chapterId: null,
+      title: 'Idée générale',
+      text: 'À revoir avant l’examen.',
+    });
+    expect(note.documentId).toBeNull();
+    expect(note.page).toBeNull();
+  });
+
+  it('met à jour updatedAt lors d’une modification', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const note = await createNote({ subjectId: subject.id, chapterId: null, title: 'T', text: 'Avant' });
+    await updateNote(note.id, { text: 'Après' });
+    const updated = await db.notes.get(note.id);
+    expect(updated!.text).toBe('Après');
+  });
+
+  it('supprime une note', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const note = await createNote({ subjectId: subject.id, chapterId: null, title: 'T', text: 'X' });
+    await deleteNote(note.id);
+    expect(await db.notes.get(note.id)).toBeUndefined();
+  });
+});
+
+describe('analyses de chapitre (notions)', () => {
+  it('enregistre puis remplace l’analyse d’un chapitre — jamais de doublon', async () => {
+    const subject = await createSubject('Anatomie', '#4F5BD5');
+    const chapter = await createChapter(subject.id, 'Muscles');
+
+    const first = await saveChapterAnalysis(subject.id, chapter.id, [
+      { id: 'cpt-1', label: 'Masséter', importance: 3, isPitfall: false, citations: [] },
+    ]);
+    const second = await saveChapterAnalysis(subject.id, chapter.id, [
+      { id: 'cpt-2', label: 'Temporal', importance: 2, isPitfall: false, citations: [] },
+    ]);
+
+    expect(second.id).toBe(first.id);
+    expect(await db.chapterAnalyses.count()).toBe(1);
+    expect((await getChapterAnalysis(chapter.id))!.notions).toHaveLength(1);
+    expect((await getChapterAnalysis(chapter.id))!.notions[0]!.label).toBe('Temporal');
   });
 });

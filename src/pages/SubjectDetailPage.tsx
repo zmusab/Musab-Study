@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
 import {
@@ -11,25 +12,47 @@ import {
   Icon,
   Input,
   Modal,
+  SegmentedControl,
+  Select,
   Swatch,
   useConfirm,
   useToast,
+  type Segment,
 } from '@/components/ui';
 import { DocumentImporter } from '@/components/features/courses/DocumentImporter';
 import { DocumentThumbnail } from '@/components/features/courses/DocumentThumbnail';
+import { DocumentFileSize } from '@/components/features/courses/DocumentFileSize';
+import { NotionsTab } from '@/components/features/courses/NotionsTab';
 import {
   useChapters,
   useSubject,
   useSubjectDocumentsByChapter,
   useSubjectOverviews,
 } from '@/hooks/useSubjects';
-import { createChapter, deleteChapter, deleteSubject } from '@/data/repositories/subjects';
-import { deleteDocument } from '@/data/repositories/documents';
+import { useSubjectNotes } from '@/hooks/useNotes';
+import { createChapter, deleteChapter, deleteSubject, updateChapter, updateSubject } from '@/data/repositories/subjects';
+import { deleteDocument, moveDocument } from '@/data/repositories/documents';
+import { deleteNote } from '@/data/repositories/notes';
+import { listCards } from '@/data/repositories/cards';
+import { db } from '@/data/db';
+import { averageMastery } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
 import { formatRelativePast } from '@/lib/date';
-import type { ID } from '@/types';
+import type { Chapter, ID } from '@/types';
 
-/** Détail d'une matière : chapitres, documents, importation. */
+type TabKey = 'documents' | 'notes' | 'notions' | 'flashcards' | 'quiz' | 'podcast' | 'progression';
+
+const TABS: Segment<TabKey>[] = [
+  { value: 'documents', label: 'Documents' },
+  { value: 'notes', label: 'Notes' },
+  { value: 'notions', label: 'Notions' },
+  { value: 'flashcards', label: 'Flashcards' },
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'podcast', label: 'Podcast' },
+  { value: 'progression', label: 'Progression' },
+];
+
+/** Détail d'une matière — le centre documentaire : documents, notes, notions, et les portes d'entrée vers flashcards/quiz/podcast/progression. */
 export function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const navigate = useNavigate();
@@ -41,11 +64,31 @@ export function SubjectDetailPage() {
   const chapters = useChapters(subjectId);
   const documentsByChapter = useSubjectDocumentsByChapter(subjectId);
   const overviews = useSubjectOverviews();
+  const notes = useSubjectNotes(subjectId);
+  const analyses = useLiveQuery(
+    () => (subjectId ? db.chapterAnalyses.where('subjectId').equals(subjectId).toArray() : []),
+    [subjectId],
+  );
+  const cards = useLiveQuery(() => (subjectId ? listCards(subjectId) : []), [subjectId]);
 
+  // Document le plus récemment ouvert de CETTE matière — alimente « Continuer ».
+  const recentDocument = useLiveQuery(async () => {
+    if (!subjectId) return null;
+    const docs = await db.documents.where('subjectId').equals(subjectId).toArray();
+    const opened = docs.filter((d) => d.lastOpenedAt !== null);
+    opened.sort((a, b) => (b.lastOpenedAt ?? '').localeCompare(a.lastOpenedAt ?? ''));
+    return opened[0] ?? null;
+  }, [subjectId]);
+
+  const [tab, setTab] = useState<TabKey>('documents');
   const [openChapter, setOpenChapter] = useState<ID | null>(null);
   const [importingInto, setImportingInto] = useState<ID | null>(null);
   const [addingChapter, setAddingChapter] = useState(false);
   const [chapterName, setChapterName] = useState('');
+  const [renamingSubject, setRenamingSubject] = useState(false);
+  const [subjectNameDraft, setSubjectNameDraft] = useState('');
+  const [renamingChapter, setRenamingChapter] = useState<Chapter | null>(null);
+  const [chapterNameDraft, setChapterNameDraft] = useState('');
 
   if (subject === null) {
     return (
@@ -63,6 +106,10 @@ export function SubjectDetailPage() {
   if (!subject || !subjectId) return null;
 
   const stats = overviews?.[subjectId];
+  const allDocuments = Object.values(documentsByChapter ?? {}).flat();
+  const totalPages = allDocuments.reduce((sum, doc) => sum + (doc.pageCount ?? 0), 0);
+  const notionCount = analyses?.reduce((sum, a) => sum + a.notions.length, 0) ?? 0;
+  const documentNameById = new Map(allDocuments.map((doc) => [doc.id, doc.name]));
 
   const handleAddChapter = async () => {
     if (chapterName.trim().length === 0) return;
@@ -71,6 +118,28 @@ export function SubjectDetailPage() {
     setAddingChapter(false);
     setOpenChapter(chapter.id);
     notify(`Chapitre « ${chapter.name} » ajouté.`, 'success');
+  };
+
+  const handleRenameSubject = async () => {
+    const name = subjectNameDraft.trim();
+    if (name.length === 0) return;
+    await updateSubject(subjectId, { name });
+    setRenamingSubject(false);
+    notify('Matière renommée.', 'success');
+  };
+
+  const handleRenameChapter = async () => {
+    if (!renamingChapter) return;
+    const name = chapterNameDraft.trim();
+    if (name.length === 0) return;
+    await updateChapter(renamingChapter.id, { name });
+    setRenamingChapter(null);
+    notify('Chapitre renommé.', 'success');
+  };
+
+  const handleMoveDocument = async (documentId: ID, newChapterId: ID) => {
+    await moveDocument(documentId, newChapterId);
+    notify('Document déplacé.', 'success');
   };
 
   const handleDeleteChapter = async (id: ID, name: string) => {
@@ -112,6 +181,12 @@ export function SubjectDetailPage() {
     notify('Document supprimé.', 'info');
   };
 
+  const handleDeleteNote = async (id: ID) => {
+    const ok = await confirm({ title: 'Supprimer cette note ?', destructive: true, confirmLabel: 'Supprimer' });
+    if (!ok) return;
+    await deleteNote(id);
+  };
+
   return (
     <PageTransition>
       <Link
@@ -121,139 +196,311 @@ export function SubjectDetailPage() {
         <span aria-hidden>←</span> Cours
       </Link>
 
-      <header className="mb-6">
-        <div className="flex items-center gap-2.5">
-          <Swatch color={subject.color} size={12} />
-          <h1 className="text-[1.75rem] leading-tight">{subject.name}</h1>
+      <header className="mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Swatch color={subject.color} size={12} />
+            <h1 className="text-[1.75rem] leading-tight">{subject.name}</h1>
+            <button
+              type="button"
+              aria-label="Renommer la matière"
+              data-touch-target
+              onClick={() => {
+                setSubjectNameDraft(subject.name);
+                setRenamingSubject(true);
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+            >
+              ✏️
+            </button>
+          </div>
+          {recentDocument && (
+            <Button size="sm" onClick={() => navigate(`/document/${recentDocument.id}`)}>
+              ▶️ Continuer
+            </Button>
+          )}
         </div>
+
         {stats && (
-          <p className="mt-1.5 text-[0.88rem] text-[var(--ink-soft)]">
-            {stats.chapters} chapitre(s) · {stats.documents} document(s) · {stats.cards} carte(s)
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[0.85rem] text-[var(--ink-soft)]">
+            <span>{stats.chapters} chapitre(s)</span>
+            <span>· {stats.documents} document(s)</span>
+            {totalPages > 0 && <span>· {totalPages} page(s)</span>}
+            <span>· {stats.notes} note(s)</span>
+            <span>· {notionCount} notion(s)</span>
+            {recentDocument?.lastOpenedAt && (
+              <span>· consulté {formatRelativePast(recentDocument.lastOpenedAt)}</span>
+            )}
           </p>
         )}
       </header>
 
-      {chapters === undefined ? null : chapters.length === 0 ? (
-        <EmptyState
-          icon={<Icon name="notes" size={30} />}
-          title="Ajoute un premier chapitre"
-          description="Les chapitres organisent tes cours. Chacun reçoit ses propres documents, et c’est la portée que tu choisiras quand tu interrogeras l’IA ou généreras des cartes."
-          action={<Button onClick={() => setAddingChapter(true)}>Ajouter un chapitre</Button>}
-        />
-      ) : (
-        <Stagger className="flex flex-col gap-3">
-          {chapters.map((chapter) => {
-            const documents = documentsByChapter?.[chapter.id] ?? [];
-            const isOpen = openChapter === chapter.id;
+      <SegmentedControl segments={TABS} value={tab} onChange={setTab} className="mb-5" />
 
-            return (
-              <StaggerItem key={chapter.id}>
-                <Card padded={false}>
-                  <button
-                    type="button"
-                    data-touch-target
-                    onClick={() => setOpenChapter(isOpen ? null : chapter.id)}
-                    aria-expanded={isOpen}
-                    className="flex w-full items-center justify-between gap-3 p-5 text-left"
-                  >
-                    <div className="min-w-0">
-                      <h2 className="truncate text-[1rem]">{chapter.name}</h2>
-                      <p className="mt-0.5 text-[0.8rem] text-[var(--ink-soft)]">
-                        {documents.length === 0
-                          ? 'Aucun document'
-                          : `${documents.length} document(s)`}
-                      </p>
-                    </div>
-                    <motion.span
-                      aria-hidden
-                      className="shrink-0 text-[var(--ink-faint)]"
-                      animate={{ rotate: isOpen ? 90 : 0 }}
-                      transition={reduced ? { duration: 0 } : springSoft}
-                    >
-                      ›
-                    </motion.span>
-                  </button>
+      {tab === 'documents' && (
+        <>
+          {chapters === undefined ? null : chapters.length === 0 ? (
+            <EmptyState
+              icon={<Icon name="notes" size={30} />}
+              title="Ajoute un premier chapitre"
+              description="Les chapitres organisent tes cours. Chacun reçoit ses propres documents, et c’est la portée que tu choisiras quand tu interrogeras l’IA ou généreras des cartes."
+              action={<Button onClick={() => setAddingChapter(true)}>Ajouter un chapitre</Button>}
+            />
+          ) : (
+            <Stagger className="flex flex-col gap-3">
+              {chapters.map((chapter) => {
+                const documents = documentsByChapter?.[chapter.id] ?? [];
+                const isOpen = openChapter === chapter.id;
 
-                  <AnimatePresence initial={false}>
-                    {isOpen && (
-                      <motion.div
-                        initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                        animate={reduced ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
-                        exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                        transition={reduced ? { duration: 0 } : springSoft}
-                        className="overflow-hidden"
-                      >
-                        <div className="border-t border-[var(--line)] px-5 py-4">
-                          {documents.length > 0 && (
-                            <ul className="mb-4 flex flex-col gap-2">
-                              {documents.map((document) => (
-                                <li
-                                  key={document.id}
-                                  className="flex items-center gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5"
-                                >
-                                  <Link
-                                    to={`/document/${document.id}`}
-                                    className="flex min-w-0 flex-1 items-center gap-3"
-                                  >
-                                    <DocumentThumbnail
-                                      blob={document.thumbnail}
-                                      className="h-14 w-11 shrink-0"
-                                    />
-                                    <div className="min-w-0">
-                                      <p className="truncate text-[0.88rem] font-medium">
-                                        {document.name}
-                                      </p>
-                                      <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.75rem] text-[var(--ink-faint)]">
-                                        {document.pageCount !== null && (
-                                          <span>{document.pageCount} pages</span>
-                                        )}
-                                        <span>· ajouté {formatRelativePast(document.createdAt)}</span>
-                                      </p>
-                                    </div>
-                                  </Link>
-                                  <Button
-                                    size="sm"
-                                    variant="danger"
-                                    onClick={() => handleDeleteDocument(document.id, document.name)}
-                                  >
-                                    Suppr.
-                                  </Button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" onClick={() => setImportingInto(chapter.id)}>
-                              Ajouter un document
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={() => handleDeleteChapter(chapter.id, chapter.name)}
-                            >
-                              Supprimer le chapitre
-                            </Button>
+                return (
+                  <StaggerItem key={chapter.id}>
+                    <Card padded={false}>
+                      <div className="flex w-full items-center gap-2 p-5">
+                        <button
+                          type="button"
+                          data-touch-target
+                          onClick={() => setOpenChapter(isOpen ? null : chapter.id)}
+                          aria-expanded={isOpen}
+                          className="flex flex-1 items-center justify-between gap-3 text-left"
+                        >
+                          <div className="min-w-0">
+                            <h2 className="truncate text-[1rem]">{chapter.name}</h2>
+                            <p className="mt-0.5 text-[0.8rem] text-[var(--ink-soft)]">
+                              {documents.length === 0
+                                ? 'Aucun document'
+                                : `${documents.length} document(s)`}
+                            </p>
                           </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </Card>
-              </StaggerItem>
-            );
-          })}
-        </Stagger>
+                          <motion.span
+                            aria-hidden
+                            className="shrink-0 text-[var(--ink-faint)]"
+                            animate={{ rotate: isOpen ? 90 : 0 }}
+                            transition={reduced ? { duration: 0 } : springSoft}
+                          >
+                            ›
+                          </motion.span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Renommer « ${chapter.name} »`}
+                          data-touch-target
+                          onClick={() => {
+                            setChapterNameDraft(chapter.name);
+                            setRenamingChapter(chapter);
+                          }}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+
+                      <AnimatePresence initial={false}>
+                        {isOpen && (
+                          <motion.div
+                            initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                            animate={reduced ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
+                            exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                            transition={reduced ? { duration: 0 } : springSoft}
+                            className="overflow-hidden"
+                          >
+                            <div className="border-t border-[var(--line)] px-5 py-4">
+                              {documents.length > 0 && (
+                                <ul className="mb-4 flex flex-col gap-2">
+                                  {documents.map((document) => (
+                                    <li
+                                      key={document.id}
+                                      className="flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5"
+                                    >
+                                      <Link
+                                        to={`/document/${document.id}`}
+                                        className="flex min-w-0 flex-1 items-center gap-3"
+                                      >
+                                        <DocumentThumbnail
+                                          blob={document.thumbnail}
+                                          className="h-14 w-11 shrink-0"
+                                        />
+                                        <div className="min-w-0">
+                                          <p className="truncate text-[0.88rem] font-medium">
+                                            {document.name}
+                                          </p>
+                                          <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.75rem] text-[var(--ink-faint)]">
+                                            {document.pageCount !== null && (
+                                              <span>{document.pageCount} pages</span>
+                                            )}
+                                            <DocumentFileSize documentId={document.id} />
+                                            <span>· ajouté {formatRelativePast(document.createdAt)}</span>
+                                          </p>
+                                        </div>
+                                      </Link>
+                                      {chapters.length > 1 && (
+                                        <Select
+                                          aria-label={`Déplacer « ${document.name} »`}
+                                          value={chapter.id}
+                                          onChange={(event) => void handleMoveDocument(document.id, event.target.value)}
+                                          className="w-auto min-h-9 py-1.5 text-[0.78rem]"
+                                        >
+                                          {chapters.map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                              {c.name}
+                                            </option>
+                                          ))}
+                                        </Select>
+                                      )}
+                                      <Button
+                                        size="sm"
+                                        variant="danger"
+                                        onClick={() => handleDeleteDocument(document.id, document.name)}
+                                      >
+                                        Suppr.
+                                      </Button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              <div className="flex flex-wrap gap-2">
+                                <Button size="sm" onClick={() => setImportingInto(chapter.id)}>
+                                  Ajouter un document
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="danger"
+                                  onClick={() => handleDeleteChapter(chapter.id, chapter.name)}
+                                >
+                                  Supprimer le chapitre
+                                </Button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </Card>
+                  </StaggerItem>
+                );
+              })}
+            </Stagger>
+          )}
+
+          {chapters && chapters.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setAddingChapter(true)}>
+                Ajouter un chapitre
+              </Button>
+              <Button variant="danger" onClick={handleDeleteSubject}>
+                Supprimer la matière
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
-      {chapters && chapters.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => setAddingChapter(true)}>
-            Ajouter un chapitre
-          </Button>
-          <Button variant="danger" onClick={handleDeleteSubject}>
-            Supprimer la matière
-          </Button>
+      {tab === 'notes' && (
+        <>
+          {!notes || notes.length === 0 ? (
+            <EmptyState
+              icon={<Icon name="notes" size={30} />}
+              title="Aucune note pour l'instant"
+              description="Ouvre un document et ajoute une note depuis le lecteur — elle apparaîtra ici, liée à sa page d'origine."
+            />
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {notes.map((note) => (
+                <li key={note.id} className="surface-card flex items-start justify-between gap-3 p-4">
+                  <button
+                    type="button"
+                    disabled={note.documentId === null || note.page === null}
+                    onClick={() =>
+                      note.documentId && note.page && navigate(`/document/${note.documentId}?page=${note.page}`)
+                    }
+                    className="min-w-0 flex-1 text-left disabled:cursor-default"
+                  >
+                    {note.documentId && note.page !== null && (
+                      <p className="text-[0.72rem] font-semibold text-[var(--accent)]">
+                        {documentNameById.get(note.documentId) ?? 'Document'} — page {note.page}
+                      </p>
+                    )}
+                    <p className="mt-0.5 whitespace-pre-wrap text-[0.86rem] leading-relaxed">{note.text}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteNote(note.id)}
+                    aria-label="Supprimer la note"
+                    data-touch-target
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-[var(--surface-2)] hover:text-[var(--danger)]"
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {tab === 'notions' && <NotionsTab subjectId={subjectId} chapters={chapters ?? []} />}
+
+      {tab === 'flashcards' && (
+        <EmptyState
+          icon={<Icon name="cards" size={30} />}
+          title="Flashcards de cette matière"
+          description={`${stats?.cards ?? 0} carte(s), dont ${stats?.dueCards ?? 0} à réviser.`}
+          action={
+            <Button onClick={() => navigate(`/flashcards?subject=${subjectId}`)}>
+              Ouvrir les flashcards
+            </Button>
+          }
+        />
+      )}
+
+      {tab === 'quiz' && (
+        <EmptyState
+          icon={<Icon name="quiz" size={30} />}
+          title="Me tester"
+          description="Le générateur de quiz n'est pas encore construit — ce bouton mène à la page Quiz, en préparation."
+          action={<Button onClick={() => navigate('/quiz')}>❓ Me tester</Button>}
+        />
+      )}
+
+      {tab === 'podcast' && (
+        <EmptyState
+          icon={<Icon name="podcast" size={30} />}
+          title="Podcast de cette matière"
+          description="Génère un épisode basé sur le contenu de cette matière ou d'un chapitre précis."
+          action={
+            <Button onClick={() => navigate(`/podcast?subject=${subjectId}`)}>
+              🎙️ Créer un podcast
+            </Button>
+          }
+        />
+      )}
+
+      {tab === 'progression' && (
+        <div className="flex flex-col gap-4">
+          <Card>
+            <p className="text-[0.8rem] text-[var(--ink-faint)]">
+              Résumé réel, limité à ce que l'app peut mesurer : lire un cours ne signifie pas le maîtriser — la
+              maîtrise vient des quiz, des flashcards et des révisions. La page de progression complète n'est pas
+              encore construite.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <p className="text-[1.4rem] font-semibold">{cards ? averageMastery(cards) : 0}%</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Maîtrise moyenne</p>
+              </div>
+              <div>
+                <p className="text-[1.4rem] font-semibold">{stats?.cards ?? 0}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Cartes</p>
+              </div>
+              <div>
+                <p className="text-[1.4rem] font-semibold">{stats?.dueCards ?? 0}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">À réviser</p>
+              </div>
+              <div>
+                <p className="text-[1.4rem] font-semibold">{stats?.quizQuestions ?? 0}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Questions de quiz</p>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -278,6 +525,54 @@ export function SubjectDetailPage() {
           onChange={(event) => setChapterName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') void handleAddChapter();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        open={renamingSubject}
+        onClose={() => setRenamingSubject(false)}
+        title="Renommer la matière"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRenamingSubject(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleRenameSubject}>Enregistrer</Button>
+          </>
+        }
+      >
+        <Input
+          label="Nom"
+          autoFocus
+          value={subjectNameDraft}
+          onChange={(event) => setSubjectNameDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void handleRenameSubject();
+          }}
+        />
+      </Modal>
+
+      <Modal
+        open={renamingChapter !== null}
+        onClose={() => setRenamingChapter(null)}
+        title="Renommer le chapitre"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRenamingChapter(null)}>
+              Annuler
+            </Button>
+            <Button onClick={handleRenameChapter}>Enregistrer</Button>
+          </>
+        }
+      >
+        <Input
+          label="Nom"
+          autoFocus
+          value={chapterNameDraft}
+          onChange={(event) => setChapterNameDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void handleRenameChapter();
           }}
         />
       </Modal>

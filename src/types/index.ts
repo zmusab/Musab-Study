@@ -209,6 +209,9 @@ export interface Note {
   id: ID;
   subjectId: ID;
   chapterId: ID | null;
+  /** Document et page d'où la note a été prise — null pour une note générale, pas liée à un passage précis. */
+  documentId: ID | null;
+  page: number | null;
   title: string;
   text: string;
   createdAt: ISODateTime;
@@ -305,6 +308,20 @@ export interface PodcastConcept {
   /** Vrai si l'IA l'a signalée comme source de confusion fréquente. */
   isPitfall: boolean;
   citations: Citation[];
+}
+
+/**
+ * Analyse d'un chapitre — les notions qu'il contient. Réutilise
+ * `PodcastConcept` : une notion sourcée et vérifiée est la même chose,
+ * qu'elle serve à préparer un podcast ou à peupler l'onglet « Notions »
+ * d'une matière.
+ */
+export interface ChapterAnalysis {
+  id: ID;
+  subjectId: ID;
+  chapterId: ID;
+  notions: PodcastConcept[];
+  generatedAt: ISODateTime;
 }
 
 export type PodcastSegmentType =

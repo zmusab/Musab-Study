@@ -17,6 +17,7 @@ export type AITask =
   | 'podcast-dialogue'
   | 'pdf-explain-page'
   | 'pdf-summarize-chapter'
+  | 'course-notions'
   | 'quiz-generate'
   | 'anatomy-explain';
 

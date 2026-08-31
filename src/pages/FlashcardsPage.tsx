@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
@@ -37,6 +37,7 @@ export function FlashcardsPage() {
   const { notify } = useToast();
   const confirm = useConfirm();
   const reduced = useReducedMotion();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [subjectId, setSubjectId] = useState<ID | ''>('');
   const [chapterId, setChapterId] = useState<ID | 'all'>('all');
@@ -55,9 +56,18 @@ export function FlashcardsPage() {
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
 
+  // Une matière passée depuis la page de cours (« 🃏 Flashcards ») présélectionne
+  // directement cette matière plutôt que la première de la liste.
   useEffect(() => {
-    if (!subjectId && subjects && subjects.length > 0) setSubjectId(subjects[0]!.id);
-  }, [subjects, subjectId]);
+    if (subjectId || !subjects || subjects.length === 0) return;
+    const fromParam = searchParams.get('subject');
+    if (fromParam && subjects.some((s) => s.id === fromParam)) {
+      setSubjectId(fromParam);
+      setSearchParams({}, { replace: true });
+    } else {
+      setSubjectId(subjects[0]!.id);
+    }
+  }, [subjects, subjectId, searchParams, setSearchParams]);
 
   useEffect(() => {
     setChapterId('all');

@@ -21,14 +21,17 @@ const FULL_CAPABILITIES: AIProviderCapabilities = {
   reliability: 'stable',
 };
 
-function makeProvider(overrides: Partial<AIProvider> & Partial<{ capabilities: Partial<AIProviderCapabilities> }> = {}): AIProvider {
+function makeProvider(
+  overrides: Omit<Partial<AIProvider>, 'capabilities'> & { capabilities?: Partial<AIProviderCapabilities> } = {},
+): AIProvider {
+  const { capabilities, ...rest } = overrides;
   return {
     id: 'anthropic',
     label: 'Faux provider',
-    capabilities: { ...FULL_CAPABILITIES, ...overrides.capabilities },
+    capabilities: { ...FULL_CAPABILITIES, ...capabilities },
     isAvailable: () => true,
     ask: async () => 'réponse simulée',
-    ...overrides,
+    ...rest,
   } as AIProvider;
 }
 

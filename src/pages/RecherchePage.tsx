@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
 import { EmptyState, Icon, Input, Spinner, type IconName } from '@/components/ui';
@@ -72,8 +72,22 @@ function ResultRow({ result }: { result: SearchResult }) {
 
 export function RecherchePage() {
   const index = useSearchIndex();
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
+  const [debouncedQuery, setDebouncedQuery] = useState(() => searchParams.get('q') ?? '');
+
+  // Une recherche lancée depuis la page Cours (« 🔎 Rechercher dans mes
+  // cours… ») arrive ici via `?q=` : elle pré-remplit ET déclenche
+  // immédiatement la recherche, sans attendre le débounce ci-dessous.
+  useEffect(() => {
+    const fromParam = searchParams.get('q');
+    if (fromParam) {
+      setQuery(fromParam);
+      setDebouncedQuery(fromParam);
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Le champ reste réactif à chaque frappe ; seul le calcul du score (mot par
   // mot sur le corps de chaque document, potentiellement volumineux) attend

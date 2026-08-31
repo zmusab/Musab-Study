@@ -48,6 +48,10 @@ export const TASK_ROUTES: Record<AITask, TaskRoute> = {
   'podcast-dialogue': { tier: 'balanced' },
   'pdf-explain-page': { tier: 'balanced' },
   'pdf-summarize-chapter': { tier: 'balanced' },
+  // Même logique que flashcards-generate : extraire des notions d'un texte
+  // déjà fourni est mécanique, et validateConcepts() rejette de toute façon
+  // toute notion sans citation vérifiable — le niveau « balanced » suffit.
+  'course-notions': { tier: 'balanced', requires: { structuredOutput: true } },
   'quiz-generate': { tier: 'balanced', requires: { structuredOutput: true } },
   'anatomy-explain': { tier: 'balanced' },
 };

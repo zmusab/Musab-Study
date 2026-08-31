@@ -35,7 +35,11 @@ export type IconName =
   | 'close'
   | 'chevronLeft'
   | 'chevronRight'
-  | 'sparkles';
+  | 'sparkles'
+  | 'plus'
+  | 'trash'
+  | 'fullscreen'
+  | 'fullscreenExit';
 
 const PATHS: Record<IconName, string> = {
   home: 'M3 10.2 12 3.5l9 6.7M5.5 8.8V20h13V8.8M9.8 20v-5.4h4.4V20',
@@ -65,6 +69,10 @@ const PATHS: Record<IconName, string> = {
   chevronLeft: 'M14.5 5 8 12l6.5 7',
   chevronRight: 'M9.5 5 16 12l-6.5 7',
   sparkles: 'M12 3.5v3M12 17.5v3M4.5 12h3M16.5 12h3M6.5 6.5l2 2M15.5 15.5l2 2M17.5 6.5l-2 2M8.5 15.5l-2 2',
+  plus: 'M12 5v14M5 12h14',
+  trash: 'M5 7h14M9.5 7V5.2a1.2 1.2 0 0 1 1.2-1.2h2.6a1.2 1.2 0 0 1 1.2 1.2V7M7.4 7l.9 12.1a1.4 1.4 0 0 0 1.4 1.3h4.6a1.4 1.4 0 0 0 1.4-1.3L16.6 7',
+  fullscreen: 'M8.4 4H4.4v4M19.6 8V4h-4M4.4 16v4h4M15.6 20h4v-4',
+  fullscreenExit: 'M4.4 8.4h4v-4M19.6 8.4h-4v-4M4.4 15.6h4v4M19.6 15.6h-4v4',
 };
 
 export function Icon({

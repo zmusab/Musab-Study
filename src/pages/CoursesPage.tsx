@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
 import {
@@ -21,11 +21,19 @@ export function CoursesPage() {
   const subjects = useSubjects();
   const overviews = useSubjectOverviews();
   const { notify } = useToast();
+  const navigate = useNavigate();
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [color, setColor] = useState<string>(SUBJECT_COLORS[0]);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const runSearch = () => {
+    const query = search.trim();
+    if (query.length === 0) return;
+    navigate(`/recherche?q=${encodeURIComponent(query)}`);
+  };
 
   const handleCreate = async () => {
     if (name.trim().length === 0) {
@@ -57,6 +65,29 @@ export function CoursesPage() {
           ) : undefined
         }
       />
+
+      {subjects && subjects.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') runSearch();
+            }}
+            placeholder="Rechercher dans mes cours…"
+            className="flex-1"
+          />
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={runSearch}
+            disabled={search.trim().length === 0}
+            aria-label="Rechercher"
+          >
+            <Icon name="search" size={17} />
+          </Button>
+        </div>
+      )}
 
       {subjects === undefined ? null : subjects.length === 0 ? (
         <EmptyState

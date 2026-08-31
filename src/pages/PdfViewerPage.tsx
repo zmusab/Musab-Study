@@ -7,11 +7,13 @@ import { Button, EmptyState, Icon, Spinner } from '@/components/ui';
 import { PdfPageCanvas } from '@/components/features/courses/PdfPageCanvas';
 import { PdfSearchPanel } from '@/components/features/courses/PdfSearchPanel';
 import { PdfAiPanel } from '@/components/features/courses/PdfAiPanel';
+import { NotesPanel } from '@/components/features/courses/NotesPanel';
 import { springSoft } from '@/components/motion/transitions';
 import { db } from '@/data/db';
 import { getDocumentFile, recordDocumentOpened, updateLastReadPage } from '@/data/repositories/documents';
 import { openPdfDocument } from '@/services/pdf/render';
 import { useProfile } from '@/hooks/useProfile';
+import { useDocumentNotes } from '@/hooks/useNotes';
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
@@ -47,6 +49,7 @@ export function PdfViewerPage() {
   const [fileMissing, setFileMissing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const readerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -57,7 +60,9 @@ export function PdfViewerPage() {
   const [baseWidth, setBaseWidth] = useState(600);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [panel, setPanel] = useState<'search' | 'ai' | null>(null);
+  const [panel, setPanel] = useState<'search' | 'ai' | 'notes' | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const notes = useDocumentNotes(documentId);
 
   // Marque le document comme consulté — alimente « Continuer mes cours » sur
   // l'accueil, indépendamment de la présence ou non du PDF original.
@@ -195,6 +200,35 @@ export function PdfViewerPage() {
   const zoomIn = () => setZoom((z) => clamp(Math.round((z + 0.15) * 100) / 100, MIN_ZOOM, MAX_ZOOM));
   const zoomOut = () => setZoom((z) => clamp(Math.round((z - 0.15) * 100) / 100, MIN_ZOOM, MAX_ZOOM));
 
+  // Écoute le changement d'état plein écran plutôt que de ne se fier qu'au
+  // clic : l'utilisateur peut sortir du plein écran avec Échap ou un geste
+  // système, sans repasser par le bouton.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === readerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // Dégradation silencieuse : si l'API plein écran n'existe pas (Safari iOS ne
+  // l'expose pas sur <div>), le bouton n'apparaît simplement pas — voir plus bas.
+  //
+  // C'est TOUTE la page lecteur (header compris) qui passe en plein écran, pas
+  // seulement la zone de défilement : le navigateur affiche l'élément demandé
+  // par-dessus tout le reste, sans exception de z-index — mettre en plein
+  // écran uniquement la zone de pages aurait rendu le bouton « quitter » et
+  // « retour » du header inatteignables une fois entré.
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await readerRef.current?.requestFullscreen();
+      }
+    } catch {
+      // Refusé par le navigateur — rien à faire, le bouton reste inerte visuellement en retombant sur son état précédent.
+    }
+  };
+
   const onTouchStart = (event: React.TouchEvent) => {
     if (event.touches.length === 2) {
       pinchRef.current = { startDist: touchDistance(event.touches[0]!, event.touches[1]!), startZoom: zoom };
@@ -239,7 +273,7 @@ export function PdfViewerPage() {
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex flex-col bg-[var(--bg)]">
+    <div ref={readerRef} className="fixed inset-0 z-20 flex flex-col bg-[var(--bg)]">
       <header className="flex shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--bg-elevated)] px-3 py-2.5 pt-safe">
         <Link
           to={`/cours/${doc.subjectId}`}
@@ -291,6 +325,31 @@ export function PdfViewerPage() {
               <Icon name="search" size={17} />
             </button>
           </>
+        )}
+        <button
+          type="button"
+          onClick={() => setPanel((p) => (p === 'notes' ? null : 'notes'))}
+          aria-label="Mes notes"
+          data-touch-target
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--ink-soft)] hover:bg-[var(--surface-2)]"
+        >
+          <Icon name="notes" size={17} />
+          {notes && notes.length > 0 && (
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[0.6rem] font-semibold leading-none text-white">
+              {notes.length}
+            </span>
+          )}
+        </button>
+        {typeof document !== 'undefined' && document.fullscreenEnabled && (
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            aria-label={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}
+            data-touch-target
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--ink-soft)] hover:bg-[var(--surface-2)]"
+          >
+            <Icon name={isFullscreen ? 'fullscreenExit' : 'fullscreen'} size={17} />
+          </button>
         )}
         <button
           type="button"
@@ -373,6 +432,18 @@ export function PdfViewerPage() {
                 <PdfSearchPanel
                   text={doc.text}
                   pageOffsets={doc.pageOffsets}
+                  onJumpToPage={(page) => {
+                    jumpToPage(page);
+                    setPanel(null);
+                  }}
+                  onClose={() => setPanel(null)}
+                />
+              ) : panel === 'notes' ? (
+                <NotesPanel
+                  subjectId={doc.subjectId}
+                  chapterId={doc.chapterId}
+                  documentId={doc.id}
+                  currentPage={currentPage}
                   onJumpToPage={(page) => {
                     jumpToPage(page);
                     setPanel(null);

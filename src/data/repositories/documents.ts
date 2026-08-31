@@ -141,6 +141,19 @@ export async function renameDocument(id: ID, name: string): Promise<void> {
   await db.documents.update(id, { name: name.trim() || 'Document sans nom' });
 }
 
+/**
+ * Déplace un document vers un autre chapitre de la MÊME matière. Ses chunks
+ * suivent (`chapterId` y sert aussi de filtre pour l'analyse par chapitre) —
+ * sans ça, une notion détectée avant le déplacement pointerait vers un
+ * chapitre qui n'a plus le document.
+ */
+export async function moveDocument(documentId: ID, chapterId: ID): Promise<void> {
+  await db.transaction('rw', [db.documents, db.chunks], async () => {
+    await db.documents.update(documentId, { chapterId });
+    await db.chunks.where('documentId').equals(documentId).modify({ chapterId });
+  });
+}
+
 export async function deleteDocument(id: ID): Promise<void> {
   await db.transaction('rw', [db.documents, db.chunks, db.documentFiles], async () => {
     await db.documents.delete(id);

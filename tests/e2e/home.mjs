@@ -77,7 +77,7 @@ await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
 await page.waitForTimeout(400);
 await main.getByRole('link', { name: /Physiologie/ }).click();
 await page.waitForTimeout(400);
-await main.getByRole('button', { name: /Système nerveux/ }).click();
+await main.getByRole('button', { name: /Système nerveux/ }).first().click();
 await page.waitForTimeout(400);
 await main.getByRole('link', { name: /sample/i }).click();
 await page.waitForTimeout(1000);
