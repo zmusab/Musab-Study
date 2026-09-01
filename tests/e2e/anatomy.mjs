@@ -17,6 +17,19 @@ const SHOT = process.env.SCREENSHOT_DIR ?? './dist-screenshots';
 const results = [];
 const errors = [];
 
+/**
+ * Bouton de fermeture du panneau d'information.
+ *
+ * Ciblé par son attribut plutôt que par `getByRole({ name })` : l'instantané
+ * ARIA de Playwright montre pourtant bien `button "Fermer le panneau"`, et le
+ * DOM contient exactement un élément portant ce libellé, mais la recherche par
+ * nom accessible (chaîne exacte comme regex ancrée) n'y renvoie rien dans
+ * cette page. Le sélecteur d'attribut vérifie exactement la même chose — la
+ * présence de l'affordance de fermeture — de façon fiable, et l'ouverture du
+ * panneau est de toute façon corroborée par ses onglets.
+ */
+const closePanelButton = (page) => page.locator('button[aria-label="Fermer le panneau"]');
+
 function check(name, ok, detail = '') {
   results.push({ name, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
@@ -47,7 +60,12 @@ check('Des groupes d’assets par région × système sont bien téléchargés',
 
 // ---------- Corps entier / systèmes par défaut / thème sombre dédié ----------
 check('La page Anatomie 3D s’ouvre', await page.getByText('Anatomie 3D').isVisible());
-check('Le fil d’Ariane démarre sur Tête et cou', await page.getByText('Tête et cou').isVisible());
+// « Tête et cou » apparaît aussi dans l'en-tête de la carte d'exploration :
+// on cible explicitement le fil d'Ariane.
+check(
+  'Le fil d’Ariane démarre sur Tête et cou',
+  await page.getByRole('navigation', { name: 'Navigation anatomique' }).getByText('Tête et cou').isVisible(),
+);
 check('Un canevas WebGL est rendu', await page.locator('canvas').isVisible());
 check(
   'La section Anatomie force le thème sombre (indépendant du thème global de <html>)',
@@ -64,9 +82,11 @@ check(
   'Aucun système n’est marqué « (cours) » : tous ont un maillage réel',
   (await page.getByText('(cours)').count()) === 0,
 );
+// `exact` : « Nerfs crâniens » existe aussi comme région (indisponible) dans
+// la carte d'exploration — on vise bien la bascule de système.
 check(
   'Nerfs est un système activable comme les autres',
-  (await page.getByRole('button', { name: /^Nerfs/ }).getAttribute('aria-pressed')) === 'true',
+  (await page.getByRole('button', { name: 'Nerfs', exact: true }).getAttribute('aria-pressed')) === 'true',
 );
 
 await page.screenshot({ path: `${SHOT}/anatomy-default.png`, fullPage: false });
@@ -85,7 +105,7 @@ await page.getByRole('button', { name: 'Tout afficher' }).click();
 await page.waitForTimeout(300);
 check('« Tout afficher » réactive tous les systèmes', (await page.getByRole('button', { name: 'Organes', exact: true }).getAttribute('aria-pressed')) === 'true');
 
-await page.getByRole('button', { name: '🦴 + 🧠 Squelette et nerfs' }).click();
+await page.getByRole('button', { name: /Squelette et nerfs/ }).click();
 await page.waitForTimeout(300);
 check(
   'Le préréglage « Squelette et nerfs » applique exactement cette combinaison',
@@ -108,20 +128,45 @@ check(
   'Des structures réelles de la sous-région apparaissent dans la carte d’exploration',
   await explorerListItem.first().isVisible(),
 );
-// Le marqueur 3D est un `<button data-touch-target aria-label="…">` distinct
-// de l'entrée de liste — même nom visible, deux éléments : on cible
-// spécifiquement l'attribut du marqueur pour éviter toute ambiguïté.
-const marker = page.locator('[data-touch-target][aria-label="Os temporal droit"]');
-const markerCount = await marker.count();
-check('Un marqueur 3D interactif existe pour une structure réelle de la sous-région', markerCount > 0);
-if (markerCount > 0) {
-  // Les clics précédents (préréglages) ont pu faire défiler la page jusqu'aux
-  // cartes du bas — on doit ramener le viewport 3D à l'écran avant de mesurer.
-  await marker.first().scrollIntoViewIfNeeded();
-  await marker.first().waitFor({ state: 'visible' });
-  const box = await marker.first().boundingBox();
-  check('Le marqueur est positionné dans le canevas (pas hors-écran) — pas décoratif', !!box && box.x > 0 && box.y > 0 && box.y < 900);
-}
+// Marqueurs (§8) : avec l'anti-collision, seules les étiquettes qui TIENNENT
+// à l'écran sont affichées (8 sur 15 pour le crâne) — cibler un nom en dur
+// serait fragile, puisque la sélection dépend de la taille apparente des
+// structures. On interroge donc les étiquettes réellement rendues.
+const visibleMarkers = await page.evaluate(() =>
+  Array.from(document.querySelectorAll('[data-touch-target][aria-label]'))
+    .filter((e) => e.style.position === 'absolute' && e.style.display !== 'none')
+    .map((e) => {
+      const r = e.getBoundingClientRect();
+      return { label: e.getAttribute('aria-label'), x: r.x, y: r.y, w: r.width, h: r.height };
+    }),
+);
+check('Des marqueurs 3D sont affichés pour la sous-région ouverte', visibleMarkers.length > 0, `${visibleMarkers.length} étiquettes`);
+check(
+  'Les marqueurs sont positionnés dans le viewport — pas hors-écran, pas décoratifs',
+  visibleMarkers.every((m) => m.x > 0 && m.y > 0 && m.w > 0 && m.h > 0),
+);
+
+// Aucune étiquette ne doit en recouvrir une autre : c'est tout l'objet de
+// l'algorithme de placement (`services/anatomy/markerLayout.ts`).
+const overlaps = visibleMarkers.reduce((n, a, i) => {
+  for (let j = i + 1; j < visibleMarkers.length; j++) {
+    const b = visibleMarkers[j];
+    if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) n++;
+  }
+  return n;
+}, 0);
+check('Aucun chevauchement entre étiquettes (§8)', overlaps === 0, `${overlaps} chevauchement(s)`);
+
+// Une ligne de rappel est tracée pour chaque étiquette affichée.
+const leaderLines = await page.evaluate(
+  () => Array.from(document.querySelectorAll('svg path')).filter((e) => e.style.display !== 'none' && e.getAttribute('d')).length,
+);
+check('Chaque étiquette affichée est reliée à sa structure par une ligne', leaderLines >= visibleMarkers.length, `${leaderLines} tracés`);
+
+// Les étiquettes en trop sont comptées et révélables, jamais silencieusement perdues.
+const revealButton = page.getByRole('button', { name: /étiquette/ });
+check('Les étiquettes masquées sont comptées et révélables', (await revealButton.count()) === 1);
+
 await page.screenshot({ path: `${SHOT}/anatomy-subregion.png`, fullPage: false });
 
 // Cliquer le marqueur sélectionne réellement la structure (vol de caméra + panneau).
@@ -137,20 +182,24 @@ await page.screenshot({ path: `${SHOT}/anatomy-subregion.png`, fullPage: false }
 // même chemin fonctionnel — sélection d'une structure de la sous-région →
 // panneau — via la liste d'exploration, qui est déterministe.
 await explorerListItem.first().click();
-// Le panneau attend une lecture Dexie complète ; avec 267 structures chargées
-// la page est nettement plus occupée qu'avant — on lui laisse le temps.
-await page.waitForTimeout(6000);
-const panelOpen = (await page.getByRole('button', { name: 'Fermer le panneau' }).count()) === 1;
+// On ATTEND la condition au lieu de dormir une durée fixe : le panneau dépend
+// d'une lecture Dexie dont la durée varie avec la charge de la page (267
+// structures + 17 groupes d'assets). Un `sleep` calibré serait non
+// déterministe par construction.
+const panelOpen = await closePanelButton(page)
+  .waitFor({ state: 'attached', timeout: 20000 })
+  .then(() => true)
+  .catch(() => false);
 check('Sélectionner une structure de la sous-région ouvre son panneau', panelOpen);
 if (panelOpen) {
   const title = ((await page.locator('p.truncate').first().textContent()) ?? '').trim();
   check('Le panneau affiche exactement la structure choisie', title === 'Os temporal droit', title);
-  await page.getByRole('button', { name: 'Fermer le panneau' }).click();
+  await closePanelButton(page).click();
   await page.waitForTimeout(400);
 }
 
 // Revenir à Tête et cou
-await page.getByRole('button', { name: 'Revenir à Tête et cou' }).click();
+await page.getByRole('button', { name: 'Remonter d’un niveau' }).click();
 await page.waitForTimeout(500);
 
 // ---------- Chargement progressif : l'encéphale n'est PAS chargé d'emblée ----------
@@ -182,13 +231,13 @@ const panelOpened = await page
 check('Le panneau d’information s’ouvre', panelOpened);
 check(
   'Un second onglet « Dans tes cours » est proposé',
-  (await page.getByRole('tab', { name: /Dans tes cours/ }).count()) === 1,
+  (await page.getByRole('tab', { name: /^Cours/ }).count()) === 1,
 );
 
 await page.screenshot({ path: `${SHOT}/anatomy-selected.png`, fullPage: false });
 
 // ---------- Onglet « Dans tes cours » ----------
-await page.getByRole('tab', { name: /Dans tes cours/ }).click();
+await page.getByRole('tab', { name: /^Cours/ }).click();
 await page.waitForTimeout(300);
 check(
   'Sans fiche générée, l’onglet Cours reste honnête (aucune source inventée)',
@@ -225,16 +274,19 @@ check('Sans clé API, la génération de flashcard échoue clairement', await pa
 check('« Me tester » mène honnêtement vers /quiz (encore un placeholder)', await page.getByRole('link', { name: '❓ Me tester' }).isVisible());
 
 // ---------- Fermeture du panneau, breadcrumb, retour à la recherche ----------
-await page.getByRole('button', { name: 'Fermer le panneau' }).click();
+await closePanelButton(page).click();
 await page.waitForTimeout(300);
-check('Fermer le panneau retire la structure du fil d’Ariane', !(await page.getByRole('tab', { name: 'Informations' }).isVisible().catch(() => false)));
-check('Le rail de recherche revient une fois le panneau fermé', await page.getByText('Recherche intelligente', { exact: false }).isVisible());
+check('Fermer le panneau retire la fiche de structure', (await page.getByRole('tab', { name: 'Informations' }).count()) === 0);
+check(
+  'La recherche reste visible en permanence, jamais remplacée par le panneau (§4)',
+  await page.getByText('Recherche intelligente', { exact: false }).isVisible(),
+);
 
 // ---------- Mode apprentissage : un vrai mini-jeu, pas une décoration ----------
 await page.getByRole('button', { name: 'Commencer' }).click();
 await page.waitForTimeout(1200);
 check('Le mode apprentissage annonce une vraie structure cible à trouver', await page.getByText(/Trouve\s*:/).first().isVisible());
-check('Le panneau d’information reste caché pendant le jeu — ne révèle pas la réponse', !(await page.getByRole('tab', { name: 'Informations' }).isVisible().catch(() => false)));
+check('Le panneau d’information reste caché pendant le jeu — ne révèle pas la réponse', (await page.getByRole('tab', { name: 'Informations' }).count()) === 0);
 await page.getByRole('button', { name: 'Arrêter' }).click();
 await page.waitForTimeout(300);
 check('Arrêter quitte le mode apprentissage', await page.getByRole('button', { name: 'Commencer' }).isVisible());
@@ -246,6 +298,50 @@ check('Contrôle de réinitialisation de la vue présent', await page.getByLabel
 await page.getByLabel('Zoomer', { exact: true }).click();
 await page.waitForTimeout(200);
 check('Le zoom ne provoque aucune erreur', errors.length === 0);
+
+// ---------- Refonte : 4 colonnes, marqueurs à lignes, corps entier ----------
+await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
+await page.waitForTimeout(500);
+await page.locator('ul li button').first().dispatchEvent('click');
+const panelHere = await closePanelButton(page)
+  .waitFor({ state: 'attached', timeout: 20000 })
+  .then(() => true)
+  .catch(() => false);
+const searchHere = (await page.getByPlaceholder(/Rechercher une structure/).count()) === 1;
+check(
+  'Panneau d’information ET recherche sont visibles en même temps (§4)',
+  panelHere && searchHere,
+  `panneau=${panelHere} recherche=${searchHere}`,
+);
+await closePanelButton(page).click();
+await page.waitForTimeout(300);
+
+check('Le contrôle « Masquer le reste » existe (§10)', (await page.getByRole('button', { name: 'Masquer le reste' }).count()) === 1);
+check('Le contrôle « Réinitialiser la vue » existe (§10)', (await page.getByRole('button', { name: 'Réinitialiser la vue' }).count()) === 1);
+
+const comboActive = await page
+  .getByRole('button', { name: /Tout afficher/ })
+  .first()
+  .getAttribute('aria-pressed');
+check('Les combinaisons reflètent l’état réel des systèmes (§12)', comboActive === 'true', `aria-pressed=${comboActive}`);
+
+// Navigation corps entier : les régions non modélisées sont annoncées comme
+// telles, jamais masquées ni simulées.
+const up = page.getByRole('button', { name: 'Remonter d’un niveau' });
+if ((await up.count()) > 0) {
+  await up.first().click();
+  await page.waitForTimeout(400);
+  const unavailable = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('button'))
+      .filter((e) => /Tronc|Membre supérieur|Membre inférieur/.test(e.textContent ?? ''))
+      .map((e) => e.disabled),
+  );
+  check(
+    'Le corps entier expose ses régions, désactivées tant qu’aucun maillage n’existe (§3/§20)',
+    unavailable.length === 3 && unavailable.every(Boolean),
+    `${unavailable.length} régions`,
+  );
+}
 
 console.log('\n--- Erreurs console ---');
 console.log(errors.length === 0 ? 'aucune' : errors.join('\n'));

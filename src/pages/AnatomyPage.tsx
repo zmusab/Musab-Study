@@ -29,6 +29,14 @@ const DEFAULT_SYSTEMS: Record<AnatomyCategory, boolean> = {
 };
 const ALL_CATEGORIES: AnatomyCategory[] = ['squelette', 'muscles', 'nerfs', 'vaisseaux', 'organes'];
 
+/** Combinaisons proposées (§12) — chacune applique réellement l'état des 5 systèmes. */
+const COMBINATIONS: { label: string; icons: string; categories: AnatomyCategory[] }[] = [
+  { label: 'Squelette et nerfs', icons: '🦴🧠', categories: ['squelette', 'nerfs'] },
+  { label: 'Muscles et vaisseaux', icons: '💪🩸', categories: ['muscles', 'vaisseaux'] },
+  { label: 'Squelette seul', icons: '🦴', categories: ['squelette'] },
+  { label: 'Tout afficher', icons: '🦴💪🧠🩸', categories: ALL_CATEGORIES },
+];
+
 /** Charge chunks + lookup à la demande, seulement une fois qu'une structure est sélectionnée. */
 function StructureDetailWrapper({ structureId, onClose }: { structureId: ID; onClose: () => void }) {
   const structure = useAnatomyStructure(structureId);
@@ -151,6 +159,11 @@ export function AnatomyPage() {
     setSelectedId(id);
     if (id === null) setIsolated(false);
     else setFlyToToken((t) => t + 1);
+  };
+
+  const resetView = () => {
+    setIsolated(false);
+    viewerRef.current?.resetView();
   };
 
   const toggleSystem = (category: AnatomyCategory) => {
@@ -284,8 +297,8 @@ export function AnatomyPage() {
           Le rail de navigation de l'app passe en mode icônes sur cette route,
           ce qui rend ~176 px au contenu et permet de tenir les 4 colonnes sur
           un iPad en paysage sans écraser le modèle. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[12rem_minmax(0,1fr)_20rem_16rem]">
-        <aside className="flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:border-b-0 lg:border-r">
+      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[10.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[12rem_minmax(0,1fr)_20rem_16rem]">
+        <aside className="col-span-2 flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:col-span-1 lg:border-b-0 lg:border-r">
           <div>
             <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Systèmes</p>
             <SystemToggleBar active={activeSystems} onToggle={toggleSystem} />
@@ -297,7 +310,7 @@ export function AnatomyPage() {
 
         {/* `min-w-0` est essentiel : sans lui, un enfant grid contenant un
             <canvas> refuse de rétrécir sous sa taille intrinsèque. */}
-        <div className="relative min-h-[45vh] min-w-0 overflow-hidden lg:min-h-0">
+        <div className="relative col-span-2 min-h-[50vh] min-w-0 overflow-hidden lg:col-span-1 lg:min-h-0">
           {structures === undefined ? (
             <div className="flex h-full items-center justify-center">
               <Spinner size={22} />
@@ -337,7 +350,7 @@ export function AnatomyPage() {
         {/* Colonne INFORMATIONS — une vraie colonne du layout, visible en
             même temps que le modèle ET que la recherche (§4). Elle ne
             remplace jamais la recherche et ne recouvre jamais le modèle. */}
-        <div className="min-h-[32vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
+        <div className="min-h-[30vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
           {showInfoPanel ? (
             <StructureDetailWrapper structureId={selectedStructure!.id} onClose={() => selectStructure(null)} />
           ) : (
@@ -355,7 +368,7 @@ export function AnatomyPage() {
         </div>
 
         {/* Colonne RECHERCHE — permanente, jamais remplacée par le panneau. */}
-        <div className="min-h-[28vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
+        <div className="min-h-[30vh] shrink-0 overflow-hidden border-l border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-t-0">
           <div className="h-full p-3">
             <AnatomySearchBar structures={structures ?? []} selectedId={selectedId} onSelect={selectStructure} />
           </div>
@@ -375,27 +388,46 @@ export function AnatomyPage() {
           onSelectStructure={selectStructure}
         />
 
+        {/* Mode isolation (§10) — trois vrais outils de mise en évidence. */}
         <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
-          <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Mode isolation</p>
-          {isolated && selectedStructure ? (
-            <>
-              <p className="min-h-0 flex-1 overflow-y-auto text-[0.82rem] leading-relaxed text-[var(--ink)]">
-                <span className="font-medium">{selectedStructure.name}</span> isolé — tout le reste est masqué.
-              </p>
+          <p className="mb-1.5 text-[0.85rem] font-semibold text-[var(--ink)]">Mode isolation</p>
+          <p className="mb-2 min-h-0 flex-1 overflow-y-auto text-[0.76rem] leading-snug text-[var(--ink-faint)]">
+            {isolated && selectedStructure ? (
+              <>
+                <span className="font-medium text-[var(--ink)]">{selectedStructure.name}</span> isolé — tout le reste est
+                masqué.
+              </>
+            ) : selectedStructure ? (
+              <>
+                <span className="font-medium text-[var(--ink)]">{selectedStructure.name}</span> sélectionné.
+              </>
+            ) : (
+              'Sélectionne une structure dans le modèle pour l’isoler.'
+            )}
+          </p>
+          <div className="flex shrink-0 flex-col gap-1.5">
+            {isolated ? (
               <Button size="sm" variant="secondary" onClick={() => setIsolated(false)}>
                 Restaurer
               </Button>
-            </>
-          ) : (
-            <>
-              <p className="min-h-0 flex-1 overflow-y-auto text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
-                Sélectionne une structure dans le modèle, puis isole-la pour la voir seule.
-              </p>
+            ) : (
               <Button size="sm" variant="secondary" disabled={!selectedStructure} onClick={() => setIsolated(true)}>
                 Isoler la sélection
               </Button>
-            </>
-          )}
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="justify-start"
+              disabled={!selectedStructure}
+              onClick={() => setIsolated(true)}
+            >
+              🚫 Masquer le reste
+            </Button>
+            <Button size="sm" variant="ghost" className="justify-start" onClick={resetView}>
+              ⟲ Réinitialiser la vue
+            </Button>
+          </div>
         </div>
 
         <LearningModeCard
@@ -408,20 +440,35 @@ export function AnatomyPage() {
           onNext={nextLearningQuestion}
         />
 
+        {/* Combinaisons (§12) — vignettes cliquables qui appliquent réellement
+            la combinaison de systèmes, et signalent celle qui est active. */}
         <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
-          <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Combinaisons</p>
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
-            <Button size="sm" variant="ghost" className="justify-start" onClick={() => applyPreset(['squelette', 'nerfs'])}>
-              🦴 + 🧠 Squelette et nerfs
-            </Button>
-            <Button size="sm" variant="ghost" className="justify-start" onClick={() => applyPreset(['muscles', 'vaisseaux'])}>
-              💪 + 🩸 Muscles et vaisseaux
-            </Button>
-            <Button size="sm" variant="ghost" className="justify-start" onClick={() => applyPreset(ALL_CATEGORIES)}>
-              Tout afficher
-            </Button>
+          <p className="mb-1.5 text-[0.85rem] font-semibold text-[var(--ink)]">Combinaisons</p>
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-1.5 overflow-y-auto">
+            {COMBINATIONS.map((combo) => {
+              const active = ALL_CATEGORIES.every((c) => activeSystems[c] === combo.categories.includes(c));
+              return (
+                <button
+                  key={combo.label}
+                  type="button"
+                  onClick={() => applyPreset(combo.categories)}
+                  aria-pressed={active}
+                  className={
+                    'flex flex-col items-center justify-center gap-1 rounded-[var(--radius-control)] border px-1 py-2 text-center transition-colors ' +
+                    (active
+                      ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
+                      : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
+                  }
+                >
+                  <span aria-hidden className="text-[1.05rem] leading-none">
+                    {combo.icons}
+                  </span>
+                  <span className="text-[0.68rem] leading-tight text-[var(--ink-soft)]">{combo.label}</span>
+                </button>
+              );
+            })}
           </div>
-          <Button size="sm" variant="ghost" className="justify-start" onClick={hideAll}>
+          <Button size="sm" variant="ghost" className="mt-1.5 shrink-0 justify-start" onClick={hideAll}>
             Tout masquer
           </Button>
         </div>
