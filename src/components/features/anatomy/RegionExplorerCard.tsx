@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Icon } from '@/components/ui';
+import { Icon, Modal } from '@/components/ui';
 import { StructureThumbnail } from './StructureThumbnail';
 import { BodySchema, schemaHasZone, schemaRegionBox } from './BodySchema';
 import { pickRepresentative } from '@/services/anatomy/representative';
@@ -23,7 +23,7 @@ import type { AnatomyStructure, ID } from '@/types';
 export function RegionExplorerCard({
   structures,
   focusedSubregion,
-  onOpenSubregion,
+  onOpenSubregion: onOpenSubregionProp,
   onCloseSubregion,
   selectedId,
   onSelectStructure,
@@ -37,11 +37,18 @@ export function RegionExplorerCard({
 }) {
   const regions = useMemo(() => summarizeRegions(structures), [structures]);
   const [regionId, setRegionId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const subregions = useMemo(
     () => (regionId ? summarizeSubregions(structures, regionId) : []),
     [structures, regionId],
   );
+  /** Ouvrir une sous-région referme le grand schéma : on veut voir le modèle. */
+  const onOpenSubregion = (id: string) => {
+    setExpanded(false);
+    onOpenSubregionProp(id);
+  };
+
   const focusedStructures = focusedSubregion ? structuresInSubregion(structures, focusedSubregion) : [];
   const level = focusedSubregion ? 'structures' : regionId ? 'subregions' : 'regions';
 
@@ -77,6 +84,18 @@ export function RegionExplorerCard({
           </button>
         )}
         <p className="min-w-0 flex-1 truncate text-[0.85rem] font-semibold text-[var(--ink)]">{title}</p>
+        {/* Le rail est étroit par nature ; l'agrandissement donne au schéma
+            une taille réellement confortable au doigt sur iPad (§8/§18). */}
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label="Agrandir le schéma anatomique"
+          title="Agrandir le schéma anatomique"
+          data-touch-target
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--ink-faint)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+        >
+          <Icon name="fullscreen" size={13} />
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
@@ -162,6 +181,57 @@ export function RegionExplorerCard({
           Clique sur une structure pour l’explorer.
         </p>
       )}
+
+      <Modal
+        open={expanded}
+        onClose={() => setExpanded(false)}
+        size="lg"
+        // La section Anatomie force le thème sombre ; la modale, rendue dans
+        // un portail, doit le suivre explicitement.
+        theme="dark"
+        title={regionId ? (regions.find((r) => r.id === regionId)?.label ?? 'Région') : 'Exploration par région'}
+        description={
+          regionId
+            ? 'Touche une zone pour l’ouvrir dans le modèle 3D.'
+            : 'Touche une région du corps pour voir ses sous-régions.'
+        }
+      >
+        <div className="flex h-[62vh] min-h-0 flex-col">
+          {regionId ? (
+            <BodySchema
+              kind="sub"
+              zones={subregions
+                .filter((sub) => sub.meshCount > 0)
+                .map((sub) => ({ id: sub.id, label: sub.label, detail: `${sub.meshCount} structures en 3D` }))}
+              activeId={focusedSubregion}
+              onSelect={onOpenSubregion}
+              hint="Touche une zone de la région."
+              crop={schemaRegionBox(regionId)}
+            />
+          ) : (
+            <BodySchema
+              kind="region"
+              zones={regions.map((r) => ({
+                id: r.id,
+                label: r.label,
+                detail: `${r.meshCount} structures en 3D`,
+              }))}
+              activeId={null}
+              onSelect={setRegionId}
+              hint="Touche une région du corps."
+            />
+          )}
+          {regionId && (
+            <button
+              type="button"
+              onClick={() => setRegionId(null)}
+              className="mt-2 shrink-0 self-center rounded-full border border-[var(--line)] px-3 py-1.5 text-[0.8rem] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]"
+            >
+              ← Toutes les régions
+            </button>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

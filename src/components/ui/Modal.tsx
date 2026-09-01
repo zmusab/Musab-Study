@@ -21,6 +21,7 @@ export function Modal({
   children,
   footer,
   size = 'md',
+  theme,
 }: {
   open: boolean;
   onClose: () => void;
@@ -29,6 +30,12 @@ export function Modal({
   children?: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * Thème forcé pour cette modale. La modale est rendue dans un PORTAIL sur
+   * `document.body` : elle sort donc du sous-arbre qui porte `data-theme`, et
+   * une section sombre (Anatomie) obtenait sinon une modale blanche.
+   */
+  theme?: 'light' | 'dark';
 }) {
   const reduced = useReducedMotion();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -78,7 +85,10 @@ export function Modal({
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6">
+        <div
+          data-theme={theme}
+          className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
+        >
           <motion.div
             className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}

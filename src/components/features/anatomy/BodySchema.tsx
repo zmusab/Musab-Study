@@ -30,12 +30,26 @@ export function schemaRegionBox(id: string): [number, number, number, number] | 
   return ZONES.region.get(id)?.box ?? null;
 }
 
-/** Marge autour du cadre, pour ne pas coller la région au bord de l'image. */
-const CROP_PADDING = 12;
+/** Marge autour du cadre (en pixels du schéma), pour ne pas coller la région au bord. */
+const CROP_PADDING = 24;
 
-/** Diamètre d'un point d'accroche, et écart minimal entre deux points. */
-const DOT = 12;
-const DOT_SPACING = 18;
+/**
+ * Taille d'un point d'accroche. Elle est CALCULÉE, pas fixe, pour deux
+ * raisons :
+ *
+ *  - sur écran tactile, une règle globale impose `min-height: 44px` à tout
+ *    `button` (cible Apple). Un point de 12 px y devient donc haut de 44 px
+ *    et recouvre ses voisins alors que le calcul d'écartement, lui, croyait
+ *    12 px. Il faut que l'écartement et la taille RÉELLE coïncident ;
+ *  - le même composant sert au rail étroit (≈160 px de haut) et au schéma
+ *    agrandi (≈500 px). Une taille unique serait trop grosse ici ou
+ *    ridicule là.
+ *
+ * On prend donc la plus grande taille qui laisse tenir toutes les zones sans
+ * chevauchement, plafonnée à la cible tactile confortable.
+ */
+const DOT_MIN = 14;
+const DOT_MAX = 44;
 
 /**
  * Schéma anatomique interactif.
@@ -110,6 +124,10 @@ export function BodySchema({
    * position réelle, comme les marqueurs du modèle 3D. On réutilise
    * `spreadPositions`, la fonction pure déjà testée pour ces marqueurs.
    */
+  const dotSize = Math.round(
+    Math.max(DOT_MIN, Math.min(DOT_MAX, box.h / Math.max(1, shown.length + 0.5))),
+  );
+
   const placed = useMemo(() => {
     if (box.h === 0) return [];
     const pts = shown
@@ -124,14 +142,14 @@ export function BodySchema({
       .sort((a, b) => a.anchorY - b.anchorY);
     const ys = spreadPositions(
       pts.map((p) => p.anchorY),
-      DOT_SPACING,
-      DOT / 2,
-      Math.max(DOT / 2, box.h - DOT / 2),
+      dotSize,
+      dotSize / 2,
+      Math.max(dotSize / 2, box.h - dotSize / 2),
     );
     return pts.map((p, i) => ({ ...p, dotX: p.anchorX, dotY: ys[i]! }));
     // `view` est recalculé à chaque rendu mais dérive de `crop` : on dépend de ses champs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, kind, box.w, box.h, view.x, view.y, view.w, view.h]);
+  }, [shown, kind, box.w, box.h, view.x, view.y, view.w, view.h, dotSize]);
 
   const imageStyle = {
     position: 'absolute' as const,
@@ -206,14 +224,23 @@ export function BodySchema({
               aria-label={zone.label}
               aria-pressed={isActive}
               title={zone.label}
-              style={{ left: dotX, top: dotY, width: DOT, height: DOT }}
-              className={
-                'absolute -translate-x-1/2 -translate-y-1/2 rounded-full border transition-transform duration-150 hover:scale-150 focus-visible:scale-150 ' +
-                (isActive
-                  ? 'border-white bg-[var(--accent)] shadow-[0_0_0_2px_var(--accent)]'
-                  : 'border-white/90 bg-[var(--accent)]/85 shadow')
-              }
-            />
+              // `minHeight` explicite : sans lui, la règle tactile globale
+              // (`min-height: 44px` sur tout bouton) casserait l'écartement
+              // calculé et ferait se recouvrir les zones.
+              style={{ left: dotX, top: dotY, width: dotSize, height: dotSize, minHeight: dotSize }}
+              className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full"
+            >
+              <span
+                aria-hidden
+                style={{ width: Math.max(9, Math.round(dotSize * 0.42)), height: Math.max(9, Math.round(dotSize * 0.42)) }}
+                className={
+                  'block rounded-full border transition-transform duration-150 ' +
+                  (isActive
+                    ? 'border-white bg-[var(--accent)] shadow-[0_0_0_2px_var(--accent)]'
+                    : 'border-white/90 bg-[var(--accent)]/85 shadow')
+                }
+              />
+            </button>
           );
         })}
       </div>

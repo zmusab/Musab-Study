@@ -50,8 +50,7 @@ export function LearningModeCard({
   const place = subregionMeta(target?.subregion ?? null);
 
   return (
-    <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
-      <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Mode apprentissage</p>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
 
       {!active ? (
         <>

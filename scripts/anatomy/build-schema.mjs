@@ -36,9 +36,13 @@ const CATALOG = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'bodyCatalog.json
 const OUT_DIR = path.join(REPO_ROOT, 'public', 'anatomy', 'schema');
 const MAP_FILE = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'schemaMap.json');
 
-const WIDTH = 260;
-const HEIGHT = 660;
-const MARGIN = 6;
+// Résolution du schéma. Elle sert à deux échelles très différentes : la
+// vignette du rail (~130 px de large) ET le schéma agrandi en modale, où une
+// région est recadrée puis affichée sur ~500 px. Un rendu à 260×660 y était
+// visiblement pixelisé — d'où ce doublement.
+const WIDTH = 520;
+const HEIGHT = 1320;
+const MARGIN = 12;
 
 /** Le tégument recouvrirait tout le corps : on l'exclut du schéma. */
 const EXCLUDED_SUBREGIONS = new Set(['tegument']);

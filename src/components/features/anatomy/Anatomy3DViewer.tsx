@@ -20,7 +20,7 @@ import {
   type LearningFeedbackKind,
 } from '@/services/anatomy/visibility';
 import assetManifest from '@/data/anatomy/assetManifest.json';
-import { layoutMarkers, type MarkerAnchor } from '@/services/anatomy/markerLayout';
+import { layoutDots, placeDotLabel, type DotAnchor } from '@/services/anatomy/dotLayout';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
 
 /**
@@ -65,19 +65,38 @@ const FEEDBACK_EMISSIVE: Record<string, string> = {
   none: '#000000',
 };
 
-/** Couleur de la ligne de rappel pendant la correction du mode apprentissage. */
-const FEEDBACK_LINE: Record<string, string | undefined> = {
-  correct: '#2f9e44',
-  incorrect: '#d64545',
-  none: undefined,
+/**
+ * Distance minimale entre deux points à l'écran. Doit rester au moins égale
+ * au diamètre de la cible tactile (28 px) : en dessous, deux points voisins
+ * deviennent impossibles à viser au doigt sur iPad.
+ */
+const DOT_MIN_DISTANCE = 30;
+
+/**
+ * Direction caméra → cible pour chaque vue anatomique, dans le repère
+ * APRÈS correction d'axe (données Z-haut ramenées en Y-haut). Les vues
+ * supérieure et inférieure sont légèrement inclinées : une direction
+ * exactement verticale ferait perdre son cap au contrôleur d'orbite.
+ */
+const VIEW_DIRECTIONS: Record<AnatomicalView, [number, number, number]> = {
+  anterieure: [0, 0, 1],
+  posterieure: [0, 0, -1],
+  droite: [-1, 0, 0],
+  gauche: [1, 0, 0],
+  superieure: [0, 1, 0.001],
+  inferieure: [0, -1, 0.001],
 };
 
-/** Au-delà, les étiquettes secondaires sont masquées et comptées (§8). */
-const DEFAULT_MAX_LABELS = 8;
+
+
+/** Vues anatomiques standard (§13). */
+export type AnatomicalView = 'anterieure' | 'posterieure' | 'droite' | 'gauche' | 'superieure' | 'inferieure';
 
 export interface Anatomy3DViewerHandle {
   /** Cadre la caméra sur la boîte englobante réelle des structures données (sous-région, résultat de recherche). */
   flyToStructures: (ids: ID[]) => void;
+  /** Oriente la caméra selon une vue anatomique, sans changer la distance ni la cible. */
+  setView: (view: AnatomicalView) => void;
   resetView: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -264,42 +283,42 @@ interface MarkerAnchorWorld {
 }
 
 /**
- * Projection des ancres vers l'écran (§8), À L'INTÉRIEUR du Canvas.
+ * Projection des ancres vers l'écran, À L'INTÉRIEUR du Canvas.
  *
- * Ce composant ne rend RIEN : il calcule à chaque image la position écran de
- * chaque ancre, délègue le placement à `layoutMarkers` (fonction pure testée
- * à part) puis écrit DIRECTEMENT dans le DOM de la couche d'étiquettes via
- * des refs. Passer par un `setState` à 60 Hz re-rendrait tout l'arbre React à
- * chaque image.
+ * Ce composant ne rend RIEN : à chaque image il projette la position monde de
+ * chaque structure, délègue le regroupement des points à `layoutDots`
+ * (fonction pure testée à part) puis écrit DIRECTEMENT dans le DOM de la
+ * couche de points via des refs. Passer par un `setState` à 60 Hz
+ * re-rendrait tout l'arbre React à chaque image.
  *
- * Les étiquettes elles-mêmes sont rendues HORS du Canvas (`MarkerOverlay`) :
+ * La couche elle-même est rendue HORS du Canvas (`DotOverlay`) : le
  * `<Html fullscreen>` de drei applique sa propre transformation au conteneur,
  * dont l'origine ne coïncide pas avec le coin haut-gauche du canevas — les
- * étiquettes se retrouvaient positionnées hors du cadre visible.
+ * points se retrouvaient positionnés hors du cadre visible.
  */
-function MarkerProjector({
+function DotProjector({
   anchors,
-  labelRefs,
-  lineRefs,
-  selectedId,
-  showAll,
-  onHiddenCountChange,
+  dotRefs,
+  badgeRefs,
+  labelRef,
+  lineRef,
+  activeId,
 }: {
   anchors: MarkerAnchorWorld[];
-  labelRefs: RefObject<Map<ID, HTMLButtonElement>>;
-  lineRefs: RefObject<Map<ID, SVGPathElement>>;
-  selectedId: ID | null;
-  showAll: boolean;
-  onHiddenCountChange: (n: number) => void;
+  dotRefs: RefObject<Map<ID, HTMLButtonElement>>;
+  badgeRefs: RefObject<Map<ID, HTMLSpanElement>>;
+  labelRef: RefObject<HTMLDivElement | null>;
+  lineRef: RefObject<SVGPathElement | null>;
+  /** Point dont le nom est affiché : la sélection, ou le survol à défaut. */
+  activeId: ID | null;
 }) {
   const { camera, size } = useThree();
-  const lastHidden = useRef(-1);
   const scratch = useRef(new THREE.Vector3());
 
   useFrame(() => {
     if (anchors.length === 0) return;
 
-    const screenAnchors: MarkerAnchor[] = anchors.map(({ id, world, radius }) => {
+    const screenAnchors: DotAnchor[] = anchors.map(({ id, world, radius }) => {
       scratch.current.copy(world).project(camera);
       const x = (scratch.current.x * 0.5 + 0.5) * size.width;
       const y = (-scratch.current.y * 0.5 + 0.5) * size.height;
@@ -307,50 +326,63 @@ function MarkerProjector({
         id,
         x,
         y,
-        onScreen: scratch.current.z < 1 && x > -40 && x < size.width + 40 && y > -40 && y < size.height + 40,
-        // Priorité = taille apparente : les grosses structures portent le
-        // repérage, les petites cèdent la place quand ça se bouscule.
+        onScreen: scratch.current.z < 1 && x > 0 && x < size.width && y > 0 && y < size.height,
+        // Priorité = taille apparente : dans un groupe serré, c'est la grosse
+        // structure qui porte le point, celle qu'on vise naturellement.
         priority: radius,
       };
     });
 
-    const { placed, hiddenIds } = layoutMarkers(screenAnchors, {
+    const dots = layoutDots(screenAnchors, {
       width: size.width,
       height: size.height,
-      maxLabels: showAll ? screenAnchors.length : DEFAULT_MAX_LABELS,
-      // 48 px > 44 px de hauteur d'étiquette (cible tactile) : en dessous,
-      // deux étiquettes voisines se recouvriraient.
-      spacing: 48,
-      pinnedId: selectedId,
+      minDistance: DOT_MIN_DISTANCE,
+      pinnedId: activeId,
     });
 
-    if (hiddenIds.length !== lastHidden.current) {
-      lastHidden.current = hiddenIds.length;
-      onHiddenCountChange(hiddenIds.length);
+    const placedIds = new Set(dots.map((d) => d.id));
+    for (const [id, el] of dotRefs.current) if (!placedIds.has(id)) el.style.display = 'none';
+
+    let activeDot: { x: number; y: number } | null = null;
+    for (const dot of dots) {
+      const el = dotRefs.current.get(dot.id);
+      if (el) {
+        el.style.display = '';
+        el.style.transform = `translate(${dot.x}px, ${dot.y}px) translate(-50%, -50%)`;
+      }
+      const badge = badgeRefs.current.get(dot.id);
+      if (badge) {
+        // « +N » : le nombre de structures RÉELLES fondues dans ce point.
+        // Zoomer les sépare, rien n'est perdu.
+        badge.textContent = dot.merged.length > 0 ? `+${dot.merged.length}` : '';
+        badge.style.display = dot.merged.length > 0 ? '' : 'none';
+      }
+      if (dot.id === activeId) activeDot = dot;
     }
 
-    const placedIds = new Set(placed.map((p) => p.id));
-    for (const [id, el] of labelRefs.current) if (!placedIds.has(id)) el.style.display = 'none';
-    for (const [id, el] of lineRefs.current) if (!placedIds.has(id)) el.style.display = 'none';
-
-    for (const p of placed) {
-      const label = labelRefs.current.get(p.id);
-      if (label) {
-        label.style.display = '';
-        // Côté droit : l'étiquette est ancrée par son bord droit pour rester
-        // collée à la marge.
-        label.style.transform =
-          p.side === 'left'
-            ? `translate(${p.labelX}px, ${p.labelY}px) translate(0, -50%)`
-            : `translate(${p.labelX}px, ${p.labelY}px) translate(-100%, -50%)`;
-      }
-      const line = lineRefs.current.get(p.id);
+    // Une seule étiquette à l'écran : celle du point actif. Le modèle reste
+    // propre, contrairement à une étiquette par structure.
+    const label = labelRef.current;
+    const line = lineRef.current;
+    if (!activeDot || !activeId) {
+      if (label) label.style.display = 'none';
+      if (line) line.style.display = 'none';
+      return;
+    }
+    if (label) {
+      const rect = label.getBoundingClientRect();
+      const placement = placeDotLabel(activeDot, {
+        width: size.width,
+        height: size.height,
+        labelWidth: rect.width || 160,
+        labelHeight: rect.height || 32,
+      });
+      label.style.display = '';
+      label.style.transform = `translate(${placement.x}px, ${placement.y}px) translate(0, -50%)`;
       if (line) {
         line.style.display = '';
-        // Coude horizontal court près de l'étiquette, puis segment direct
-        // vers la structure : lisible et sans croisement inutile.
-        const elbowX = p.side === 'left' ? p.labelX + 10 : p.labelX - 10;
-        line.setAttribute('d', `M ${elbowX} ${p.labelY} L ${(elbowX + p.anchorX) / 2} ${p.labelY} L ${p.anchorX} ${p.anchorY}`);
+        const endX = placement.side === 'right' ? placement.x : placement.x + (rect.width || 160);
+        line.setAttribute('d', `M ${activeDot.x} ${activeDot.y} L ${endX} ${placement.y}`);
       }
     }
   });
@@ -359,48 +391,64 @@ function MarkerProjector({
 }
 
 /**
- * Couche DOM des étiquettes + lignes de rappel, superposée au canevas.
+ * Couche DOM des POINTS interactifs, superposée au canevas.
  *
- * `feedbackById` porte la correction du mode apprentissage : l'étiquette de
- * la bonne structure passe en vert avec une coche, celle d'une réponse
- * erronée en rouge avec une croix — la correction est donc lisible SUR le
- * modèle, à l'endroit exact de la structure, pas seulement dans un panneau.
+ * Un point par structure disponible, sans texte : le modèle reste lisible.
+ * Le nom n'apparaît que pour le point actif (sélectionné, ou survolé), relié
+ * par une ligne de rappel. Les points trop proches sont regroupés par
+ * `layoutDots` et le point survivant affiche « +N ».
+ *
+ * `feedbackById` porte la correction du mode apprentissage : le point de la
+ * bonne structure passe en vert, celui d'une réponse erronée en rouge — la
+ * correction est donc lisible SUR le modèle, à l'endroit exact.
  */
-function MarkerOverlay({
+function DotOverlay({
   anchors,
   structuresById,
   selectedId,
+  activeId,
   feedbackById,
   onSelectStructure,
-  labelRefs,
-  lineRefs,
+  onHoverDot,
+  dotRefs,
+  badgeRefs,
+  labelRef,
+  lineRef,
 }: {
   anchors: MarkerAnchorWorld[];
   structuresById: Map<ID, AnatomyStructure>;
   selectedId: ID | null;
+  activeId: ID | null;
   feedbackById: ReadonlyMap<ID, LearningFeedbackKind>;
   onSelectStructure: (id: ID) => void;
-  labelRefs: RefObject<Map<ID, HTMLButtonElement>>;
-  lineRefs: RefObject<Map<ID, SVGPathElement>>;
+  onHoverDot: (id: ID | null) => void;
+  dotRefs: RefObject<Map<ID, HTMLButtonElement>>;
+  badgeRefs: RefObject<Map<ID, HTMLSpanElement>>;
+  labelRef: RefObject<HTMLDivElement | null>;
+  lineRef: RefObject<SVGPathElement | null>;
 }) {
   if (anchors.length === 0) return null;
+  const activeStructure = activeId ? structuresById.get(activeId) : null;
+  const activeFeedback = activeId ? (feedbackById.get(activeId) ?? null) : null;
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <svg className="absolute inset-0 h-full w-full" aria-hidden>
-        {anchors.map(({ id }) => (
-          <path
-            key={id}
-            ref={(el) => {
-              if (el) lineRefs.current.set(id, el);
-              else lineRefs.current.delete(id);
-            }}
-            fill="none"
-            stroke={FEEDBACK_LINE[feedbackById.get(id) ?? 'none'] ?? (id === selectedId ? 'var(--accent)' : 'rgba(255,255,255,0.32)')}
-            strokeWidth={feedbackById.has(id) || id === selectedId ? 1.6 : 1}
-            style={{ display: 'none' }}
-          />
-        ))}
+        <path
+          ref={lineRef}
+          fill="none"
+          stroke={
+            activeFeedback === 'correct'
+              ? '#2f9e44'
+              : activeFeedback === 'incorrect'
+                ? '#d64545'
+                : 'var(--accent)'
+          }
+          strokeWidth={1.5}
+          style={{ display: 'none' }}
+        />
       </svg>
+
       {anchors.map(({ id }) => {
         const structure = structuresById.get(id);
         if (!structure) return null;
@@ -411,13 +459,17 @@ function MarkerOverlay({
             key={id}
             type="button"
             ref={(el) => {
-              if (el) labelRefs.current.set(id, el);
-              else labelRefs.current.delete(id);
+              if (el) dotRefs.current.set(id, el);
+              else dotRefs.current.delete(id);
             }}
             onClick={(event) => {
               event.stopPropagation();
               onSelectStructure(id);
             }}
+            onPointerEnter={() => onHoverDot(id)}
+            onPointerLeave={() => onHoverDot(null)}
+            onFocus={() => onHoverDot(id)}
+            onBlur={() => onHoverDot(null)}
             aria-label={
               feedback === 'correct'
                 ? `Bonne réponse : ${structure.name}`
@@ -425,31 +477,54 @@ function MarkerOverlay({
                   ? `Réponse incorrecte : ${structure.name}`
                   : structure.name
             }
+            data-anatomy-dot
             data-anatomy-feedback={feedback ?? undefined}
-            data-touch-target
             style={{ position: 'absolute', top: 0, left: 0, display: 'none', pointerEvents: 'auto' }}
-            className={
-              'flex max-w-[9rem] items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-medium leading-tight shadow-lg backdrop-blur transition-colors duration-150 ' +
-              (feedback === 'correct'
-                ? 'border-[#2f9e44] bg-[#2f9e44] text-white'
-                : feedback === 'incorrect'
-                  ? 'border-[#d64545] bg-[#d64545] text-white'
-                  : isSelected
-                    ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
-                    : 'border-white/30 bg-black/60 text-white hover:border-[var(--accent)]')
-            }
+            // 28 px de cible tactile pour un disque visible de 12 px : assez
+            // grand pour le doigt sur iPad sans encombrer le modèle.
+            className="flex h-7 w-7 items-center justify-center rounded-full"
           >
-            {feedback ? (
-              <span aria-hidden className="shrink-0 font-bold">
-                {feedback === 'correct' ? '✓' : '✗'}
-              </span>
-            ) : (
-              <span className={'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)]')} />
-            )}
-            <span className="truncate">{structure.name}</span>
+            <span
+              className={
+                'block h-3 w-3 rounded-full border shadow transition-transform duration-150 ' +
+                (feedback === 'correct'
+                  ? 'scale-125 border-white bg-[#2f9e44]'
+                  : feedback === 'incorrect'
+                    ? 'scale-125 border-white bg-[#d64545]'
+                    : isSelected
+                      ? 'scale-125 border-white bg-[var(--accent)]'
+                      : 'border-white/70 bg-white/35 hover:scale-150 hover:border-white hover:bg-[var(--accent)]')
+              }
+            />
+            <span
+              ref={(el) => {
+                if (el) badgeRefs.current.set(id, el);
+                else badgeRefs.current.delete(id);
+              }}
+              aria-hidden
+              style={{ display: 'none' }}
+              className="pointer-events-none absolute right-0 top-0 rounded-full bg-black/55 px-[3px] text-[0.5rem] font-medium leading-[1.25] text-white/80"
+            />
           </button>
         );
       })}
+
+      <div
+        ref={labelRef}
+        data-anatomy-dot-label
+        style={{ position: 'absolute', top: 0, left: 0, display: 'none' }}
+        className={
+          'pointer-events-none max-w-[16rem] rounded-[var(--radius-control)] border px-2.5 py-1 text-[0.78rem] font-medium leading-tight text-white shadow-lg backdrop-blur ' +
+          (activeFeedback === 'correct'
+            ? 'border-[#2f9e44] bg-[#2f9e44]'
+            : activeFeedback === 'incorrect'
+              ? 'border-[#d64545] bg-[#d64545]'
+              : 'border-white/25 bg-black/75')
+        }
+      >
+        {activeFeedback === 'correct' ? '✓ ' : activeFeedback === 'incorrect' ? '✗ ' : ''}
+        {activeStructure?.name ?? ''}
+      </div>
     </div>
   );
 }
@@ -554,12 +629,24 @@ function CameraRig({
 
     // On élargit la boîte autour de son centre avant de cadrer : coller au
     // plus près de la structure la fait remplir tout le viewport et fait
-    // perdre le repère anatomique (on ne sait plus OÙ elle se trouve). Un
-    // facteur constant garde la structure dominante tout en laissant voir ce
-    // qui l'entoure.
+    // perdre le repère anatomique (on ne sait plus OÙ elle se trouve).
+    //
+    // Un simple facteur multiplicatif ne suffit pas : ×2,2 sur un gros
+    // muscle donne un bon cadrage, mais ×2,2 sur un tout petit abaisseur de
+    // l'angle de la bouche colle encore la caméra dessus. On impose donc
+    // AUSSI un plancher relatif à la scène chargée — la vue montre toujours
+    // au moins une fraction du corps autour de la structure.
     const CONTEXT_FACTOR = 2.2;
+    const MIN_CONTEXT_FRACTION = 0.16;
+    const sceneSpan = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3()).length();
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3()).multiplyScalar(CONTEXT_FACTOR / 2);
+    const raw = box.getSize(new THREE.Vector3());
+    const floor = Number.isFinite(sceneSpan) && sceneSpan > 0 ? sceneSpan * MIN_CONTEXT_FRACTION : 0;
+    const size = new THREE.Vector3(
+      Math.max(raw.x * CONTEXT_FACTOR, floor),
+      Math.max(raw.y * CONTEXT_FACTOR, floor),
+      Math.max(raw.z * CONTEXT_FACTOR, floor),
+    ).multiplyScalar(0.5);
     const framed = new THREE.Box3(center.clone().sub(size), center.clone().add(size));
 
     void controlsRef.current.fitToBox(framed, !reducedMotion, {
@@ -613,12 +700,12 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   const [everLoaded, setEverLoaded] = useState<Set<string>>(new Set());
   const [registryVersion, setRegistryVersion] = useState(0);
   const [hoveredId, setHoveredId] = useState<ID | null>(null);
-  // Étiquettes secondaires masquées quand la région est dense (§8) : on
-  // compte celles qui n'ont pas pu être placées pour proposer de les révéler.
-  const [showAllMarkers, setShowAllMarkers] = useState(false);
-  const [hiddenMarkerCount, setHiddenMarkerCount] = useState(0);
-  const labelRefs = useRef<Map<ID, HTMLButtonElement>>(new Map());
-  const lineRefs = useRef<Map<ID, SVGPathElement>>(new Map());
+  /** Point survolé — sert à afficher son nom sans avoir à le sélectionner. */
+  const [hoveredDotId, setHoveredDotId] = useState<ID | null>(null);
+  const dotRefs = useRef<Map<ID, HTMLButtonElement>>(new Map());
+  const badgeRefs = useRef<Map<ID, HTMLSpanElement>>(new Map());
+  const labelRef = useRef<HTMLDivElement | null>(null);
+  const lineRef = useRef<SVGPathElement | null>(null);
 
   const structuresById = useMemo(() => new Map(structures.map((s) => [s.id, s])), [structures]);
 
@@ -726,6 +813,25 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
           paddingBottom: 0.4,
         });
       },
+      setView: (view) => {
+        const controls = controlsRef.current;
+        if (!controls) return;
+        const target = controls.getTarget(new THREE.Vector3());
+        const position = controls.getPosition(new THREE.Vector3());
+        // On conserve la distance courante : changer de vue ne doit pas
+        // recadrer ni « dézoomer » ce que l'utilisateur regardait.
+        const distance = position.distanceTo(target) || 400;
+        const [dx, dy, dz] = VIEW_DIRECTIONS[view];
+        void controls.setLookAt(
+          target.x + dx * distance,
+          target.y + dy * distance,
+          target.z + dz * distance,
+          target.x,
+          target.y,
+          target.z,
+          !reducedMotion,
+        );
+      },
       resetView,
       zoomIn: () => void controlsRef.current?.dolly(40, !reducedMotion),
       zoomOut: () => void controlsRef.current?.dolly(-40, !reducedMotion),
@@ -747,6 +853,12 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   }, [onFullscreenChange]);
 
   const hoveredStructure = hoveredId ? structuresById.get(hoveredId) : null;
+  /**
+   * Point dont le nom s'affiche : la sélection prime, sinon le survol. Sans
+   * sélection ni survol, AUCUN nom n'est affiché — c'est ce qui garde le
+   * modèle propre.
+   */
+  const activeDotId = selectedId ?? hoveredDotId;
 
   return (
     <div
@@ -767,7 +879,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         onPointerMissed={() => onSelectStructure(null)}
       >
-        <Invalidator deps={[activeSystems, selectedId, isolated, learning, groupsToLoad.length, markerStructureIds]} />
+        <Invalidator deps={[activeSystems, selectedId, activeDotId, isolated, learning, groupsToLoad.length, markerStructureIds]} />
         <ToneMapping />
         {/* Éclairage à trois points : chaude en clé (avant-haut), froide en
             remplissage (côté opposé) et une lumière de contour derrière pour
@@ -803,13 +915,13 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
             re-nester dans le groupe appliquerait la rotation une seconde
             fois et enverrait chaque marqueur hors champ. */}
         {markerAnchors.length > 0 && (
-          <MarkerProjector
+          <DotProjector
             anchors={markerAnchors}
-            labelRefs={labelRefs}
-            lineRefs={lineRefs}
-            selectedId={selectedId}
-            showAll={showAllMarkers}
-            onHiddenCountChange={setHiddenMarkerCount}
+            dotRefs={dotRefs}
+            badgeRefs={badgeRefs}
+            labelRef={labelRef}
+            lineRef={lineRef}
+            activeId={activeDotId}
           />
         )}
         <CameraRig
@@ -826,14 +938,18 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         />
       </Canvas>
 
-      <MarkerOverlay
+      <DotOverlay
         anchors={markerAnchors}
         structuresById={structuresById}
         selectedId={selectedId}
+        activeId={activeDotId}
         feedbackById={feedbackById}
         onSelectStructure={onSelectStructure}
-        labelRefs={labelRefs}
-        lineRefs={lineRefs}
+        onHoverDot={setHoveredDotId}
+        dotRefs={dotRefs}
+        badgeRefs={badgeRefs}
+        labelRef={labelRef}
+        lineRef={lineRef}
       />
 
       {hoveredStructure && !selectedId && (
@@ -842,18 +958,6 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         </div>
       )}
 
-      {/* Révélation des étiquettes secondaires (§8) — n'apparaît que si des
-          étiquettes ont réellement été écartées faute de place. */}
-      {markerAnchors.length > 0 && (hiddenMarkerCount > 0 || showAllMarkers) && (
-        <button
-          type="button"
-          onClick={() => setShowAllMarkers((v) => !v)}
-          data-touch-target
-          className="absolute bottom-3 left-3 rounded-full border border-white/25 bg-black/60 px-3 py-1.5 text-[0.72rem] font-medium text-white backdrop-blur transition-colors hover:border-[var(--accent)]"
-        >
-          {showAllMarkers ? 'Réduire les étiquettes' : `+${hiddenMarkerCount} étiquette${hiddenMarkerCount > 1 ? 's' : ''}`}
-        </button>
-      )}
     </div>
   );
 });

@@ -88,8 +88,10 @@ pas un choix de notre part.
    pastille « géométrie 3D non disponible ».
 7. **`scripts/anatomy/build-schema.mjs`** rend les 931 maillages (tout sauf
    le tégument, qui masquerait l'intérieur) dans une seule projection
-   antérieure 260×660 et mémorise, pour chaque pixel, la région et la
-   sous-région qui l'occupent. Il en tire l'image du schéma, une silhouette
+   antérieure 520×1320 et mémorise, pour chaque pixel, la région et la
+   sous-région qui l'occupent. Cette résolution sert deux échelles : la
+   vignette du rail (~130 px) et le schéma agrandi en modale, où une région
+   est recadrée puis affichée sur ~500 px. Il en tire l'image du schéma, une silhouette
    de surbrillance par zone, et `schemaMap.json` (ancre et cadre de chaque
    zone). Les zones cliquables de « Exploration par région » viennent donc
    de la géométrie, pas d'un tracé à la main — et une zone invisible de face
@@ -114,7 +116,7 @@ Régénération complète : `./scripts/anatomy/build-assets.sh`
 
 **934 structures avec maillage réel, 26 317 506 triangles**, réparties en
 **47 fichiers `.glb` (106 Mo)**, plus 27 structures « cours » sans géométrie.
-S'y ajoutent 934 vignettes PNG (1,4 Mo) et le schéma corporel (0,4 Mo).
+S'y ajoutent 934 vignettes PNG (1,4 Mo) et le schéma corporel (1,5 Mo).
 
 | Région | Structures | Triangles |
 |---|---|---|
@@ -188,9 +190,32 @@ comblé par une géométrie inventée.
 ## Ce qui n'est PAS dans ce jeu de données
 
 La totalité des maillages disponibles est intégrée : il n'y a plus de région
-volontairement laissée de côté. Ce qui manque manque **dans la source** —
-voir la liste ci-dessus pour la tête et le cou. Ailleurs dans le corps, le
-jeu de données est nettement plus riche en os et en muscles qu'en nerfs :
-hors nerfs et tractus optiques et structures encéphaliques, il ne contient
-pratiquement pas de nerfs périphériques. Aucune de ces absences n'est
-comblée par une géométrie inventée.
+volontairement laissée de côté. Ce qui manque manque **dans la source**.
+
+### Les nerfs — mesure exacte, pas une impression
+
+`parts_list_e.txt` a été passé au crible sur `nerve`, `ganglion`, `plexus` et
+`trunk of`. Le jeu de données entier contient **un seul nerf nommé** :
+
+| Identifiant | Libellé source |
+|---|---|
+| `FMA50863` | optic nerve |
+| `FMA50875` | right optic nerve |
+| `FMA50878` | left optic nerve |
+
+Aucun autre nerf crânien, aucun nerf périphérique, aucun plexus, aucun
+ganglion. Ce que la catégorie « nerfs » contient réellement, ce sont les
+**99 structures du système nerveux central** (encéphale, tronc cérébral,
+cervelet, capsule interne, corps calleux…) plus les nerfs et tractus
+optiques. C'est pourquoi le sélecteur de système est libellé **« Système
+nerveux »** et non « Nerfs » : l'appeler « Nerfs » laisserait croire qu'on y
+trouve le trijumeau ou le facial.
+
+Les nerfs réellement utiles en dentisterie — trijumeau et ses branches
+V1/V2/V3, alvéolaire inférieur, lingual, infra-orbitaire, facial,
+hypoglosse, massétérique — restent au catalogue comme structures
+**« cours uniquement »** : nommées, recherchables, explicables par l'IA,
+et affichées avec une pastille « géométrie 3D non disponible ». Aucune
+géométrie n'est fabriquée pour combler ce manque, et aucune autre source
+n'a été intégrée sans licence vérifiée (Z-Anatomy a été écarté : sa
+distribution mêle des composants NC à une licence BY-SA).

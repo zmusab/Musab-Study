@@ -6,10 +6,19 @@ import { pickRepresentative } from '@/services/anatomy/representative';
 import type { AnatomyCategory, AnatomyStructure } from '@/types';
 import type { SystemVisibility } from '@/services/anatomy/visibility';
 
-const SYSTEMS: { category: AnatomyCategory; label: string }[] = [
+const SYSTEMS: { category: AnatomyCategory; label: string; note?: string }[] = [
   { category: 'squelette', label: 'Squelette' },
   { category: 'muscles', label: 'Muscles' },
-  { category: 'nerfs', label: 'Nerfs' },
+  {
+    category: 'nerfs',
+    // Libellé honnête : la catégorie « nerfs » du jeu de données ouvert
+    // contient le système nerveux CENTRAL (encéphale, tronc cérébral,
+    // cervelet) et les nerfs et tractus optiques. Aucun autre nerf crânien
+    // ni périphérique n'y est modélisé — l'appeler simplement « Nerfs »
+    // laisserait croire au contraire.
+    label: 'Système nerveux',
+    note: 'Encéphale, tronc cérébral, cervelet et nerfs optiques. Les autres nerfs crâniens et périphériques ne sont pas modélisés dans les données ouvertes : ils restent recherchables comme structures « cours ».',
+  },
   { category: 'vaisseaux', label: 'Vaisseaux' },
   { category: 'organes', label: 'Organes' },
 ];
@@ -65,7 +74,7 @@ export function SystemToggleBar({
             className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
           >
             <StructureThumbnail structure={sample.get(system.category) ?? null} size={24} />
-            <span className="flex-1 text-[0.84rem] font-medium text-[var(--ink)]">
+            <span className="flex-1 text-[0.84rem] font-medium leading-tight text-[var(--ink)]" title={system.note}>
               {system.label}
               {!CATEGORIES_WITH_MESH.has(system.category) && (
                 <span

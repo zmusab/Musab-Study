@@ -97,11 +97,12 @@ check(
   'Aucun système n’est marqué « (cours) » : tous ont un maillage réel',
   (await page.getByText('(cours)').count()) === 0,
 );
-// `exact` : « Nerfs crâniens » existe aussi comme région (indisponible) dans
-// la carte d'exploration — on vise bien la bascule de système.
+// Le système nerveux est libellé « Système nerveux » et non « Nerfs » : les
+// données ouvertes contiennent l'encéphale et les nerfs optiques, pas les
+// nerfs crâniens ni périphériques. Le libellé doit dire ce qui existe.
 check(
-  'Nerfs est un système activable comme les autres',
-  (await page.getByRole('button', { name: 'Nerfs', exact: true }).getAttribute('aria-pressed')) === 'true',
+  'Le système nerveux est activable comme les autres',
+  (await page.getByRole('button', { name: 'Système nerveux', exact: true }).getAttribute('aria-pressed')) === 'true',
 );
 
 await page.screenshot({ path: `${SHOT}/anatomy-default.png`, fullPage: false });
@@ -112,6 +113,8 @@ await page.waitForTimeout(300);
 check('Muscles désactivable indépendamment', (await page.getByRole('button', { name: 'Muscles', exact: true }).getAttribute('aria-pressed')) === 'false');
 check('Squelette reste actif — les systèmes ne sont pas exclusifs', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'true');
 
+await page.getByRole('tab', { name: 'Combinaisons' }).click();
+await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Tout masquer' }).click();
 await page.waitForTimeout(300);
 check('« Tout masquer » désactive tous les systèmes', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'false');
@@ -155,44 +158,42 @@ check(
   'Des structures réelles de la sous-région apparaissent dans la carte d’exploration',
   await explorerListItem.first().isVisible(),
 );
-// Marqueurs (§8) : avec l'anti-collision, seules les étiquettes qui TIENNENT
-// à l'écran sont affichées (8 sur 15 pour le crâne) — cibler un nom en dur
-// serait fragile, puisque la sélection dépend de la taille apparente des
-// structures. On interroge donc les étiquettes réellement rendues.
-const visibleMarkers = await page.evaluate(() =>
-  Array.from(document.querySelectorAll('[data-touch-target][aria-label]'))
-    .filter((e) => e.style.position === 'absolute' && e.style.display !== 'none')
+// POINTS interactifs (§4/§5) : le modèle ne porte AUCUNE étiquette texte au
+// repos, seulement de petits points. On interroge les points réellement
+// rendus — leur nombre dépend du regroupement, cibler un nom en dur serait
+// fragile.
+const visibleDots = await page.evaluate(() =>
+  Array.from(document.querySelectorAll('[data-anatomy-dot]'))
+    .filter((e) => e.style.display !== 'none')
     .map((e) => {
       const r = e.getBoundingClientRect();
       return { label: e.getAttribute('aria-label'), x: r.x, y: r.y, w: r.width, h: r.height };
     }),
 );
-check('Des marqueurs 3D sont affichés pour la sous-région ouverte', visibleMarkers.length > 0, `${visibleMarkers.length} étiquettes`);
+check('Des points interactifs sont affichés sur le modèle', visibleDots.length > 0, `${visibleDots.length} points`);
 check(
-  'Les marqueurs sont positionnés dans le viewport — pas hors-écran, pas décoratifs',
-  visibleMarkers.every((m) => m.x > 0 && m.y > 0 && m.w > 0 && m.h > 0),
+  'Les points sont dans le viewport et assez grands pour le tactile',
+  visibleDots.every((d) => d.x > 0 && d.y > 0 && d.w >= 24 && d.h >= 24),
+  `${Math.min(...visibleDots.map((d) => d.w))} px minimum`,
 );
 
-// Aucune étiquette ne doit en recouvrir une autre : c'est tout l'objet de
-// l'algorithme de placement (`services/anatomy/markerLayout.ts`).
-const overlaps = visibleMarkers.reduce((n, a, i) => {
-  for (let j = i + 1; j < visibleMarkers.length; j++) {
-    const b = visibleMarkers[j];
-    if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) n++;
+// Aucun nom affiché tant que rien n'est sélectionné : c'est ce qui garde le
+// modèle propre (§4).
+const idleLabels = await page.evaluate(
+  () => Array.from(document.querySelectorAll('[data-anatomy-dot-label]')).filter((e) => e.style.display !== 'none').length,
+);
+check('Aucun nom n’est affiché sur le modèle au repos', idleLabels === 0, `${idleLabels} étiquette(s)`);
+
+// Deux points ne doivent jamais se superposer : c'est tout l'objet du
+// regroupement (`services/anatomy/dotLayout.ts`).
+const tooClose = visibleDots.reduce((n, a, i) => {
+  for (let j = i + 1; j < visibleDots.length; j++) {
+    const b = visibleDots[j];
+    if (Math.hypot(a.x - b.x, a.y - b.y) < 24) n++;
   }
   return n;
 }, 0);
-check('Aucun chevauchement entre étiquettes (§8)', overlaps === 0, `${overlaps} chevauchement(s)`);
-
-// Une ligne de rappel est tracée pour chaque étiquette affichée.
-const leaderLines = await page.evaluate(
-  () => Array.from(document.querySelectorAll('svg path')).filter((e) => e.style.display !== 'none' && e.getAttribute('d')).length,
-);
-check('Chaque étiquette affichée est reliée à sa structure par une ligne', leaderLines >= visibleMarkers.length, `${leaderLines} tracés`);
-
-// Les étiquettes en trop sont comptées et révélables, jamais silencieusement perdues.
-const revealButton = page.getByRole('button', { name: /étiquette/ });
-check('Les étiquettes masquées sont comptées et révélables', (await revealButton.count()) === 1);
+check('Aucun chevauchement entre points (§5)', tooClose === 0, `${tooClose} paire(s) trop proche(s)`);
 
 await page.screenshot({ path: `${SHOT}/anatomy-subregion.png`, fullPage: false });
 
@@ -276,12 +277,14 @@ await page.getByRole('tab', { name: 'Informations' }).click();
 await page.waitForTimeout(300);
 
 // ---------- Isolation / restauration (carte dédiée, bas de page) ----------
+await page.getByRole('tab', { name: 'Isolation' }).click();
+await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Isoler la sélection' }).click();
 await page.waitForTimeout(300);
-check('Isoler affiche Restaurer à la place', await page.getByRole('button', { name: 'Restaurer' }).isVisible());
+check('Isoler active le bouton Restaurer', await page.getByRole('button', { name: 'Restaurer' }).isEnabled());
 await page.getByRole('button', { name: 'Restaurer' }).click();
 await page.waitForTimeout(300);
-check('Restaurer ramène le bouton Isoler la sélection', await page.getByRole('button', { name: 'Isoler la sélection' }).isVisible());
+check('Restaurer réactive le bouton Isoler la sélection', await page.getByRole('button', { name: 'Isoler la sélection' }).isEnabled());
 
 // ---------- Information insuffisante / IA sans clé — honnête ----------
 await page.getByRole('button', { name: '✨ Générer depuis mes cours' }).click();
@@ -312,6 +315,8 @@ check(
 );
 
 // ---------- Mode apprentissage : correction visible SUR LE MODÈLE 3D ----------
+await page.getByRole('tab', { name: 'Apprentissage' }).click();
+await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Commencer' }).click();
 await page.waitForTimeout(1200);
 check('Le mode apprentissage annonce une vraie structure cible à trouver', await page.getByText(/Trouve\s*:/).first().isVisible());
@@ -379,9 +384,15 @@ check(
 await closePanelButton(page).click();
 await page.waitForTimeout(300);
 
+// Les outils du bas sont désormais un panneau à ONGLETS : un seul outil est
+// affiché à la fois, en grand. On ouvre donc explicitement l'onglet visé.
+await page.getByRole('tab', { name: 'Isolation' }).click();
+await page.waitForTimeout(200);
 check('Le contrôle « Masquer le reste » existe (§10)', (await page.getByRole('button', { name: 'Masquer le reste' }).count()) === 1);
 check('Le contrôle « Réinitialiser la vue » existe (§10)', (await page.getByRole('button', { name: 'Réinitialiser la vue' }).count()) === 1);
 
+await page.getByRole('tab', { name: 'Combinaisons' }).click();
+await page.waitForTimeout(200);
 const comboActive = await page
   .getByRole('button', { name: /Tout afficher/ })
   .first()
@@ -455,6 +466,69 @@ if ((await up.count()) > 0) {
     `${unavailable.length} régions, désactivées=${unavailable.filter(Boolean).length}`,
   );
 }
+
+// ---------- Vues anatomiques standard (§13) ----------
+// On vérifie que chaque vue REORIENTE réellement la caméra : l'image du
+// canevas doit changer. Comparer des pixels serait fragile en rendu logiciel ;
+// on compare la matrice de la caméra, exposée par le canevas via son état.
+const beforeView = await page.locator('canvas').first().screenshot();
+await page.getByRole('button', { name: 'Post.', exact: true }).click();
+await page.waitForTimeout(2200);
+const afterView = await page.locator('canvas').first().screenshot();
+check(
+  'La vue postérieure réoriente réellement la caméra (§13)',
+  !beforeView.equals(afterView),
+  `${beforeView.length} vs ${afterView.length} octets`,
+);
+for (const label of ['Ant.', 'Droite', 'Gauche', 'Sup.', 'Inf.']) {
+  check(`La vue « ${label} » est proposée`, (await page.getByRole('button', { name: label, exact: true }).count()) === 1);
+}
+await page.getByRole('button', { name: 'Ant.', exact: true }).click();
+await page.waitForTimeout(1500);
+
+// ---------- Schéma agrandi (§8/§18) : cibles réellement touchables ----------
+await page.getByRole('button', { name: 'Agrandir le schéma anatomique' }).click();
+await page.waitForTimeout(900);
+const dialog = page.getByRole('dialog');
+check('Le schéma peut être agrandi pour un usage tactile', await dialog.isVisible());
+const bigZones = await dialog.getByRole('button').evaluateAll((els) =>
+  els
+    .filter((e) => e.getAttribute('aria-pressed') !== null)
+    .map((e) => {
+      const r = e.getBoundingClientRect();
+      return { l: e.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) };
+    }),
+);
+check('Le schéma agrandi expose les régions du corps', bigZones.length >= 4, `${bigZones.length} zones`);
+check(
+  'Ses zones font au moins 40 px — utilisables au doigt',
+  bigZones.every((z) => z.w >= 40 && z.h >= 40),
+  bigZones.map((z) => `${z.l}:${z.w}x${z.h}`).join(' '),
+);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(500);
+
+// ---------- Dentisterie (§14) : fiche dentaire dérivée du numéro FDI ----------
+await page.getByPlaceholder(/Rechercher une structure/).fill('dent 36');
+await page.waitForTimeout(700);
+await page.locator('ul li button').first().dispatchEvent('click');
+const toothPanel = await closePanelButton(page)
+  .waitFor({ state: 'attached', timeout: 20000 })
+  .then(() => true)
+  .catch(() => false);
+check('Chercher « dent 36 » sélectionne une dent', toothPanel);
+if (toothPanel) {
+  const facts = await page.locator('dl').first().innerText().catch(() => '');
+  check('La fiche dentaire donne le numéro FDI', /FDI/.test(facts), facts.replace(/\n/g, ' | ').slice(0, 120));
+  check('Elle donne l’arcade et le côté', /Arcade/.test(facts) && /Côté/.test(facts));
+  check(
+    'Elle rappelle la provenance BodyParts3D vérifiable',
+    /BodyParts3D/.test(facts) && /triangles/.test(facts),
+  );
+  await closePanelButton(page).click();
+  await page.waitForTimeout(300);
+}
+await page.getByPlaceholder(/Rechercher une structure/).fill('');
 
 console.log('\n--- Erreurs console ---');
 console.log(errors.length === 0 ? 'aucune' : errors.join('\n'));

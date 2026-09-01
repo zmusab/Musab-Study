@@ -10,8 +10,9 @@ import { generateAnatomyCardDrafts, NoStructureContentError } from '@/services/a
 import { saveAnatomySheet } from '@/data/repositories/anatomy';
 import { useAnatomySheet } from '@/hooks/useAnatomy';
 import { createFlashcard } from '@/data/repositories/cards';
-import type { AnatomyStructure, Citation, DocumentChunk } from '@/types';
+import type { AnatomyStructure, Citation, DocumentChunk, ID } from '@/types';
 import type { CardDraft } from '@/services/flashcards/validate';
+import { toothInfo, structureProvenance } from '@/services/anatomy/toothInfo';
 
 const RETRIEVAL_LIMIT = 8;
 
@@ -213,10 +214,21 @@ export function StructureInfoPanel({
         <div className="min-w-0">
           {/* `data-anatomy-panel-title` : point d'ancrage stable pour les
               tests — plusieurs cartes de la page ont un titre tronqué. */}
-          <p data-anatomy-panel-title className="truncate text-[1.05rem] font-semibold text-[var(--ink)]">
+          {/* Le nom se replie sur deux lignes plutôt que de se faire couper :
+              « Abaisseur de l'angle de la bouche droit » n'a aucun sens
+              tronqué en « Abaisseur de l'an… ». */}
+          <p
+            data-anatomy-panel-title
+            className="text-[1.02rem] font-semibold leading-tight text-[var(--ink)]"
+            title={structure.name}
+          >
             {structure.name}
           </p>
-          {structure.latinName && <p className="truncate text-[0.8rem] italic text-[var(--ink-faint)]">{structure.latinName}</p>}
+          {structure.latinName && (
+            <p className="mt-0.5 text-[0.78rem] italic leading-tight text-[var(--ink-faint)]" title={structure.latinName}>
+              {structure.latinName}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -251,6 +263,7 @@ export function StructureInfoPanel({
       <div className="flex-1 overflow-y-auto p-4">
         {tab === 'informations' ? (
           <>
+            <StructureFacts structureId={structure.id} />
             {courseSheet === undefined ? (
               <Spinner size={16} />
             ) : courseSheet && courseSheet.content.length > 0 ? (
@@ -359,5 +372,54 @@ export function StructureInfoPanel({
         </Link>
       </div>
     </div>
+  );
+}
+
+/**
+ * Faits vérifiables sur la structure, lus dans le catalogue généré — pas une
+ * fiche rédigée. Pour une dent, la norme FDI définit à elle seule l'arcade,
+ * le côté et le type : ces lignes sont donc dérivées du numéro, jamais
+ * inventées. La provenance rappelle le libellé anglais d'origine, ce qui
+ * rend chaque entrée traçable jusqu'à BodyParts3D.
+ */
+function StructureFacts({ structureId }: { structureId: ID }) {
+  const tooth = toothInfo(structureId);
+  const provenance = structureProvenance(structureId);
+  if (!tooth && !provenance) return null;
+
+  return (
+    <dl className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-[var(--radius-control)] bg-[var(--surface-2)] p-3 text-[0.78rem]">
+      {tooth && (
+        <>
+          <dt className="text-[var(--ink-faint)]">Numéro FDI</dt>
+          <dd className="font-medium text-[var(--ink)]">{tooth.fdi}</dd>
+          <dt className="text-[var(--ink-faint)]">Type</dt>
+          <dd className="text-[var(--ink)]">{tooth.type}</dd>
+          <dt className="text-[var(--ink-faint)]">Arcade</dt>
+          <dd className="text-[var(--ink)]">{tooth.arcade}</dd>
+          <dt className="text-[var(--ink-faint)]">Côté</dt>
+          <dd className="text-[var(--ink)]">{tooth.side}</dd>
+        </>
+      )}
+      {provenance && (
+        <>
+          <dt className="text-[var(--ink-faint)]">Géométrie 3D</dt>
+          <dd className="text-[var(--ink)]">
+            {provenance.hasMesh
+              ? `${provenance.triangles.toLocaleString('fr-FR')} triangles`
+              : 'non disponible dans les données ouvertes'}
+          </dd>
+          {provenance.sourceLabel && (
+            <>
+              <dt className="text-[var(--ink-faint)]">Source</dt>
+              <dd className="text-[var(--ink-soft)]">
+                BodyParts3D · <span className="italic">{provenance.sourceLabel}</span>
+                {provenance.fmaId ? ` · ${provenance.fmaId}` : ''}
+              </dd>
+            </>
+          )}
+        </>
+      )}
+    </dl>
   );
 }
