@@ -30,6 +30,20 @@ const errors = [];
  */
 const closePanelButton = (page) => page.locator('button[aria-label="Fermer le panneau"]');
 
+/**
+ * Ramène le modèle 3D entièrement dans le viewport.
+ *
+ * La page DÉFILE désormais (cockpit puis cinq cartes) : après avoir cliqué
+ * dans les cartes du bas, le canevas peut être partiellement au-dessus du
+ * cadre. Mesurer la position des points ou cliquer « au centre du canevas »
+ * n'aurait alors aucun sens. Ce n'est pas un contournement : c'est ce que
+ * fait l'utilisateur, il remonte pour voir le modèle.
+ */
+async function focusModel(page) {
+  await page.evaluate(() => window.scrollTo({ top: 0 }));
+  await page.waitForTimeout(400);
+}
+
 function check(name, ok, detail = '') {
   results.push({ name, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
@@ -68,10 +82,61 @@ page.on('response', (r) => {
 });
 
 await page.goto(`${BASE}#/anatomie`, { waitUntil: 'networkidle' });
-// 17 groupes d'assets se chargent en parallèle : on laisse le temps au
-// premier cadrage caméra de se faire avant de mesurer quoi que ce soit.
-await page.waitForTimeout(8000);
+/*
+  Le chargement se fait en DEUX temps (prioritaire puis contexte) et l'analyse
+  des maillages occupe le fil principal — un clic envoyé pendant ce temps
+  reste en attente. On attend donc que l'indicateur de progression disparaisse,
+  c'est-à-dire que tous les groupes demandés soient réellement arrivés, plutôt
+  qu'une durée fixe qui serait non déterministe.
+*/
+await page
+  .getByText(/Chargement de l’anatomie/)
+  .waitFor({ state: 'detached', timeout: 90000 })
+  .catch(() => {});
+await page.waitForTimeout(1500);
 check('Des groupes d’assets par région × système sont bien téléchargés', glbRequests.length >= 10);
+
+// ---------- Chargement en deux temps (§1) ----------
+// Le lot PRIORITAIRE est ce que la caméra cadre à l'ouverture (crâne, face,
+// mâchoire, dents). Le cou et l'orbite complètent la vue ensuite. On vérifie
+// l'ORDRE réel des requêtes, pas une intention.
+const firstNeck = glbRequests.findIndex((f) => f.startsWith('cou-'));
+const lastPriority = Math.max(
+  ...['crane-', 'face-', 'machoire-', 'dents-'].map((prefix) =>
+    glbRequests.reduce((last, f, i) => (f.startsWith(prefix) ? i : last), -1),
+  ),
+);
+check(
+  'Le lot prioritaire (crâne, face, mâchoire, dents) part avant le contexte (cou)',
+  firstNeck === -1 || lastPriority < firstNeck,
+  `dernier prioritaire #${lastPriority}, premier cou #${firstNeck}`,
+);
+check(
+  'Le cou finit tout de même par arriver, sans action de l’utilisateur',
+  firstNeck !== -1,
+  glbRequests.filter((f) => f.startsWith('cou-')).join(', ') || 'aucun',
+);
+
+// ---------- La page défile, les cinq cartes sont toutes visibles (§3/§4) ----------
+const pageMetrics = await page.evaluate(() => ({
+  doc: document.documentElement.scrollHeight,
+  win: window.innerHeight,
+  overflowX: document.documentElement.scrollWidth > window.innerWidth,
+}));
+check(
+  'La page s’étend au-delà de l’écran plutôt que de comprimer les sections',
+  pageMetrics.doc > pageMetrics.win,
+  `${pageMetrics.doc} px pour ${pageMetrics.win} px de fenêtre`,
+);
+check('Aucun débordement horizontal', !pageMetrics.overflowX);
+
+for (const title of ['Exploration par région', 'Mode isolation', 'Mode apprentissage', 'Combinaisons', 'Intégration cours']) {
+  check(
+    `La carte « ${title} » est visible sans passer par un onglet`,
+    (await page.getByRole('heading', { name: title, exact: true }).count()) +
+      (await page.getByText(title, { exact: true }).count()) > 0,
+  );
+}
 
 // ---------- Corps entier / systèmes par défaut / thème sombre dédié ----------
 check('La page Anatomie 3D s’ouvre', await page.getByText('Anatomie 3D').isVisible());
@@ -113,8 +178,6 @@ await page.waitForTimeout(300);
 check('Muscles désactivable indépendamment', (await page.getByRole('button', { name: 'Muscles', exact: true }).getAttribute('aria-pressed')) === 'false');
 check('Squelette reste actif — les systèmes ne sont pas exclusifs', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'true');
 
-await page.getByRole('tab', { name: 'Combinaisons' }).click();
-await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Tout masquer' }).click();
 await page.waitForTimeout(300);
 check('« Tout masquer » désactive tous les systèmes', (await page.getByRole('button', { name: 'Squelette', exact: true }).getAttribute('aria-pressed')) === 'false');
@@ -162,19 +225,38 @@ check(
 // repos, seulement de petits points. On interroge les points réellement
 // rendus — leur nombre dépend du regroupement, cibler un nom en dur serait
 // fragile.
-const visibleDots = await page.evaluate(() =>
-  Array.from(document.querySelectorAll('[data-anatomy-dot]'))
+await focusModel(page);
+// Coordonnées relatives AU CANEVAS, pas à la fenêtre : la page défile
+// désormais, et un point parfaitement placé sur le modèle aurait des
+// coordonnées de fenêtre négatives dès que la page est descendue. Ce qui
+// compte est qu'un point soit posé SUR le modèle.
+const visibleDots = await page.evaluate(() => {
+  const canvas = document.querySelector('canvas').getBoundingClientRect();
+  return Array.from(document.querySelectorAll('[data-anatomy-dot]'))
     .filter((e) => e.style.display !== 'none')
     .map((e) => {
       const r = e.getBoundingClientRect();
-      return { label: e.getAttribute('aria-label'), x: r.x, y: r.y, w: r.width, h: r.height };
-    }),
-);
+      return {
+        label: e.getAttribute('aria-label'),
+        x: r.x + r.width / 2 - canvas.left,
+        y: r.y + r.height / 2 - canvas.top,
+        w: r.width,
+        h: r.height,
+        canvasW: canvas.width,
+        canvasH: canvas.height,
+      };
+    });
+});
 check('Des points interactifs sont affichés sur le modèle', visibleDots.length > 0, `${visibleDots.length} points`);
+const offscreenDots = visibleDots.filter(
+  (d) => d.x < 0 || d.y < 0 || d.x > d.canvasW || d.y > d.canvasH || d.w < 24 || d.h < 24,
+);
 check(
-  'Les points sont dans le viewport et assez grands pour le tactile',
-  visibleDots.every((d) => d.x > 0 && d.y > 0 && d.w >= 24 && d.h >= 24),
-  `${Math.min(...visibleDots.map((d) => d.w))} px minimum`,
+  'Les points restent sur le modèle et sont assez grands pour le tactile',
+  offscreenDots.length === 0,
+  offscreenDots.length
+    ? offscreenDots.map((d) => `${d.label} @${Math.round(d.x)},${Math.round(d.y)} ${Math.round(d.w)}x${Math.round(d.h)}`).join(' | ')
+    : `${Math.min(...visibleDots.map((d) => d.w))} px minimum`,
 );
 
 // Aucun nom affiché tant que rien n'est sélectionné : c'est ce qui garde le
@@ -277,8 +359,6 @@ await page.getByRole('tab', { name: 'Informations' }).click();
 await page.waitForTimeout(300);
 
 // ---------- Isolation / restauration (carte dédiée, bas de page) ----------
-await page.getByRole('tab', { name: 'Isolation' }).click();
-await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Isoler la sélection' }).click();
 await page.waitForTimeout(300);
 check('Isoler active le bouton Restaurer', await page.getByRole('button', { name: 'Restaurer' }).isEnabled());
@@ -315,8 +395,6 @@ check(
 );
 
 // ---------- Mode apprentissage : correction visible SUR LE MODÈLE 3D ----------
-await page.getByRole('tab', { name: 'Apprentissage' }).click();
-await page.waitForTimeout(200);
 await page.getByRole('button', { name: 'Commencer' }).click();
 await page.waitForTimeout(1200);
 check('Le mode apprentissage annonce une vraie structure cible à trouver', await page.getByText(/Trouve\s*:/).first().isVisible());
@@ -330,6 +408,7 @@ check(
 // vérifié n'est pas la justesse de la réponse mais la CORRECTION affichée sur
 // le modèle — la bonne structure marquée « correct », et la structure cliquée
 // marquée « incorrect » si elle diffère.
+await focusModel(page);
 const canvasBox = await page.locator('canvas').first().boundingBox();
 await page.mouse.click(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
 await page
@@ -384,15 +463,11 @@ check(
 await closePanelButton(page).click();
 await page.waitForTimeout(300);
 
-// Les outils du bas sont désormais un panneau à ONGLETS : un seul outil est
-// affiché à la fois, en grand. On ouvre donc explicitement l'onglet visé.
-await page.getByRole('tab', { name: 'Isolation' }).click();
-await page.waitForTimeout(200);
+// Les cinq cartes du bas sont toutes montées en même temps : aucun onglet à
+// ouvrir. On vérifie donc simplement qu'elles portent leurs commandes.
 check('Le contrôle « Masquer le reste » existe (§10)', (await page.getByRole('button', { name: 'Masquer le reste' }).count()) === 1);
 check('Le contrôle « Réinitialiser la vue » existe (§10)', (await page.getByRole('button', { name: 'Réinitialiser la vue' }).count()) === 1);
 
-await page.getByRole('tab', { name: 'Combinaisons' }).click();
-await page.waitForTimeout(200);
 const comboActive = await page
   .getByRole('button', { name: /Tout afficher/ })
   .first()
@@ -471,6 +546,7 @@ if ((await up.count()) > 0) {
 // On vérifie que chaque vue REORIENTE réellement la caméra : l'image du
 // canevas doit changer. Comparer des pixels serait fragile en rendu logiciel ;
 // on compare la matrice de la caméra, exposée par le canevas via son état.
+await focusModel(page);
 const beforeView = await page.locator('canvas').first().screenshot();
 await page.getByRole('button', { name: 'Post.', exact: true }).click();
 await page.waitForTimeout(2200);

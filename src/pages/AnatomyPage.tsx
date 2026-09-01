@@ -1,22 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useReducedMotion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Button, SegmentedControl, Spinner } from '@/components/ui';
+import { Spinner } from '@/components/ui';
 import { Anatomy3DViewer, type Anatomy3DViewerHandle, type AnatomicalView } from '@/components/features/anatomy/Anatomy3DViewer';
 import { SystemToggleBar } from '@/components/features/anatomy/SystemToggleBar';
 import { RegionBreadcrumb } from '@/components/features/anatomy/RegionBreadcrumb';
 import { AnatomySearchBar } from '@/components/features/anatomy/AnatomySearchBar';
 import { StructureInfoPanel } from '@/components/features/anatomy/StructureInfoPanel';
 import { RegionExplorerCard } from '@/components/features/anatomy/RegionExplorerCard';
-import { StructureThumbnail } from '@/components/features/anatomy/StructureThumbnail';
+import { IsolationCard } from '@/components/features/anatomy/IsolationCard';
+import { CombinationsCard } from '@/components/features/anatomy/CombinationsCard';
+import { CourseIntegrationCard } from '@/components/features/anatomy/CourseIntegrationCard';
 import { pickRepresentative } from '@/services/anatomy/representative';
 import { LearningModeCard } from '@/components/features/anatomy/LearningModeCard';
-import { seedBodyCatalog } from '@/data/repositories/anatomy';
+import { seedBodyCatalog, getAnatomySheet } from '@/data/repositories/anatomy';
 import { useAnatomyStructures, useAnatomyStructure } from '@/hooks/useAnatomy';
 import { useProfile } from '@/hooks/useProfile';
-import { structuresInSubregion, DEFAULT_LOADED_SUBREGIONS } from '@/services/anatomy/regions';
+import {
+  structuresInSubregion,
+  DEFAULT_LOADED_SUBREGIONS,
+  PRIORITY_SUBREGIONS,
+} from '@/services/anatomy/regions';
 import { pickLearningTarget, evaluateGuess, type LearningResult } from '@/services/anatomy/learning';
+import assetManifest from '@/data/anatomy/assetManifest.json';
 import { db } from '@/data/db';
 import type { AnatomyCategory, ID } from '@/types';
 import type { ContextLookup } from '@/services/rag/retrieval';
@@ -135,9 +142,6 @@ export function AnatomyPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [focusedSubregion, setFocusedSubregion] = useState<string | null>(null);
 
-  /** Outil affiché dans le panneau du bas — un seul à la fois, en grand. */
-  const [tool, setTool] = useState<'isolation' | 'apprentissage' | 'combinaisons' | 'cours'>('isolation');
-
   const [learningActive, setLearningActive] = useState(false);
   const [learningTargetId, setLearningTargetId] = useState<ID | null>(null);
   const [learningResult, setLearningResult] = useState<LearningResult | null>(null);
@@ -180,19 +184,27 @@ export function AnatomyPage() {
     [structures, learningTargetId],
   );
   /**
-   * Périmètre de chargement (§ chargement progressif) : par défaut toutes les
-   * régions sauf celles marquées `lazy` (l'encéphale, 1,4 M triangles à lui
-   * seul). Ouvrir explicitement une région lourde l'ajoute au périmètre —
-   * c'est le seul moment où ses assets sont téléchargés.
+   * Périmètre de chargement, en DEUX TEMPS.
+   *
+   * Premier temps : uniquement ce que la caméra cadre à l'ouverture (crâne,
+   * face, mâchoire, dents) — 7,1 Mo au lieu de 11,5. Le modèle est
+   * manipulable bien plus tôt.
+   *
+   * Second temps : le contexte (cou, orbite) est demandé dès que le premier
+   * lot est arrivé, ou au bout de quelques secondes si le réseau traîne. Rien
+   * n'est perdu, tout arrive sans action de l'utilisateur.
+   *
+   * Ouvrir explicitement une région lourde l'ajoute au périmètre — c'est le
+   * seul moment où ses assets sont téléchargés.
    */
+  const [contextReady, setContextReady] = useState(false);
+
   const loadedSubregions = useMemo(() => {
-    if (focusedSubregion) {
-      return DEFAULT_LOADED_SUBREGIONS.includes(focusedSubregion)
-        ? DEFAULT_LOADED_SUBREGIONS
-        : [...DEFAULT_LOADED_SUBREGIONS, focusedSubregion];
-    }
-    return DEFAULT_LOADED_SUBREGIONS;
-  }, [focusedSubregion]);
+    const base = contextReady ? DEFAULT_LOADED_SUBREGIONS : PRIORITY_SUBREGIONS;
+    if (focusedSubregion && !base.includes(focusedSubregion)) return [...base, focusedSubregion];
+    return base;
+  }, [contextReady, focusedSubregion]);
+
 
   /**
    * Structures RÉELLEMENT à l'écran : maillage existant, assets de leur
@@ -327,6 +339,44 @@ export function AnatomyPage() {
     [],
   );
 
+  /*
+    Bascule vers le second temps de chargement. DEUX déclencheurs, dans deux
+    effets séparés — c'est délibéré : un seul effet dépendant de la
+    progression réarmait son minuteur à chaque octet reçu, si bien qu'il
+    n'expirait jamais et que le cou n'arrivait qu'au bout de 13 s.
+  */
+  // (a) Minuteur armé UNE FOIS au montage : le lot de contexte part pendant
+  //     que le lot prioritaire finit de s'analyser, sans lui disputer la
+  //     bande passante des premières centaines de millisecondes.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setContextReady(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // (b) Filet de sécurité : si le lot prioritaire est complet avant le
+  //     minuteur, inutile d'attendre.
+  useEffect(() => {
+    if (loadProgress.total > 0 && loadProgress.loaded >= loadProgress.total) setContextReady(true);
+  }, [loadProgress]);
+
+  /**
+   * Dénominateur de l'indicateur : le nombre de groupes qui SERONT chargés,
+   * pas seulement ceux du palier en cours. Sans cela l'indicateur
+   * disparaissait entre les deux paliers puis revenait — il annonçait
+   * « terminé » alors que 3,7 Mo restaient à venir.
+   */
+  const intendedGroupCount = useMemo(() => {
+    const scope =
+      focusedSubregion && !DEFAULT_LOADED_SUBREGIONS.includes(focusedSubregion)
+        ? [...DEFAULT_LOADED_SUBREGIONS, focusedSubregion]
+        : DEFAULT_LOADED_SUBREGIONS;
+    return (assetManifest as { subregion: string; category: AnatomyCategory }[]).filter(
+      (group) => scope.includes(group.subregion) && activeSystems[group.category] === true,
+    ).length;
+  }, [focusedSubregion, activeSystems]);
+
+  const progressTotal = Math.max(loadProgress.total, intendedGroupCount);
+
   /**
    * État d'apprentissage transmis au modèle 3D — `answeredId` reste nul tant
    * qu'aucune réponse n'est donnée, la cible n'est donc jamais révélée avant
@@ -363,10 +413,27 @@ export function AnatomyPage() {
     return loadedVisibleStructures.map((s) => s.id);
   }, [learningActive, learningCandidates, focusedSubregion, structures, loadedVisibleStructures]);
 
+  /**
+   * Citations de la fiche « cours » DÉJÀ générée pour la structure
+   * sélectionnée. `undefined` = lecture en cours, `null` = aucune fiche.
+   * Rien n'est fabriqué ici : la carte n'affiche que ce que la base contient.
+   */
+  const selectedCitations = useLiveQuery(async () => {
+    if (!selectedId) return null;
+    const sheet = await getAnatomySheet(selectedId, 'course');
+    return sheet?.citations ?? null;
+  }, [selectedId]);
+
   const showInfoPanel = selectedStructure && !learningActive;
 
   return (
-    <div className="flex h-full min-h-0 flex-col" style={{ background: 'var(--bg)', color: 'var(--ink)' }}>
+    /*
+      La page DÉFILE. On ne cherche plus à faire tenir le cockpit et les cinq
+      cartes dans une hauteur d'écran : le cockpit reçoit une hauteur
+      confortable, les cartes descendent en dessous, et l'utilisateur fait
+      défiler. Comprimer les cartes les rendait illisibles.
+    */
+    <div className="flex min-h-full flex-col" style={{ background: 'var(--bg)', color: 'var(--ink)' }}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
         <div>
           <h1 className="text-[1.15rem] leading-tight text-[var(--ink)]">Anatomie 3D</h1>
@@ -387,15 +454,17 @@ export function AnatomyPage() {
           Le rail de navigation de l'app passe en mode icônes sur cette route,
           ce qui rend ~176 px au contenu et permet de tenir les 4 colonnes sur
           un iPad en paysage sans écraser le modèle. */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[12.5rem_minmax(0,1fr)_15rem_15rem] xl:grid-cols-[14rem_minmax(0,1fr)_19rem_17rem]">
-        {/* Rail gauche pleine hauteur : les systèmes, puis le schéma
-            anatomique interactif — c'est la colonne qui a la hauteur
-            nécessaire pour afficher un corps entier lisible. */}
-        {/* Le rail DÉFILE, y compris en paysage : systèmes + vues +
-            exploration dépassent la hauteur d'un iPad, et sans défilement
-            l'algorithme flex écrasait la carte d'exploration à quelques
-            pixels — le schéma en débordait, hors de portée du doigt. */}
-        <aside className="col-span-2 flex min-h-0 shrink-0 flex-col gap-3 overflow-y-auto border-b border-[var(--line)] p-3 lg:col-span-1 lg:border-b-0 lg:border-r">
+      {/*
+        COCKPIT — Systèmes | Modèle 3D | Informations | Recherche (§7).
+        Hauteur explicite et généreuse : le modèle reste la partie dominante,
+        et chaque colonne défile pour son compte. Sous `lg`, les colonnes
+        s'empilent et la page continue simplement vers le bas.
+      */}
+      <div className="grid shrink-0 grid-cols-2 lg:h-[min(76vh,46rem)] lg:min-h-[34rem] lg:grid-cols-[12.5rem_minmax(0,1fr)_15rem_15rem] xl:grid-cols-[14rem_minmax(0,1fr)_19rem_17rem]">
+        {/* Rail gauche : systèmes et vues. L'exploration par région n'y est
+            plus — elle est redevenue une vraie carte, en bas, où elle a la
+            place d'afficher un grand schéma. */}
+        <aside className="col-span-2 flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:col-span-1 lg:border-b-0 lg:border-r">
           <div className="shrink-0">
             <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Systèmes</p>
             <SystemToggleBar structures={structures ?? []} active={activeSystems} onToggle={toggleSystem} />
@@ -414,27 +483,16 @@ export function AnatomyPage() {
                   onClick={() => viewerRef.current?.setView(view.id)}
                   title={view.title}
                   data-touch-target
-                  className="rounded-[var(--radius-control)] border border-[var(--line)] px-1 py-1.5 text-[0.7rem] font-medium text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                  className="rounded-[var(--radius-control)] border border-[var(--line)] px-1 py-1.5 text-[0.72rem] font-medium text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)]"
                 >
                   {view.label}
                 </button>
               ))}
             </div>
           </div>
-          {/* Hauteur plancher : la carte reste utilisable même quand le rail
-              défile, au lieu d'être comprimée par ses voisins. */}
-          <div className="min-h-[24rem] flex-1 shrink-0">
-            <RegionExplorerCard
-              structures={structures ?? []}
-              focusedSubregion={focusedSubregion}
-              onOpenSubregion={setFocusedSubregion}
-              onCloseSubregion={closeSubregion}
-              selectedId={selectedId}
-              onSelectStructure={selectStructure}
-            />
-          </div>
+
           <p
-            className="shrink-0 text-[0.64rem] leading-tight text-[var(--ink-faint)]"
+            className="mt-auto shrink-0 text-[0.68rem] leading-snug text-[var(--ink-faint)]"
             title="Les données BodyParts3D proviennent d'un spécimen unique : aucune variante homme/femme distincte n'existe dans la source, elle n'est donc pas proposée."
           >
             BodyParts3D/DBCLS (CC BY-SA) — spécimen unique.
@@ -467,10 +525,10 @@ export function AnatomyPage() {
                 onLoadProgress={handleLoadProgress}
               />
               <ViewportControls viewerRef={viewerRef} isFullscreen={isFullscreen} />
-              {loadProgress.total > 0 && loadProgress.loaded < loadProgress.total && (
+              {progressTotal > 0 && loadProgress.loaded < progressTotal && (
                 <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-[0.75rem] text-white backdrop-blur">
                   <Spinner size={12} />
-                  Chargement de l’anatomie… {loadProgress.loaded}/{loadProgress.total}
+                  Chargement de l’anatomie… {loadProgress.loaded}/{progressTotal}
                 </div>
               )}
               {learningActive && (
@@ -514,137 +572,65 @@ export function AnatomyPage() {
           viewport 3D doit rester la zone dominante de l'écran. Chaque carte
           défile en interne plutôt que de pousser le modèle vers le haut. */}
       {/*
-        OUTILS — un seul panneau à onglets, pleine largeur, plutôt que quatre
-        cartes comprimées côte à côte. Chaque outil dispose ainsi de toute la
-        largeur (≈ 1000 px sur iPad paysage) au lieu de 250 px : les boutons,
-        les vignettes et les textes redeviennent réellement utilisables.
+        CARTES ANATOMIQUES (§4/§19) — cinq cartes RÉELLES, visibles en même
+        temps, sur deux lignes. Volontairement PAS une barre d'onglets : on
+        doit comprendre d'un coup d'œil ce que la section propose. Si elles
+        ne tiennent pas dans la hauteur restante, la page défile — c'est
+        assumé, et préférable à des cartes écrasées.
       */}
-      <div className="flex shrink-0 flex-col border-t border-[var(--line)] lg:h-[15rem]">
-        <div className="shrink-0 px-3 pt-2.5">
-          <SegmentedControl
-            size="sm"
-            className="flex-nowrap overflow-x-auto"
-            segments={[
-              { value: 'isolation', label: 'Isolation' },
-              { value: 'apprentissage', label: 'Apprentissage' },
-              { value: 'combinaisons', label: 'Combinaisons' },
-              // « Intégration cours » et non « Cours » : le panneau
-              // Informations a déjà un onglet « Cours », deux commandes
-              // homonymes à l'écran seraient ambiguës.
-              { value: 'cours', label: 'Intégration cours' },
-            ]}
-            value={tool}
-            onChange={setTool}
+      <div
+        className="grid grid-cols-1 items-start gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 xl:grid-cols-3"
+        // `content-visibility` : le navigateur saute la mise en page et le
+        // rendu des cartes encore hors écran, sans rien retirer du DOM ni de
+        // l'accessibilité. `contain-intrinsic-size` réserve leur place pour
+        // que la barre de défilement ne saute pas.
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 32rem' }}
+      >
+        <RegionExplorerCard
+          structures={structures ?? []}
+          focusedSubregion={focusedSubregion}
+          onOpenSubregion={setFocusedSubregion}
+          onCloseSubregion={closeSubregion}
+          selectedId={selectedId}
+          onSelectStructure={selectStructure}
+        />
+
+        <IsolationCard
+          structure={selectedStructure}
+          isolated={isolated}
+          onIsolate={() => setIsolated(true)}
+          onRestore={() => setIsolated(false)}
+          onResetView={resetView}
+        />
+
+        <section className="surface-card flex flex-col p-4">
+          <h2 className="mb-3 text-[0.95rem] font-semibold text-[var(--ink)]">Mode apprentissage</h2>
+          <LearningModeCard
+            active={learningActive}
+            target={learningTarget}
+            answered={learningAnswered}
+            result={learningResult}
+            streak={learningStreak}
+            onStart={startLearning}
+            onStop={stopLearning}
+            onNext={nextLearningQuestion}
           />
-        </div>
+        </section>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {tool === 'isolation' && (
-            /* Mode isolation (§10) — la vignette montre RÉELLEMENT la
-               structure isolée, rendue depuis son maillage. */
-            <div className="flex h-full min-h-0 flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="flex shrink-0 items-center gap-3">
-                <StructureThumbnail structure={selectedStructure ?? null} size={72} />
-                <div className="min-w-0">
-                  <p className="text-[0.95rem] font-semibold text-[var(--ink)]">
-                    {selectedStructure ? selectedStructure.name : 'Aucune structure sélectionnée'}
-                  </p>
-                  <p className="mt-0.5 text-[0.8rem] leading-snug text-[var(--ink-faint)]">
-                    {isolated && selectedStructure
-                      ? 'Isolée — tout le reste du modèle est masqué.'
-                      : selectedStructure
-                        ? 'Sélectionnée dans le modèle. Isole-la pour masquer le reste.'
-                        : 'Touche un point du modèle, un résultat de recherche ou une structure de la liste.'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-1 flex-wrap content-start gap-2">
-                <Button size="sm" disabled={!selectedStructure || isolated} onClick={() => setIsolated(true)}>
-                  Isoler la sélection
-                </Button>
-                <Button size="sm" variant="secondary" disabled={!selectedStructure || isolated} onClick={() => setIsolated(true)}>
-                  Masquer le reste
-                </Button>
-                <Button size="sm" variant="secondary" disabled={!isolated} onClick={() => setIsolated(false)}>
-                  Restaurer
-                </Button>
-                <Button size="sm" variant="ghost" onClick={resetView}>
-                  Réinitialiser la vue
-                </Button>
-              </div>
-            </div>
-          )}
+        <CombinationsCard
+          combinations={COMBINATIONS}
+          allCategories={ALL_CATEGORIES}
+          activeSystems={activeSystems}
+          samples={systemSamples}
+          onApply={applyPreset}
+          onHideAll={hideAll}
+        />
 
-          {tool === 'apprentissage' && (
-            <LearningModeCard
-              active={learningActive}
-              target={learningTarget}
-              answered={learningAnswered}
-              result={learningResult}
-              streak={learningStreak}
-              onStart={startLearning}
-              onStop={stopLearning}
-              onNext={nextLearningQuestion}
-            />
-          )}
-
-          {tool === 'combinaisons' && (
-            /* Combinaisons (§12) — vignettes réelles des systèmes combinés,
-               et application effective de l'état des cinq systèmes. */
-            <div className="flex h-full min-h-0 flex-col gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
-                {COMBINATIONS.map((combo) => {
-                  const active = ALL_CATEGORIES.every((c) => activeSystems[c] === combo.categories.includes(c));
-                  return (
-                    <button
-                      key={combo.label}
-                      type="button"
-                      onClick={() => applyPreset(combo.categories)}
-                      aria-pressed={active}
-                      data-touch-target
-                      className={
-                        'flex flex-col items-center justify-center gap-2 rounded-[var(--radius-control)] border p-2 text-center transition-colors ' +
-                        (active
-                          ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
-                          : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
-                      }
-                    >
-                      <span aria-hidden className="flex items-center justify-center -space-x-2">
-                        {combo.categories.map((category) => (
-                          <StructureThumbnail
-                            key={category}
-                            structure={systemSamples.get(category) ?? null}
-                            size={44}
-                            className="ring-1 ring-[var(--surface-1)]"
-                          />
-                        ))}
-                      </span>
-                      <span className="text-[0.8rem] font-medium leading-tight text-[var(--ink)]">{combo.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <Button size="sm" variant="ghost" className="shrink-0 self-start" onClick={hideAll}>
-                Tout masquer
-              </Button>
-            </div>
-          )}
-
-          {tool === 'cours' && (
-            <div className="flex h-full min-h-0 flex-col gap-2">
-              <p className="text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
-                Toutes les informations affichées viennent de tes cours importés, avec la page source cliquable —
-                jamais inventées. Sélectionne une structure puis ouvre l’onglet « Cours » du panneau Informations pour
-                voir les passages utilisés.
-              </p>
-              <Link to="/cours" className="self-start">
-                <Button size="sm" variant="secondary">
-                  Voir mes cours →
-                </Button>
-              </Link>
-            </div>
-          )}
-        </div>
+        <CourseIntegrationCard
+          structure={selectedStructure}
+          citations={selectedCitations ?? null}
+          loading={selectedCitations === undefined && selectedId !== null}
+        />
       </div>
     </div>
   );

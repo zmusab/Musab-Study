@@ -156,6 +156,22 @@ officiel, fémur, tibia, patella et ligaments croisés sont rattachés à la
 cuisse et à la jambe. Le compte reflète l'arbre source, il n'est pas corrigé
 à la main.
 
+### Ce qui est chargé, et quand
+
+Le dépôt porte 100 % des données ; le navigateur n'en charge qu'une fraction.
+
+| Moment | Contenu | Poids |
+|---|---|---|
+| Palier 1, immédiat | crâne, face, mâchoire, dents — ce que la caméra cadre | **7,8 Mo** (9 fichiers) |
+| Palier 2, en arrière-plan | cou et orbite, qui complètent la vue | 3,7 Mo (6 fichiers) |
+| À la demande | toute autre sous-région, au moment où on l'ouvre | selon la région |
+
+Un groupe dont la sous-région **sort du périmètre est démonté et purgé** du
+cache de `useGLTF` : parcourir tête → thorax → abdomen → main gardait sinon
+toute leur géométrie vivante, et la page finissait par ne plus répondre. Le
+fichier reste en cache HTTP et dans le service worker, y revenir ne
+retélécharge rien.
+
 ### Coût des assets — arbitrage assumé
 
 106 Mo de `.glb` contre 17 Mo pour la version « tête et cou » précédente.

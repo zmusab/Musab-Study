@@ -148,6 +148,9 @@ function SystemModel({
   onSelectStructure,
   onHover,
   registerMesh,
+  unregisterMesh,
+  groupKey,
+  onReady,
 }: {
   url: string;
   category: AnatomyCategory;
@@ -159,7 +162,14 @@ function SystemModel({
   onSelectStructure: (id: ID | null) => void;
   onHover: (id: ID | null) => void;
   registerMesh: (id: ID, object: THREE.Object3D) => void;
+  unregisterMesh: (id: ID) => void;
+  /** Clé du groupe, signalée une fois le fichier RÉELLEMENT téléchargé et analysé. */
+  groupKey: string;
+  onReady: (key: string) => void;
 }) {
+  // `useGLTF` suspend : tout ce qui suit ne s'exécute qu'une fois le fichier
+  // téléchargé et analysé. C'est donc ici, et pas au montage du parent, que
+  // l'on sait qu'un groupe est vraiment arrivé.
   const { scene } = useGLTF(url);
 
   // Clone la scène ET chaque matériau : les structures d'un même système
@@ -182,7 +192,23 @@ function SystemModel({
     cloned.traverse((child) => {
       if (child instanceof THREE.Mesh && child.name) registerMesh(child.name, child);
     });
-  }, [cloned, registerMesh]);
+    onReady(groupKey);
+    // Au démontage (région quittée), les maillages doivent quitter le
+    // registre : sinon des ancres de points pointeraient vers des objets
+    // détachés de la scène.
+    const registered: ID[] = [];
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.name) registered.push(child.name);
+    });
+    return () => {
+      for (const id of registered) unregisterMesh(id);
+    };
+    // `onReady` et `registerMesh` sont stables (useCallback sans dépendance) :
+    // l'effet ne doit tourner qu'à l'arrivée d'un nouveau maillage. Une
+    // version antérieure passait ici une fonction fléchée recréée à chaque
+    // rendu, ce qui relançait l'effet en boucle — `registerMesh` incrémente
+    // un compteur d'état, la page ne rendait plus la main.
+  }, [cloned, registerMesh, unregisterMesh, groupKey, onReady]);
 
   useEffect(() => {
     cloned.traverse((child) => {
@@ -699,6 +725,18 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   const [hasFramed, setHasFramed] = useState(false);
   const [everLoaded, setEverLoaded] = useState<Set<string>>(new Set());
   const [registryVersion, setRegistryVersion] = useState(0);
+
+  /**
+   * Groupes RÉELLEMENT téléchargés. À distinguer de `groupsToLoad`, qui liste
+   * seulement les groupes montés : un groupe monté est encore en cours de
+   * téléchargement. Confondre les deux faisait afficher « chargement
+   * terminé » dès le montage, alors que 11 Mo restaient à venir.
+   */
+  const [readyGroups, setReadyGroups] = useState<Set<string>>(new Set());
+  const markGroupReady = useCallback((key: string) => {
+    setReadyGroups((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, []);
+
   const [hoveredId, setHoveredId] = useState<ID | null>(null);
   /** Point survolé — sert à afficher son nom sans avoir à le sélectionner. */
   const [hoveredDotId, setHoveredDotId] = useState<ID | null>(null);
@@ -752,40 +790,71 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
     setHasFramed(false);
   }, [focusedSubregion]);
 
-  // Un groupe déjà téléchargé reste monté même si son système est désactivé :
-  // `useGLTF` met en cache par URL, le re-cocher est donc instantané, et la
-  // visibilité par structure suffit à le masquer. On ne télécharge en
-  // revanche jamais un groupe qui n'a pas été demandé au moins une fois.
+  /*
+    Quels groupes restent MONTÉS.
+
+    Deux règles, et la seconde compte autant que la première :
+
+    1. Un groupe déjà téléchargé reste monté même si son système est
+       décoché — `useGLTF` met en cache par URL, le re-cocher est instantané
+       et la visibilité par structure suffit à le masquer.
+
+    2. Un groupe dont la sous-région SORT du périmètre est démonté et purgé
+       du cache. Sans cela l'ensemble ne faisait que grossir : parcourir tête
+       → thorax → abdomen → main gardait toute leur géométrie en mémoire, et
+       la page finissait par ne plus répondre. Le fichier reste en cache HTTP
+       et dans le service worker : y revenir ne retélécharge rien.
+  */
   useEffect(() => {
     setEverLoaded((prev) => {
-      const next = new Set(prev);
-      let changed = false;
+      const next = new Set<string>();
+      for (const key of prev) {
+        const group = ASSET_GROUPS.find((g) => g.key === key);
+        if (group && loadedSubregions.includes(group.subregion)) next.add(key);
+      }
       for (const group of ASSET_GROUPS) {
         if (!loadedSubregions.includes(group.subregion)) continue;
         if (activeSystems[group.category] !== true) continue;
-        if (!next.has(group.key)) {
-          next.add(group.key);
-          changed = true;
-        }
+        next.add(group.key);
       }
-      return changed ? next : prev;
+      if (next.size === prev.size && [...next].every((k) => prev.has(k))) return prev;
+
+      // Libère la géométrie des groupes évincés : sans cette purge, le cache
+      // de `useGLTF` garderait les maillages vivants malgré le démontage.
+      for (const key of prev) if (!next.has(key)) useGLTF.clear(assetUrl(key));
+      return next;
     });
   }, [activeSystems, loadedSubregions]);
 
   const groupsToLoad = useMemo(() => ASSET_GROUPS.filter((g) => everLoaded.has(g.key)), [everLoaded]);
+
+  // Un groupe évincé n'est plus « prêt » : sans cette purge, l'indicateur de
+  // progression compterait des groupes qui ne sont plus montés.
+  useEffect(() => {
+    setReadyGroups((prev) => {
+      const next = new Set([...prev].filter((key) => everLoaded.has(key)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [everLoaded]);
 
   useEffect(() => {
     if (!onLoadProgress) return;
     const wanted = ASSET_GROUPS.filter(
       (g) => loadedSubregions.includes(g.subregion) && activeSystems[g.category] === true,
     ).length;
-    onLoadProgress(groupsToLoad.length, wanted);
-  }, [groupsToLoad, loadedSubregions, activeSystems, onLoadProgress]);
+    onLoadProgress(readyGroups.size, wanted);
+  }, [readyGroups, loadedSubregions, activeSystems, onLoadProgress]);
 
   const registerMesh = useCallback((id: ID, object: THREE.Object3D) => {
     meshRegistry.current.set(id, object);
     setRegistryVersion((v) => v + 1);
   }, []);
+
+  const unregisterMesh = useCallback((id: ID) => {
+    meshRegistry.current.delete(id);
+    setRegistryVersion((v) => v + 1);
+  }, []);
+
 
   const resetView = useCallback(() => {
     setHasFramed(false);
@@ -906,6 +975,9 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
                 onSelectStructure={onSelectStructure}
                 onHover={setHoveredId}
                 registerMesh={registerMesh}
+                unregisterMesh={unregisterMesh}
+                groupKey={group.key}
+                onReady={markGroupReady}
               />
             </Suspense>
           ))}

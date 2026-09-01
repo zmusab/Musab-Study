@@ -84,14 +84,33 @@ export function subregionsOfRegion(regionId: string): SubregionMeta[] {
 }
 
 /**
- * Sous-régions chargées d'emblée : uniquement celles de la tête et du cou non
- * marquées `lazy`. Le corps entier représente 26,3 M triangles et 106 Mo
- * d'assets — les charger tous à l'ouverture serait absurde. Chaque autre
- * région est téléchargée au moment où on l'ouvre.
+ * Chargement initial en DEUX TEMPS.
+ *
+ * Le corps entier représente 26,3 M triangles et 106 Mo d'assets : les
+ * charger tous à l'ouverture serait absurde. Mais même la tête et le cou
+ * pèsent 11,5 Mo — dont 3,3 Mo pour le seul cou, qui est hors du cadrage
+ * initial de la caméra (elle vise crâne, face, mâchoire et dents).
+ *
+ * On sépare donc :
+ *  - PRIORITAIRE : ce que la caméra cadre réellement à l'ouverture. Ces
+ *    fichiers partent immédiatement, le modèle est utilisable au plus vite ;
+ *  - CONTEXTE : ce qui complète la vue (cou, orbite) sans être le sujet. Ces
+ *    fichiers partent une fois la page interactive, en arrière-plan.
+ *
+ * Aucune structure n'est perdue : le second temps arrive de lui-même, sans
+ * action de l'utilisateur.
  */
-export const DEFAULT_LOADED_SUBREGIONS: readonly string[] = SUBREGIONS
-  .filter((s) => s.region === 'tete-et-cou' && !s.lazy)
-  .map((s) => s.id);
+export const PRIORITY_SUBREGIONS: readonly string[] = ['crane', 'face', 'machoire', 'dents'];
+
+export const CONTEXT_SUBREGIONS: readonly string[] = SUBREGIONS.filter(
+  (s) => s.region === 'tete-et-cou' && !s.lazy && !PRIORITY_SUBREGIONS.includes(s.id),
+).map((s) => s.id);
+
+/** Périmètre complet de la tête et du cou — priorité + contexte. */
+export const DEFAULT_LOADED_SUBREGIONS: readonly string[] = [
+  ...PRIORITY_SUBREGIONS,
+  ...CONTEXT_SUBREGIONS,
+];
 
 /**
  * Clé du fichier `.glb` contenant une structure : le pipeline écrit un

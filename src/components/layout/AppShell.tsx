@@ -177,14 +177,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     // seulement à la racine du document : cette valeur l'emporte sur celle
     // héritée de `<html>` pour tout ce sous-arbre, sans nouvelle feuille de
     // style — les mêmes variables déjà utilisées partout ailleurs.
-    // Sur une route pleine page ET à partir de `lg` (iPad en paysage), la
-    // coquille fait EXACTEMENT la hauteur de la fenêtre : c'est ce qui permet
-    // aux colonnes internes de défiler chacune de leur côté au lieu
-    // d'allonger la page. En portrait et sur mobile les colonnes s'empilent —
-    // la page doit alors pouvoir grandir et défiler normalement, sinon le bas
-    // de l'empilement serait inaccessible.
+    // La coquille grandit avec son contenu, y compris sur les routes pleine
+    // page. Une version antérieure la bloquait à la hauteur de la fenêtre
+    // pour éviter tout défilement : les cartes du bas s'en trouvaient
+    // écrasées à quelques pixels. C'est la page qui défile désormais, et les
+    // sections internes qui portent leur propre hauteur.
     <div
-      className={cn('flex min-h-dvh', fullBleed && 'lg:h-dvh lg:min-h-0 lg:overflow-hidden')}
+      className={cn('flex min-h-dvh')}
       data-theme={fullBleed ? 'dark' : undefined}
       style={fullBleed ? { background: 'var(--bg)' } : undefined}
     >
