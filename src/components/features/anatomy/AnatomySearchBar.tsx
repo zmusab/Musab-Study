@@ -1,15 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Icon, Input } from '@/components/ui';
+import { StructureThumbnail } from './StructureThumbnail';
 import { searchItems, type SearchableItem } from '@/services/search';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
-
-const CATEGORY_ICON: Record<AnatomyCategory, string> = {
-  squelette: '🦴',
-  muscles: '💪',
-  nerfs: '🧠',
-  vaisseaux: '🩸',
-  organes: '🫀',
-};
 
 const CATEGORY_LABEL: Record<AnatomyCategory, string> = {
   squelette: 'Os',
@@ -26,6 +19,10 @@ const CATEGORY_LABEL: Record<AnatomyCategory, string> = {
  * résultats restent visibles pendant l'exploration, comme demandé. Chaque
  * sélection déclenche le vol de caméra (géré par le parent), jamais une
  * téléportation directe.
+ *
+ * Chaque résultat porte la VIGNETTE du maillage réel de la structure (voir
+ * `StructureThumbnail`) : on voit à quoi ressemble l'os ou le muscle avant de
+ * cliquer. Les structures sans géométrie affichent une pastille neutre.
  */
 export function AnatomySearchBar({
   structures,
@@ -49,7 +46,7 @@ export function AnatomySearchBar({
       })),
     [structures],
   );
-  const categoryById = useMemo(() => new Map(structures.map((s) => [s.id, s.category])), [structures]);
+  const byId = useMemo(() => new Map(structures.map((s) => [s.id, s])), [structures]);
 
   const results = useMemo(() => (query.trim().length > 0 ? searchItems(items, query, 12) : []), [items, query]);
 
@@ -84,8 +81,8 @@ export function AnatomySearchBar({
           <ul className="flex flex-col gap-1">
             {results.map((result) => {
               const isSelected = result.id === selectedId;
-              const category = categoryById.get(result.id);
-              if (!category) return null;
+              const structure = byId.get(result.id);
+              if (!structure) return null;
               return (
                 <li key={result.id}>
                   <button
@@ -96,16 +93,11 @@ export function AnatomySearchBar({
                       (isSelected ? 'bg-[var(--accent-tint)]' : 'hover:bg-[var(--surface-2)]')
                     }
                   >
-                    <span
-                      aria-hidden
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[0.95rem]"
-                    >
-                      {CATEGORY_ICON[category]}
-                    </span>
+                    <StructureThumbnail structure={structure} size={32} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[0.86rem] font-medium text-[var(--ink)]">{result.title}</span>
                       <span className="block truncate text-[0.72rem] text-[var(--ink-faint)]">
-                        {CATEGORY_LABEL[category]}
+                        {CATEGORY_LABEL[structure.category]}
                         {result.subtitle ? ` · ${result.subtitle}` : ''}
                       </span>
                     </span>

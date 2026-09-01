@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import catalog from '@/data/anatomy/headNeckCatalog.json';
+import catalog from '@/data/anatomy/bodyCatalog.json';
 import manifest from '@/data/anatomy/assetManifest.json';
 import { assetKey, SUBREGIONS, DEFAULT_LOADED_SUBREGIONS } from '@/services/anatomy/regions';
 

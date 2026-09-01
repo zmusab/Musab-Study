@@ -45,6 +45,21 @@ const page = await context.newPage();
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+/**
+ * Attend qu'une condition observée CÔTÉ NODE devienne vraie (les requêtes
+ * réseau sont collectées ici, pas dans la page). Attendre la condition plutôt
+ * que dormir une durée fixe est ce qui rend ces vérifications déterministes,
+ * quelle que soit la charge de la machine.
+ */
+async function waitFor(predicate, timeout = 30000, step = 200) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, step));
+  }
+  return predicate();
+}
+
 // Enregistré AVANT la navigation : sinon aucune requête d'asset ne serait
 // observée et la vérification du chargement paresseux serait vide de sens.
 const glbRequests = [];
@@ -115,12 +130,24 @@ check(
 await page.getByRole('button', { name: 'Tout afficher' }).click();
 await page.waitForTimeout(300);
 
-// ---------- Exploration par région : drill-down réel + marqueurs positionnés sur le vrai maillage ----------
+// ---------- Schéma anatomique interactif : zones cliquables issues du rendu réel ----------
 const breadcrumbNav = page.getByRole('navigation', { name: 'Navigation anatomique' });
-// La carte d'exploration rend le libellé de la région dans un `<span>` dédié
-// (icône séparée, aria-hidden) : c'est ce span, pas le bouton entier
-// (icône+libellé+compteur), qui correspond exactement à « Crâne ».
-await page.getByText('Crâne', { exact: true }).first().click();
+// Le schéma est une IMAGE du corps réel (rendue depuis les maillages par
+// `scripts/anatomy/build-schema.mjs`) ; ses points d'accroche sont des
+// boutons positionnés d'après la carte de pixels générée, pas des zones
+// dessinées à la main. On navigue donc par eux.
+const schema = page.getByRole('group', { name: 'Schéma anatomique interactif' });
+
+check('Le schéma anatomique affiche le corps rendu depuis les maillages', await schema.locator('img[src="/anatomy/schema/body.png"]').isVisible());
+const regionHotspots = await schema.getByRole('button').count();
+check('Les régions du corps sont des zones cliquables du schéma', regionHotspots >= 4, `${regionHotspots} zones`);
+
+await schema.getByRole('button', { name: /^Tête et cou/ }).click();
+await page.waitForTimeout(800);
+const subHotspots = await schema.getByRole('button').count();
+check('Ouvrir une région révèle ses sous-régions sur le schéma', subHotspots >= 3, `${subHotspots} zones`);
+
+await schema.getByRole('button', { name: /^Crâne/ }).click();
 await page.waitForTimeout(2500);
 check('Le fil d’Ariane descend jusqu’à la sous-région ouverte', await breadcrumbNav.getByText(/Crâne/).isVisible());
 const explorerListItem = page.locator('ul').getByText('Os temporal droit', { exact: true });
@@ -192,13 +219,15 @@ const panelOpen = await closePanelButton(page)
   .catch(() => false);
 check('Sélectionner une structure de la sous-région ouvre son panneau', panelOpen);
 if (panelOpen) {
-  const title = ((await page.locator('p.truncate').first().textContent()) ?? '').trim();
+  const title = ((await page.locator('[data-anatomy-panel-title]').first().textContent()) ?? '').trim();
   check('Le panneau affiche exactement la structure choisie', title === 'Os temporal droit', title);
   await closePanelButton(page).click();
   await page.waitForTimeout(400);
 }
 
-// Revenir à Tête et cou
+// Revenir à Tête et cou puis au corps entier
+await page.getByRole('button', { name: 'Remonter d’un niveau' }).click();
+await page.waitForTimeout(500);
 await page.getByRole('button', { name: 'Remonter d’un niveau' }).click();
 await page.waitForTimeout(500);
 
@@ -282,14 +311,48 @@ check(
   await page.getByText('Recherche intelligente', { exact: false }).isVisible(),
 );
 
-// ---------- Mode apprentissage : un vrai mini-jeu, pas une décoration ----------
+// ---------- Mode apprentissage : correction visible SUR LE MODÈLE 3D ----------
 await page.getByRole('button', { name: 'Commencer' }).click();
 await page.waitForTimeout(1200);
 check('Le mode apprentissage annonce une vraie structure cible à trouver', await page.getByText(/Trouve\s*:/).first().isVisible());
 check('Le panneau d’information reste caché pendant le jeu — ne révèle pas la réponse', (await page.getByRole('tab', { name: 'Informations' }).count()) === 0);
+check(
+  'Avant la réponse, aucune structure n’est marquée — la cible n’est pas révélée',
+  (await page.locator('[data-anatomy-feedback]').count()) === 0,
+);
+
+// Réponse volontairement au hasard : un clic au centre du canevas. Ce qui est
+// vérifié n'est pas la justesse de la réponse mais la CORRECTION affichée sur
+// le modèle — la bonne structure marquée « correct », et la structure cliquée
+// marquée « incorrect » si elle diffère.
+const canvasBox = await page.locator('canvas').first().boundingBox();
+await page.mouse.click(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+await page
+  .locator('[data-anatomy-feedback="correct"]')
+  .waitFor({ state: 'attached', timeout: 20000 })
+  .catch(() => {});
+const feedback = await page
+  .locator('[data-anatomy-feedback]')
+  .evaluateAll((els) => els.map((e) => e.getAttribute('data-anatomy-feedback')));
+check(
+  'Après la réponse, la bonne structure est marquée directement sur le modèle 3D',
+  feedback.includes('correct'),
+  feedback.join(', ') || 'aucun marqueur',
+);
+check(
+  'Une réponse erronée est marquée comme telle, à côté de la bonne',
+  feedback.length === 1 || feedback.includes('incorrect'),
+  feedback.join(', '),
+);
+await page.screenshot({ path: `${SHOT}/anatomy-learning.png`, fullPage: false });
+
 await page.getByRole('button', { name: 'Arrêter' }).click();
 await page.waitForTimeout(300);
 check('Arrêter quitte le mode apprentissage', await page.getByRole('button', { name: 'Commencer' }).isVisible());
+check(
+  'Quitter le mode apprentissage retire la correction du modèle',
+  (await page.locator('[data-anatomy-feedback]').count()) === 0,
+);
 
 // ---------- Contrôles flottants du viewport (zoom/reset/plein écran) ----------
 check('Contrôle de zoom avant présent', await page.getByLabel('Zoomer', { exact: true }).isVisible());
@@ -325,21 +388,71 @@ const comboActive = await page
   .getAttribute('aria-pressed');
 check('Les combinaisons reflètent l’état réel des systèmes (§12)', comboActive === 'true', `aria-pressed=${comboActive}`);
 
-// Navigation corps entier : les régions non modélisées sont annoncées comme
-// telles, jamais masquées ni simulées.
+// ---------- Vignettes anatomiques réelles : plus aucun emoji de substitution ----------
+await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
+await page.waitForTimeout(600);
+const thumbs = await page.locator('img[src^="/anatomy/thumbs/"]').count();
+check('Les résultats de recherche portent la vignette du maillage réel', thumbs > 0, `${thumbs} vignettes`);
+const thumbLoaded = await page
+  .locator('img[src^="/anatomy/thumbs/"]')
+  .first()
+  .evaluate((img) => img.complete && img.naturalWidth > 0);
+check('Les vignettes se chargent réellement (image non cassée)', thumbLoaded);
+
+// Une structure sans maillage ne reçoit PAS d'image de substitution.
+await page.getByPlaceholder(/Rechercher une structure/).fill('nerf massétérique');
+await page.waitForTimeout(600);
+const neutral = await page.locator('[title="Géométrie 3D non disponible"]').count();
+check(
+  'Une structure sans maillage affiche une pastille « 3D non disponible », jamais un emoji',
+  neutral > 0,
+  `${neutral} pastilles`,
+);
+await page.getByPlaceholder(/Rechercher une structure/).fill('');
+
+// ---------- Corps entier : une région hors tête et cou se charge vraiment ----------
+await schema.getByRole('button', { name: /^Membre inférieur/ }).click();
+await page.waitForTimeout(800);
+await schema.getByRole('button', { name: /^Cuisse/ }).click();
+// On ATTEND la requête réseau réelle plutôt qu'un délai : le téléchargement
+// d'un groupe d'assets dépend de la charge de la page. Un `sleep` calibré
+// serait non déterministe — c'est d'ailleurs ce qui a fait échouer ce test
+// une fois lancé après les dix autres suites.
+const thighAsset = await waitFor(() => glbRequests.some((f) => f.startsWith('cuisse')), 60000);
+check(
+  'Les assets d’une région éloignée (cuisse) sont téléchargés à la demande, pas au démarrage',
+  thighAsset,
+  glbRequests.filter((f) => f.startsWith('cuisse')).join(', ') || 'aucune requête cuisse',
+);
+const thighNamed = await page
+  .waitForFunction(() => document.body.innerText.includes('Sartorius') || document.body.innerText.includes('Gracile'), null, { timeout: 30000 })
+  .then(() => true)
+  .catch(() => false);
+check('La cuisse expose de vraies structures nommées du corps entier', thighNamed);
+await page.screenshot({ path: `${SHOT}/anatomy-cuisse.png`, fullPage: false });
+
+// Navigation corps entier : toutes les régions réellement modélisées sont
+// atteignables depuis le schéma — plus seulement la tête et le cou.
 const up = page.getByRole('button', { name: 'Remonter d’un niveau' });
 if ((await up.count()) > 0) {
-  await up.first().click();
-  await page.waitForTimeout(400);
-  const unavailable = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('button'))
-      .filter((e) => /Tronc|Membre supérieur|Membre inférieur/.test(e.textContent ?? ''))
-      .map((e) => e.disabled),
-  );
+  while ((await up.count()) > 0) {
+    await up.first().click();
+    await page.waitForTimeout(400);
+  }
+  const unavailable = await schema
+    .getByRole('button')
+    .evaluateAll((els) =>
+      els
+        .filter((e) => /Tronc|Membre supérieur|Membre inférieur/.test(e.getAttribute('aria-label') ?? ''))
+        .map((e) => e.disabled),
+    );
   check(
-    'Le corps entier expose ses régions, désactivées tant qu’aucun maillage n’existe (§3/§20)',
-    unavailable.length === 3 && unavailable.every(Boolean),
-    `${unavailable.length} régions`,
+    // Ces trois régions ÉTAIENT annoncées comme dépourvues de 3D dans la
+    // version précédente. Elles sont désormais réellement modélisées : le
+    // test vérifie donc l'inverse — qu'elles sont présentes ET actives.
+    'Le corps entier expose tronc et membres comme régions réellement explorables (§3/§20)',
+    unavailable.length === 3 && unavailable.every((disabled) => disabled === false),
+    `${unavailable.length} régions, désactivées=${unavailable.filter(Boolean).length}`,
   );
 }
 

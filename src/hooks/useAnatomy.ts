@@ -2,10 +2,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/data/db';
 import type { AnatomyCategory, AnatomySheet, AnatomyStructure, ID } from '@/types';
 
-export function useAnatomyStructures(region: string, category?: AnatomyCategory): AnatomyStructure[] | undefined {
+export function useAnatomyStructures(region?: string, category?: AnatomyCategory): AnatomyStructure[] | undefined {
   return useLiveQuery(async () => {
     let structures = await db.anatomyStructures.toArray();
-    structures = structures.filter((s) => s.region === region);
+    if (region) structures = structures.filter((s) => s.region === region);
     if (category) structures = structures.filter((s) => s.category === category);
     return structures.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   }, [region, category]);

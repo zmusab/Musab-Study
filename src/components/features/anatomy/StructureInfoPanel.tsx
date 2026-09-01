@@ -211,7 +211,11 @@ export function StructureInfoPanel({
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-2 border-b border-[var(--line)] p-4">
         <div className="min-w-0">
-          <p className="truncate text-[1.05rem] font-semibold text-[var(--ink)]">{structure.name}</p>
+          {/* `data-anatomy-panel-title` : point d'ancrage stable pour les
+              tests — plusieurs cartes de la page ont un titre tronqué. */}
+          <p data-anatomy-panel-title className="truncate text-[1.05rem] font-semibold text-[var(--ink)]">
+            {structure.name}
+          </p>
           {structure.latinName && <p className="truncate text-[0.8rem] italic text-[var(--ink-faint)]">{structure.latinName}</p>}
         </div>
         <button

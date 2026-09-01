@@ -1,7 +1,7 @@
 import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { nowISO } from '@/lib/date';
-import headNeckCatalog from '@/data/anatomy/headNeckCatalog.json';
+import bodyCatalog from '@/data/anatomy/bodyCatalog.json';
 import type { AnatomyCategory, AnatomySheet, AnatomyStructure, Citation, ID } from '@/types';
 
 /**
@@ -14,8 +14,8 @@ export interface CatalogEntry {
   name: string;
   latinName: string | null;
   category: AnatomyCategory;
-  region: string;
-  subregion: string;
+  region: string | null;
+  subregion: string | null;
   fmaId: string | null;
   hasMesh: boolean;
   /** Nombre de triangles réellement présents dans la source (0 si structure « cours »). */
@@ -26,7 +26,7 @@ export interface CatalogEntry {
   fdi?: number;
 }
 
-export const HEAD_NECK_CATALOG: readonly CatalogEntry[] = headNeckCatalog as CatalogEntry[];
+export const BODY_CATALOG: readonly CatalogEntry[] = bodyCatalog as CatalogEntry[];
 
 /**
  * Peuple `anatomyStructures` depuis le catalogue statique — idempotent (upsert
@@ -34,13 +34,13 @@ export const HEAD_NECK_CATALOG: readonly CatalogEntry[] = headNeckCatalog as Cat
  * de doublon, et une structure déjà liée à une matière (`subjectId`) garde ce
  * lien même si le catalogue est régénéré.
  */
-export async function seedHeadNeckCatalog(): Promise<void> {
+export async function seedBodyCatalog(): Promise<void> {
   // `region` n'est pas indexé (champ additif, pas de bump de version Dexie
   // nécessaire — voir db.ts) : on filtre en mémoire, la table reste petite.
-  const existing = (await db.anatomyStructures.toArray()).filter((s) => s.region === 'tete-et-cou');
+  const existing = await db.anatomyStructures.toArray();
   const existingById = new Map(existing.map((s) => [s.id, s]));
 
-  const rows: AnatomyStructure[] = HEAD_NECK_CATALOG.map((entry) => {
+  const rows: AnatomyStructure[] = BODY_CATALOG.map((entry) => {
     const previous = existingById.get(entry.id);
     return {
       id: entry.id,

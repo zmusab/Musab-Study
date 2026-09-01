@@ -1,4 +1,4 @@
-# Source des modèles 3D — Anatomie, Tête et Cou
+# Source des modèles 3D — Anatomie, corps entier
 
 ## Origine
 
@@ -55,28 +55,45 @@ pas un choix de notre part.
 ## Conversion effectuée dans ce projet
 
 1. Clonage en lecture seule du mirroir STL (`assets/BodyParts3D_data/`).
-2. **`scripts/anatomy/build-catalog.mjs`** génère `headNeckCatalog.json`
-   depuis l'**arbre d'inclusion officiel** (`conventional_part_of.txt`, le
-   même que l'onglet « Tree » du BP3D Viewer) : descente depuis `head` et
-   `neck`, conservation de tout descendant possédant réellement un fichier
-   STL. La sélection n'est donc pas une liste écrite à la main. Quelques
-   structures pertinentes relevant d'un autre système (carotides,
-   jugulaires, nerfs optiques, cartilage thyroïde, trachée, œsophage,
-   clavicules…) sont ajoutées via `EXTRA_IDS`, chacune vérifiée
-   individuellement.
+2. **`scripts/anatomy/build-catalog.mjs`** génère `bodyCatalog.json` depuis
+   l'**arbre d'inclusion officiel** (`conventional_part_of.txt`, le même que
+   l'onglet « Tree » du BP3D Viewer). La couverture est désormais le **corps
+   entier** : chaque maillage du jeu de données est rattaché à une région et
+   à une sous-région (`scripts/anatomy/regionTree.mjs`) et à un système, en
+   remontant l'arbre officiel. La sélection n'est donc pas une liste écrite
+   à la main, et **aucun maillage disponible n'est laissé de côté** : les 934
+   STL du jeu de données sont tous catalogués.
 3. Les noms français et latins viennent de **`scripts/anatomy/naming.mjs`**,
    seule couche non lue directement dans la source (BodyParts3D ne fournit
    qu'un libellé anglais). Le nom latin n'est renseigné que lorsqu'il est
    certain — sinon `null`, et l'interface n'affiche alors aucun latin plutôt
    qu'une approximation. Toute structure présente dans les données mais
    absente du dictionnaire **fait échouer la génération**.
-4. **`scripts/anatomy/convert-headneck.mjs`** : parseur STL binaire +
+4. **`scripts/anatomy/convert-meshes.mjs`** : parseur STL binaire +
    écrivain glTF/GLB écrits à la main (aucune dépendance de conversion 3D
    externe). Soudure des sommets et recalcul de normales lissées, un fichier
    par couple **(sous-région, système)**, un nœud nommé par structure.
 5. Compression `@gltf-transform/cli` (Apache-2.0/MIT) en
-   `--simplify false --compress meshopt` : quantification et compression
-   Meshopt **uniquement**.
+   `--simplify false --join false --compress meshopt` : quantification et
+   compression Meshopt **uniquement**. `--join false` est indispensable —
+   sans lui, `optimize` fusionne les maillages partageant un matériau, ce
+   qui conserve le nombre de triangles mais détruit la sélection structure
+   par structure. Le pipeline le vérifie en comparant le **nombre de nœuds**
+   de chaque `.glb` au nombre de structures du manifeste.
+6. **`scripts/anatomy/build-thumbnails.mjs`** rastérise chaque maillage en
+   une vignette PNG 64×64 (projection antérieure, z-buffer, ombrage
+   lambertien d'après les normales réelles, teinte du système). Ces
+   vignettes remplacent les émojis dans toute l'interface. Une structure
+   sans maillage n'a **pas** de vignette : l'interface affiche alors une
+   pastille « géométrie 3D non disponible ».
+7. **`scripts/anatomy/build-schema.mjs`** rend les 931 maillages (tout sauf
+   le tégument, qui masquerait l'intérieur) dans une seule projection
+   antérieure 260×660 et mémorise, pour chaque pixel, la région et la
+   sous-région qui l'occupent. Il en tire l'image du schéma, une silhouette
+   de surbrillance par zone, et `schemaMap.json` (ancre et cadre de chaque
+   zone). Les zones cliquables de « Exploration par région » viennent donc
+   de la géométrie, pas d'un tracé à la main — et une zone invisible de face
+   (encéphale, dos) n'a **aucune** zone inventée.
 
 ### ⚠️ Aucune simplification de maillage
 
@@ -85,7 +102,7 @@ avec ses réglages par défaut (`--simplify true`, `--simplify-ratio 0`), ce
 qui **détruisait ~70 % des triangles** (squelette : 286 346 → 85 868) et
 arrondissait visiblement les cuspides dentaires. C'est corrigé : le compte
 de triangles des `.glb` produits est vérifié égal à celui de la source
-(4 288 248), et `tests/core/anatomy-catalog.test.ts` garde l'invariant.
+(26 317 506), et `tests/core/anatomy-catalog.test.ts` garde l'invariant.
 
 La performance vient donc du **chargement sélectif** (un fichier par
 région × système, région lourde chargée à la demande) et du **rendu à la
@@ -93,20 +110,62 @@ demande** (`frameloop="demand"`), jamais d'une réduction de géométrie.
 
 Régénération complète : `./scripts/anatomy/build-assets.sh`
 
-## Couverture réelle Tête-et-Cou
+## Couverture réelle — corps entier
 
-**267 structures avec maillage réel, 4 288 248 triangles**, plus 27
-structures « cours » sans géométrie.
+**934 structures avec maillage réel, 26 317 506 triangles**, réparties en
+**47 fichiers `.glb` (106 Mo)**, plus 27 structures « cours » sans géométrie.
+S'y ajoutent 934 vignettes PNG (1,4 Mo) et le schéma corporel (0,4 Mo).
 
-| Sous-région | Structures | Triangles |
+| Région | Structures | Triangles |
 |---|---|---|
-| Cou (rachis cervical, muscles, vaisseaux, cartilages) | 77 | 945 878 |
-| Crâne (os de la voûte et de la base, épicrâne) | 15 | 898 206 |
-| Dents (28 dents FDI + gencives + lèvres) | 31 | 224 074 |
-| Encéphale (chargé à la demande) | 74 | 1 405 946 |
-| Face (os de la face, muscles mimiques) | 41 | 336 190 |
-| Mâchoire (mandibule, maxillaires, masticateurs) | 16 | 341 100 |
-| Orbite (globe, nerfs optiques, orbiculaires) | 13 | 136 854 |
+| Tête et cou | 278 | 4 745 318 |
+| Tronc | 264 | 10 314 170 |
+| Membre supérieur | 196 | 4 638 054 |
+| Membre inférieur | 193 | 4 914 776 |
+| Général (tégument) | 3 | 1 705 188 |
+
+| Sous-région | Région | Structures | Triangles |
+|---|---|---|---|
+| Crâne | Tête et cou | 27 | 940 878 |
+| Face | Tête et cou | 36 | 378 958 |
+| Mâchoire et bouche | Tête et cou | 16 | 341 100 |
+| Dents (28 dents FDI) | Tête et cou | 31 | 224 074 |
+| Orbite | Tête et cou | 6 | 51 414 |
+| Cou | Tête et cou | 68 | 814 850 |
+| Encéphale (à la demande) | Tête et cou | 94 | 1 994 044 |
+| Thorax | Tronc | 112 | 4 759 754 |
+| Abdomen | Tronc | 76 | 3 564 756 |
+| Bassin | Tronc | 20 | 25 614 |
+| Dos | Tronc | 56 | 1 964 046 |
+| Épaule | Membre supérieur | 46 | 2 311 440 |
+| Bras | Membre supérieur | 14 | 380 274 |
+| Coude | Membre supérieur | 18 | 467 328 |
+| Avant-bras | Membre supérieur | 38 | 1 208 376 |
+| Main | Membre supérieur | 80 | 270 636 |
+| Hanche | Membre inférieur | 25 | 672 404 |
+| Cuisse | Membre inférieur | 34 | 2 098 846 |
+| Genou | Membre inférieur | 2 | 2 672 |
+| Jambe | Membre inférieur | 34 | 1 453 754 |
+| Pied | Membre inférieur | 98 | 687 100 |
+| Tégument | Général | 3 | 1 705 188 |
+
+Le « genou » ne compte que 2 maillages (les ménisques) : dans l'arbre
+officiel, fémur, tibia, patella et ligaments croisés sont rattachés à la
+cuisse et à la jambe. Le compte reflète l'arbre source, il n'est pas corrigé
+à la main.
+
+### Coût des assets — arbitrage assumé
+
+106 Mo de `.glb` contre 17 Mo pour la version « tête et cou » précédente.
+C'est le prix de deux choix explicites : aucune simplification de maillage,
+et la couverture du corps entier. Conséquences réelles :
+
+- **À l'usage**, un utilisateur qui ouvre Anatomie ne télécharge que la tête
+  et le cou (~12 Mo) ; chaque autre région n'arrive que lorsqu'on l'ouvre.
+- **Le service worker** ne pré-cache ni les `.glb`, ni les vignettes, ni le
+  schéma (`globIgnores` + `runtimeCaching`) : le pré-cache de la PWA reste à
+  62 entrées / 2,9 Mo. Ils sont mis en cache au fil de la consultation.
+- **Le dépôt et le déploiement**, eux, portent bien les 108 Mo.
 
 ### Structures réelles SANS maillage dans ce jeu de données
 
@@ -126,8 +185,12 @@ nerf crânien hormis les nerfs et tractus optiques. Les dents de sagesse
 L'absence de maillage est un état honnête et affiché comme tel, jamais
 comblé par une géométrie inventée.
 
-## Ce qui n'est PAS dans ce sous-ensemble
+## Ce qui n'est PAS dans ce jeu de données
 
-Le reste du corps (tronc, membres) n'a pas été converti pour cette étape —
-seule la région Tête et Cou reçoit des structures individuellement nommées
-et sélectionnables.
+La totalité des maillages disponibles est intégrée : il n'y a plus de région
+volontairement laissée de côté. Ce qui manque manque **dans la source** —
+voir la liste ci-dessus pour la tête et le cou. Ailleurs dans le corps, le
+jeu de données est nettement plus riche en os et en muscles qu'en nerfs :
+hors nerfs et tractus optiques et structures encéphaliques, il ne contient
+pratiquement pas de nerfs périphériques. Aucune de ces absences n'est
+comblée par une géométrie inventée.

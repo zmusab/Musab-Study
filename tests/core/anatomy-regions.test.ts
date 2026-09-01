@@ -19,7 +19,7 @@ function structure(overrides: Partial<AnatomyStructure> = {}): AnatomyStructure 
 
 describe('subregionMeta', () => {
   it('retrouve le libellé réel d’une sous-région connue', () => {
-    expect(subregionMeta('machoire')?.label).toBe('Mâchoire');
+    expect(subregionMeta('machoire')?.label).toBe('Mâchoire et bouche');
   });
   it('renvoie null pour une sous-région inconnue ou absente — jamais inventée', () => {
     expect(subregionMeta('inexistante')).toBeNull();

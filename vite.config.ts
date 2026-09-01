@@ -45,20 +45,38 @@ export default defineConfig({
         // pdf.js et le SDK sont volumineux mais indispensables au démarrage :
         // ils restent en précache.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-        // Les modèles 3D (~17 Mo au total) sont volontairement EXCLUS du
-        // précache : les télécharger à l'installation de la PWA pénaliserait
-        // tout utilisateur qui n'ouvre jamais /anatomie. Ils passent par le
-        // cache d'exécution ci-dessous — mis en cache dès la première
-        // consultation, donc disponibles hors ligne ensuite, région par
-        // région, exactement comme ils sont chargés à l'écran.
+        // Les modèles 3D (106 Mo au total, corps entier sans simplification)
+        // sont volontairement EXCLUS du précache : les télécharger à
+        // l'installation de la PWA pénaliserait tout utilisateur qui n'ouvre
+        // jamais /anatomie. Ils passent par le cache d'exécution ci-dessous —
+        // mis en cache dès la première consultation, donc disponibles hors
+        // ligne ensuite, région par région, exactement comme ils sont chargés
+        // à l'écran.
+        //
+        // Même raisonnement pour les 934 vignettes anatomiques : ~1,5 Mo mais
+        // surtout 934 entrées de précache pour une seule page. Elles sont
+        // exclues du glob et servies par le cache d'exécution.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/anatomy/thumbs/**', '**/anatomy/schema/**'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/anatomy/') && url.pathname.endsWith('.glb'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'anatomie-3d',
-              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Vignettes de structures et schéma corporel : petits PNG, mis en
+            // cache au fil de la consultation plutôt qu'en bloc.
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith('/anatomy/thumbs/') || url.pathname.startsWith('/anatomy/schema/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'anatomie-vignettes',
+              expiration: { maxEntries: 1000, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

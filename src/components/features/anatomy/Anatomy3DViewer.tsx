@@ -13,7 +13,12 @@ import {
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { CameraControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { computeVisibility, type SystemVisibility } from '@/services/anatomy/visibility';
+import {
+  computeVisibility,
+  type SystemVisibility,
+  type LearningState,
+  type LearningFeedbackKind,
+} from '@/services/anatomy/visibility';
 import assetManifest from '@/data/anatomy/assetManifest.json';
 import { layoutMarkers, type MarkerAnchor } from '@/services/anatomy/markerLayout';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
@@ -26,7 +31,7 @@ import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
  * tard n'affecterait aucun autre fichier.
  *
  * Un fichier `.glb` par couple (sous-région, système) — voir
- * `public/anatomy/`, généré par `scripts/anatomy/convert-headneck.mjs`
+ * `public/anatomy/`, généré par `scripts/anatomy/convert-meshes.mjs`
  * depuis des données réelles BodyParts3D (voir `src/data/anatomy/SOURCES.md`).
  * Un groupe n'est téléchargé qu'au premier moment où sa région est dans le
  * périmètre ET son système actif, puis jamais retéléchargé (`useGLTF` met en
@@ -40,7 +45,7 @@ import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
 /**
  * Groupes d'assets réellement produits par le pipeline — un fichier par
  * couple (sous-région, système). Le manifeste est GÉNÉRÉ par
- * `scripts/anatomy/convert-headneck.mjs` : le client ne devine jamais un nom
+ * `scripts/anatomy/convert-meshes.mjs` : le client ne devine jamais un nom
  * de fichier, il ne demande que des groupes dont l'existence est attestée.
  */
 interface AssetGroup {
@@ -52,6 +57,20 @@ interface AssetGroup {
 }
 const ASSET_GROUPS = assetManifest as AssetGroup[];
 const assetUrl = (key: string) => `/anatomy/${key}.glb`;
+
+/** Teintes de la correction du mode apprentissage, appliquées au maillage. */
+const FEEDBACK_EMISSIVE: Record<string, string> = {
+  correct: '#2f9e44',
+  incorrect: '#d64545',
+  none: '#000000',
+};
+
+/** Couleur de la ligne de rappel pendant la correction du mode apprentissage. */
+const FEEDBACK_LINE: Record<string, string | undefined> = {
+  correct: '#2f9e44',
+  incorrect: '#d64545',
+  none: undefined,
+};
 
 /** Au-delà, les étiquettes secondaires sont masquées et comptées (§8). */
 const DEFAULT_MAX_LABELS = 8;
@@ -70,6 +89,12 @@ export interface Anatomy3DViewerProps {
   activeSystems: SystemVisibility;
   selectedId: ID | null;
   isolated: boolean;
+  /**
+   * Question en cours du mode apprentissage. Une fois répondu
+   * (`answeredId` non nul), la correction s'affiche SUR LE MODÈLE : bonne
+   * structure en vert, réponse erronée en rouge.
+   */
+  learning?: LearningState | null;
   onSelectStructure: (id: ID | null) => void;
   /** Incrémenté à chaque fois qu'un vol de caméra vers `selectedId` est demandé (recherche, marqueur, fil d'Ariane). */
   flyToToken: number;
@@ -81,6 +106,11 @@ export interface Anatomy3DViewerProps {
    * c'est le levier de performance, à la place de toute simplification.
    */
   loadedSubregions: readonly string[];
+  /**
+   * Sous-région ouverte : la caméra s'y recadre dès que ses maillages sont
+   * chargés. `null` = cadrage par défaut sur la tête et le cou.
+   */
+  focusedSubregion?: string | null;
   reducedMotion: boolean;
   onFullscreenChange?: (isFullscreen: boolean) => void;
   /** Signale la progression du chargement des groupes d'assets. */
@@ -95,6 +125,7 @@ function SystemModel({
   activeSystems,
   selectedId,
   isolated,
+  learning,
   onSelectStructure,
   onHover,
   registerMesh,
@@ -105,6 +136,7 @@ function SystemModel({
   activeSystems: SystemVisibility;
   selectedId: ID | null;
   isolated: boolean;
+  learning: LearningState | null;
   onSelectStructure: (id: ID | null) => void;
   onHover: (id: ID | null) => void;
   registerMesh: (id: ID, object: THREE.Object3D) => void;
@@ -138,15 +170,22 @@ function SystemModel({
       if (!(child instanceof THREE.Mesh) || !child.name) return;
       const structure = structuresById.get(child.name);
       if (!structure) return;
-      const visual = computeVisibility(structure, { activeSystems, selectedId, isolated });
+      const visual = computeVisibility(structure, { activeSystems, selectedId, isolated, learning });
       child.visible = visual.opacity > 0.001;
       const material = child.material as THREE.MeshStandardMaterial;
       material.opacity = visual.opacity;
       material.depthWrite = visual.opacity > 0.6;
-      material.emissive = visual.highlighted ? new THREE.Color('#ffd166') : new THREE.Color('#000000');
-      material.emissiveIntensity = visual.highlighted ? 0.35 : 0;
+      // La correction du mode apprentissage se lit SUR LE MODÈLE : la bonne
+      // structure vire au vert, la mauvaise réponse au rouge. Hors
+      // apprentissage, on garde la mise en évidence ambrée de la sélection.
+      material.emissive = new THREE.Color(FEEDBACK_EMISSIVE[visual.feedback ?? 'none'] ?? '#000000');
+      if (visual.feedback) material.emissiveIntensity = 0.85;
+      else {
+        material.emissive = new THREE.Color(visual.highlighted ? '#ffd166' : '#000000');
+        material.emissiveIntensity = visual.highlighted ? 0.35 : 0;
+      }
     });
-  }, [cloned, structuresById, activeSystems, selectedId, isolated]);
+  }, [cloned, structuresById, activeSystems, selectedId, isolated, learning]);
 
   const handleClick = useCallback(
     (event: ThreeEvent<MouseEvent>) => {
@@ -319,11 +358,19 @@ function MarkerProjector({
   return null;
 }
 
-/** Couche DOM des étiquettes + lignes de rappel, superposée au canevas. */
+/**
+ * Couche DOM des étiquettes + lignes de rappel, superposée au canevas.
+ *
+ * `feedbackById` porte la correction du mode apprentissage : l'étiquette de
+ * la bonne structure passe en vert avec une coche, celle d'une réponse
+ * erronée en rouge avec une croix — la correction est donc lisible SUR le
+ * modèle, à l'endroit exact de la structure, pas seulement dans un panneau.
+ */
 function MarkerOverlay({
   anchors,
   structuresById,
   selectedId,
+  feedbackById,
   onSelectStructure,
   labelRefs,
   lineRefs,
@@ -331,6 +378,7 @@ function MarkerOverlay({
   anchors: MarkerAnchorWorld[];
   structuresById: Map<ID, AnatomyStructure>;
   selectedId: ID | null;
+  feedbackById: ReadonlyMap<ID, LearningFeedbackKind>;
   onSelectStructure: (id: ID) => void;
   labelRefs: RefObject<Map<ID, HTMLButtonElement>>;
   lineRefs: RefObject<Map<ID, SVGPathElement>>;
@@ -347,8 +395,8 @@ function MarkerOverlay({
               else lineRefs.current.delete(id);
             }}
             fill="none"
-            stroke={id === selectedId ? 'var(--accent)' : 'rgba(255,255,255,0.32)'}
-            strokeWidth={id === selectedId ? 1.6 : 1}
+            stroke={FEEDBACK_LINE[feedbackById.get(id) ?? 'none'] ?? (id === selectedId ? 'var(--accent)' : 'rgba(255,255,255,0.32)')}
+            strokeWidth={feedbackById.has(id) || id === selectedId ? 1.6 : 1}
             style={{ display: 'none' }}
           />
         ))}
@@ -357,6 +405,7 @@ function MarkerOverlay({
         const structure = structuresById.get(id);
         if (!structure) return null;
         const isSelected = selectedId === id;
+        const feedback = feedbackById.get(id) ?? null;
         return (
           <button
             key={id}
@@ -369,17 +418,34 @@ function MarkerOverlay({
               event.stopPropagation();
               onSelectStructure(id);
             }}
-            aria-label={structure.name}
+            aria-label={
+              feedback === 'correct'
+                ? `Bonne réponse : ${structure.name}`
+                : feedback === 'incorrect'
+                  ? `Réponse incorrecte : ${structure.name}`
+                  : structure.name
+            }
+            data-anatomy-feedback={feedback ?? undefined}
             data-touch-target
             style={{ position: 'absolute', top: 0, left: 0, display: 'none', pointerEvents: 'auto' }}
             className={
               'flex max-w-[9rem] items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-medium leading-tight shadow-lg backdrop-blur transition-colors duration-150 ' +
-              (isSelected
-                ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
-                : 'border-white/30 bg-black/60 text-white hover:border-[var(--accent)]')
+              (feedback === 'correct'
+                ? 'border-[#2f9e44] bg-[#2f9e44] text-white'
+                : feedback === 'incorrect'
+                  ? 'border-[#d64545] bg-[#d64545] text-white'
+                  : isSelected
+                    ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                    : 'border-white/30 bg-black/60 text-white hover:border-[var(--accent)]')
             }
           >
-            <span className={'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)]')} />
+            {feedback ? (
+              <span aria-hidden className="shrink-0 font-bold">
+                {feedback === 'correct' ? '✓' : '✗'}
+              </span>
+            ) : (
+              <span className={'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)]')} />
+            )}
             <span className="truncate">{structure.name}</span>
           </button>
         );
@@ -397,6 +463,8 @@ function CameraRig({
   hasFramed,
   setHasFramed,
   framingIds,
+  framingRequired,
+  framingTransition,
 }: {
   controlsRef: RefObject<CameraControls | null>;
   meshRegistry: RefObject<Map<ID, THREE.Object3D>>;
@@ -406,8 +474,16 @@ function CameraRig({
   hasFramed: boolean;
   setHasFramed: (v: boolean) => void;
   framingIds: ID[];
+  /**
+   * Vrai quand le cadrage DOIT porter sur `framingIds` (une sous-région
+   * qu'on vient d'ouvrir) : on attend alors que ses maillages soient
+   * réellement chargés au lieu de cadrer la scène entière par défaut.
+   */
+  framingRequired: boolean;
+  framingTransition: boolean;
 }) {
   const { scene, invalidate } = useThree();
+  const framingDeadline = useRef(0);
 
   // En mode `demand`, aucune image n'est produite spontanément : tant que le
   // cadrage initial n'a pas pu se faire (les .glb arrivent de façon
@@ -427,6 +503,11 @@ function CameraRig({
   // sous-arbre — sa résolution ne relance pas le rendu de CE composant
   // (sibling hors du Suspense), alors que la boucle de rendu r3f, elle,
   // continue de tourner et voit la scène se remplir dès qu'elle a du contenu.
+  // Redémarre l'attente à chaque changement de cible de cadrage.
+  useEffect(() => {
+    framingDeadline.current = performance.now() + 15000;
+  }, [framingIds, framingRequired]);
+
   useFrame(() => {
     if (hasFramed || !controlsRef.current) return;
 
@@ -443,12 +524,24 @@ function CameraRig({
       framingBox.expandByObject(object);
       framingCount++;
     }
+    // Cadrage exigé sur une sous-région : tant que ses maillages ne sont pas
+    // arrivés, on ATTEND plutôt que de cadrer la scène entière — sinon la
+    // caméra resterait figée sur la tête après l'ouverture d'une cuisse. Un
+    // délai de garde évite d'attendre indéfiniment si la région n'arrive
+    // jamais.
+    if (framingRequired && framingCount === 0 && performance.now() < framingDeadline.current) return;
+
     const box = framingCount > 0 && !framingBox.isEmpty()
       ? framingBox
       : new THREE.Box3().setFromObject(scene);
     if (!Number.isFinite(box.min.x) || box.isEmpty()) return;
 
-    void controlsRef.current.fitToBox(box, false, { paddingLeft: 0.08, paddingRight: 0.08, paddingTop: 0.08, paddingBottom: 0.08 });
+    void controlsRef.current.fitToBox(box, framingTransition, {
+      paddingLeft: 0.08,
+      paddingRight: 0.08,
+      paddingTop: 0.08,
+      paddingBottom: 0.08,
+    });
     setHasFramed(true);
   });
 
@@ -487,16 +580,32 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
     activeSystems,
     selectedId,
     isolated,
+    learning = null,
     onSelectStructure,
     flyToToken,
     markerStructureIds,
     loadedSubregions,
+    focusedSubregion = null,
     reducedMotion,
     onFullscreenChange,
     onLoadProgress,
   },
   forwardedRef,
 ) {
+  /**
+   * Correction du mode apprentissage par structure — vide tant que l'élève
+   * n'a pas répondu. Sert à la fois aux matériaux (vert/rouge) et aux
+   * étiquettes (coche/croix).
+   */
+  const feedbackById = useMemo(() => {
+    const map = new Map<ID, LearningFeedbackKind>();
+    if (learning && learning.answeredId !== null) {
+      map.set(learning.targetId, 'correct');
+      if (learning.answeredId !== learning.targetId) map.set(learning.answeredId, 'incorrect');
+    }
+    return map;
+  }, [learning]);
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<CameraControls | null>(null);
   const meshRegistry = useRef<Map<ID, THREE.Object3D>>(new Map());
@@ -537,10 +646,24 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markerStructureIds, registryVersion]);
 
-  const framingIds = useMemo(
-    () => structures.filter((s) => ['crane', 'face', 'machoire', 'dents'].includes(s.subregion ?? '')).map((s) => s.id),
-    [structures],
-  );
+  /**
+   * Structures servant de repère au cadrage automatique. Par défaut la tête
+   * (la trachée et l'œsophage descendent bien plus bas et rétréciraient la
+   * zone intéressante) ; dès qu'une sous-région est ouverte, ce sont SES
+   * structures — c'est ce qui amène réellement la caméra sur la cuisse ou la
+   * main qu'on vient de choisir.
+   */
+  const framingIds = useMemo(() => {
+    const scope = focusedSubregion
+      ? structures.filter((s) => s.subregion === focusedSubregion && s.model3dRef !== null)
+      : structures.filter((s) => ['crane', 'face', 'machoire', 'dents'].includes(s.subregion ?? ''));
+    return scope.map((s) => s.id);
+  }, [structures, focusedSubregion]);
+
+  // Changer de sous-région relance le cadrage automatique.
+  useEffect(() => {
+    setHasFramed(false);
+  }, [focusedSubregion]);
 
   // Un groupe déjà téléchargé reste monté même si son système est désactivé :
   // `useGLTF` met en cache par URL, le re-cocher est donc instantané, et la
@@ -644,7 +767,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         onPointerMissed={() => onSelectStructure(null)}
       >
-        <Invalidator deps={[activeSystems, selectedId, isolated, groupsToLoad.length, markerStructureIds]} />
+        <Invalidator deps={[activeSystems, selectedId, isolated, learning, groupsToLoad.length, markerStructureIds]} />
         <ToneMapping />
         {/* Éclairage à trois points : chaude en clé (avant-haut), froide en
             remplissage (côté opposé) et une lumière de contour derrière pour
@@ -667,6 +790,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
                 activeSystems={activeSystems}
                 selectedId={selectedId}
                 isolated={isolated}
+                learning={learning}
                 onSelectStructure={onSelectStructure}
                 onHover={setHoveredId}
                 registerMesh={registerMesh}
@@ -695,6 +819,8 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
           flyToToken={flyToToken}
           reducedMotion={reducedMotion}
           hasFramed={hasFramed}
+          framingRequired={focusedSubregion !== null}
+          framingTransition={focusedSubregion !== null && !reducedMotion}
           setHasFramed={setHasFramed}
           framingIds={framingIds}
         />
@@ -704,6 +830,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         anchors={markerAnchors}
         structuresById={structuresById}
         selectedId={selectedId}
+        feedbackById={feedbackById}
         onSelectStructure={onSelectStructure}
         labelRefs={labelRefs}
         lineRefs={lineRefs}

@@ -36,11 +36,11 @@ import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/not
 import {
   getAnatomySheet,
   getStructure,
-  HEAD_NECK_CATALOG,
+  BODY_CATALOG,
   linkStructureToSubject,
   listStructures,
   saveAnatomySheet,
-  seedHeadNeckCatalog,
+  seedBodyCatalog,
 } from '@/data/repositories/anatomy';
 
 const LONG_TEXT = 'Le muscle masséter élève la mandibule et participe à la mastication. '.repeat(30);
@@ -454,18 +454,21 @@ describe('analyses de chapitre (notions)', () => {
   });
 });
 
-describe('catalogue Anatomie Tête et Cou', () => {
+describe('catalogue Anatomie corps entier', () => {
   it('peuple la base depuis le catalogue statique, un maillage réel par entrée avec maillage', async () => {
-    await seedHeadNeckCatalog();
-    const structures = await listStructures({ region: 'tete-et-cou' });
-    expect(structures.length).toBe(HEAD_NECK_CATALOG.length);
+    await seedBodyCatalog();
+    // Le catalogue couvre le corps entier : on compare donc au total, et la
+    // requête par région doit rendre exactement les entrées de cette région.
+    expect((await listStructures()).length).toBe(BODY_CATALOG.length);
+    const headNeck = await listStructures({ region: 'tete-et-cou' });
+    expect(headNeck.length).toBe(BODY_CATALOG.filter((c) => c.region === 'tete-et-cou').length);
 
-    const withMesh = HEAD_NECK_CATALOG.filter((c) => c.hasMesh);
+    const withMesh = BODY_CATALOG.filter((c) => c.hasMesh);
     for (const entry of withMesh) {
       const structure = await getStructure(entry.id);
       expect(structure!.model3dRef).toBe(entry.id);
     }
-    const withoutMesh = HEAD_NECK_CATALOG.filter((c) => !c.hasMesh);
+    const withoutMesh = BODY_CATALOG.filter((c) => !c.hasMesh);
     for (const entry of withoutMesh) {
       const structure = await getStructure(entry.id);
       expect(structure!.model3dRef).toBeNull();
@@ -473,7 +476,7 @@ describe('catalogue Anatomie Tête et Cou', () => {
   });
 
   it('le mandibule et un maximum de dents sont bien catalogués (couverture dentisterie)', async () => {
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
     const teeth = await listStructures({ region: 'tete-et-cou', category: 'squelette' });
     const toothEntries = teeth.filter((s) => /^dent_/.test(s.id));
     expect(toothEntries.length).toBeGreaterThanOrEqual(28);
@@ -481,26 +484,26 @@ describe('catalogue Anatomie Tête et Cou', () => {
   });
 
   it('rejouer le seed ne crée jamais de doublon et conserve le lien vers une matière', async () => {
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
     const subject = await createSubject('Anatomie céphalique', '#4F5BD5');
     await linkStructureToSubject('mandibule', subject.id);
 
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
 
-    const countAfter = (await listStructures({ region: 'tete-et-cou' })).length;
-    expect(countAfter).toBe(HEAD_NECK_CATALOG.length);
+    const countAfter = (await listStructures()).length;
+    expect(countAfter).toBe(BODY_CATALOG.length);
     expect((await getStructure('mandibule'))!.subjectId).toBe(subject.id);
   });
 
   it('filtre par système anatomique via l’index existant', async () => {
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
     const vessels = await listStructures({ category: 'vaisseaux' });
     expect(vessels.every((s) => s.category === 'vaisseaux')).toBe(true);
     expect(vessels.length).toBeGreaterThan(0);
   });
 
   it('enregistre une fiche cours puis internet séparément, sans les mélanger', async () => {
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
     await saveAnatomySheet('masseter_superficiel_droit', 'course', 'Contenu cours', []);
     await saveAnatomySheet('masseter_superficiel_droit', 'internet', 'Contenu internet', []);
 
@@ -512,7 +515,7 @@ describe('catalogue Anatomie Tête et Cou', () => {
   });
 
   it('régénérer une fiche remplace l’ancienne plutôt que d’empiler des doublons', async () => {
-    await seedHeadNeckCatalog();
+    await seedBodyCatalog();
     const first = await saveAnatomySheet('mandibule', 'course', 'Version 1', []);
     const second = await saveAnatomySheet('mandibule', 'course', 'Version 2', []);
     expect(second.id).toBe(first.id);

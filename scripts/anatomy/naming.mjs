@@ -258,3 +258,427 @@ export function withSide(fr, gender, side) {
   if (side === 'left') return `${fr} gauche`;
   return `${fr} ${gender === 'f' ? 'droite' : 'droit'}`;
 }
+
+/* ==========================================================================
+ * RÈGLES DÉRIVÉES — motifs réguliers de la source
+ * ==========================================================================
+ * Côtes, vertèbres, disques, métacarpiens, métatarsiens, phalanges, lombricaux
+ * et interosseux suivent une numérotation régulière dans BodyParts3D. Les
+ * décrire par une règle plutôt que par des centaines d'entrées quasi
+ * identiques garde le fichier lisible ET vérifiable : chaque règle est une
+ * fonction pure, testée dans `tests/core/anatomy-naming.test.ts`.
+ */
+
+const ORDINAL = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
+  eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12,
+};
+const ORDINAL_FR = {
+  1: 'première', 2: 'deuxième', 3: 'troisième', 4: 'quatrième', 5: 'cinquième', 6: 'sixième',
+  7: 'septième', 8: 'huitième', 9: 'neuvième', 10: 'dixième', 11: 'onzième', 12: 'douzième',
+};
+const DIGIT_FR = {
+  thumb: 'du pouce', 'index finger': 'de l’index', 'middle finger': 'du majeur',
+  'ring finger': 'de l’annulaire', 'little finger': 'de l’auriculaire',
+  'big toe': 'de l’hallux', 'great toe': 'de l’hallux', 'second toe': 'du 2ᵉ orteil', 'third toe': 'du 3ᵉ orteil',
+  'fourth toe': 'du 4ᵉ orteil', 'little toe': 'du 5ᵉ orteil',
+};
+
+/**
+ * Chaque règle reçoit la racine anglaise et rend une entrée de nomenclature
+ * ({ fr, g, la, sys }) ou `null` si le motif ne s'applique pas.
+ */
+export const DERIVED_RULES = [
+  // Côtes : « third rib »
+  (b) => {
+    const m = /^(\w+) rib$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    return n ? { fr: `${ORDINAL_FR[n]} côte`, g: 'f', la: `Costa ${n}`, sys: 'squelette' } : null;
+  },
+  // Cartilages costaux : « third costal cartilage »
+  (b) => {
+    const m = /^(\w+) costal cartilage$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    return n ? { fr: `Cartilage costal ${n}`, g: 'm', la: 'Cartilago costalis', sys: 'squelette' } : null;
+  },
+  (b) => (b === 'costal cartilage' ? { fr: 'Cartilage costal', g: 'm', la: 'Cartilago costalis', sys: 'squelette' } : null),
+  // Vertèbres thoraciques / lombaires
+  (b) => {
+    const m = /^(\w+) (thoracic|lumbar) vertebra$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    if (!n) return null;
+    const p = m[2] === 'thoracic' ? 'T' : 'L';
+    return { fr: `Vertèbre ${m[2] === 'thoracic' ? 'thoracique' : 'lombaire'} ${p}${n}`, g: 'f', la: null, sys: 'squelette' };
+  },
+  // Disques intervertébraux
+  (b) => {
+    const m = /^intervertebral disk of (\w+) (thoracic|lumbar) vertebra$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    if (!n) return null;
+    const p = m[2] === 'thoracic' ? 'T' : 'L';
+    return { fr: `Disque intervertébral ${p}${n}`, g: 'm', la: 'Discus intervertebralis', sys: 'squelette' };
+  },
+  // Métacarpiens / métatarsiens
+  (b) => {
+    const m = /^(\w+) (metacarpal|metatarsal) bone$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    if (!n) return null;
+    const isHand = m[2] === 'metacarpal';
+    return {
+      fr: `${isHand ? 'Métacarpien' : 'Métatarsien'} ${n}`,
+      g: 'm',
+      la: `Os ${isHand ? 'metacarpi' : 'metatarsi'} ${n}`,
+      sys: 'squelette',
+    };
+  },
+  // Phalanges : « distal phalanx of index finger »
+  (b) => {
+    const m = /^(distal|middle|proximal) phalanx of (.+)$/.exec(b);
+    if (!m) return null;
+    const rank = { distal: 'distale', middle: 'moyenne', proximal: 'proximale' }[m[1]];
+    const digit = DIGIT_FR[m[2]];
+    if (!digit) return null;
+    return { fr: `Phalange ${rank} ${digit}`, g: 'f', la: null, sys: 'squelette' };
+  },
+  // Lombricaux et interosseux numérotés
+  (b) => {
+    const m = /^(\w+) lumbrical of (foot|hand)$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    return n
+      ? { fr: `${ORDINAL_FR[n]} lombrical ${m[2] === 'foot' ? 'du pied' : 'de la main'}`, g: 'm', la: 'Musculus lumbricalis', sys: 'muscles' }
+      : null;
+  },
+  (b) => {
+    const m = /^(\w+) plantar interosseous of foot$/.exec(b);
+    const n = m && ORDINAL[m[1]];
+    return n
+      ? { fr: `${ORDINAL_FR[n]} interosseux plantaire`, g: 'm', la: 'Musculus interosseus plantaris', sys: 'muscles' }
+      : null;
+  },
+];
+
+/* ==========================================================================
+ * CORPS ENTIER — os, muscles, vaisseaux, organes hors tête et cou
+ * ==========================================================================
+ * Même règle que ci-dessus : `fr` traduit le libellé source, `la` n'est
+ * renseigné que lorsqu'il est certain (pour de nombreux muscles, le libellé
+ * anglais de BodyParts3D EST déjà le terme latin), `g` sert à accorder le
+ * côté. La région n'est PAS indiquée ici : elle est dérivée de l'arbre
+ * d'inclusion par `build-catalog.mjs`.
+ */
+Object.assign(TERMS, {
+  // ------------------------------------------------------------ squelette
+  humerus: { fr: 'Humérus', g: 'm', la: 'Humerus', sys: 'squelette' },
+  radius: { fr: 'Radius', g: 'm', la: 'Radius', sys: 'squelette' },
+  ulna: { fr: 'Ulna', g: 'm', la: 'Ulna', sys: 'squelette' },
+  scapula: { fr: 'Scapula', g: 'f', la: 'Scapula', sys: 'squelette' },
+  femur: { fr: 'Fémur', g: 'm', la: 'Femur', sys: 'squelette' },
+  patella: { fr: 'Patella', g: 'f', la: 'Patella', sys: 'squelette' },
+  tibia: { fr: 'Tibia', g: 'm', la: 'Tibia', sys: 'squelette' },
+  fibula: { fr: 'Fibula', g: 'f', la: 'Fibula', sys: 'squelette' },
+  'hip bone': { fr: 'Os coxal', g: 'm', la: 'Os coxae', sys: 'squelette' },
+  sacrum: { fr: 'Sacrum', g: 'm', la: 'Os sacrum', sys: 'squelette' },
+  'body of sternum': { fr: 'Corps du sternum', g: 'm', la: 'Corpus sterni', sys: 'squelette' },
+  'xiphoid process': { fr: 'Processus xiphoïde', g: 'm', la: 'Processus xiphoideus', sys: 'squelette' },
+  // — carpe
+  scaphoid: { fr: 'Scaphoïde', g: 'm', la: 'Os scaphoideum', sys: 'squelette' },
+  lunate: { fr: 'Lunatum', g: 'm', la: 'Os lunatum', sys: 'squelette' },
+  triquetral: { fr: 'Triquétrum', g: 'm', la: 'Os triquetrum', sys: 'squelette' },
+  pisiform: { fr: 'Pisiforme', g: 'm', la: 'Os pisiforme', sys: 'squelette' },
+  trapezium: { fr: 'Trapèze', g: 'm', la: 'Os trapezium', sys: 'squelette' },
+  trapezoid: { fr: 'Trapézoïde', g: 'm', la: 'Os trapezoideum', sys: 'squelette' },
+  capitate: { fr: 'Capitatum', g: 'm', la: 'Os capitatum', sys: 'squelette' },
+  hamate: { fr: 'Hamatum', g: 'm', la: 'Os hamatum', sys: 'squelette' },
+  // — tarse
+  talus: { fr: 'Talus', g: 'm', la: 'Talus', sys: 'squelette' },
+  calcaneus: { fr: 'Calcanéus', g: 'm', la: 'Calcaneus', sys: 'squelette' },
+  'navicular bone of foot': { fr: 'Naviculaire', g: 'm', la: 'Os naviculare', sys: 'squelette' },
+  'cuboid bone': { fr: 'Cuboïde', g: 'm', la: 'Os cuboideum', sys: 'squelette' },
+  'medial cuneiform bone': { fr: 'Cunéiforme médial', g: 'm', la: 'Os cuneiforme mediale', sys: 'squelette' },
+  'intermediate cuneiform bone': { fr: 'Cunéiforme intermédiaire', g: 'm', la: 'Os cuneiforme intermedium', sys: 'squelette' },
+  'lateral cuneiform bone': { fr: 'Cunéiforme latéral', g: 'm', la: 'Os cuneiforme laterale', sys: 'squelette' },
+  'sesamoid bone of foot': { fr: 'Os sésamoïde du pied', g: 'm', la: 'Os sesamoideum', sys: 'squelette' },
+
+  // ---------------------------------------------------- muscles — épaule/bras
+  deltoid: { fr: 'Deltoïde', g: 'm', la: 'Musculus deltoideus', sys: 'muscles' },
+  supraspinatus: { fr: 'Supra-épineux', g: 'm', la: 'Musculus supraspinatus', sys: 'muscles' },
+  'infraspinatus muscle': { fr: 'Infra-épineux', g: 'm', la: 'Musculus infraspinatus', sys: 'muscles' },
+  'teres major': { fr: 'Grand rond', g: 'm', la: 'Musculus teres major', sys: 'muscles' },
+  'teres minor': { fr: 'Petit rond', g: 'm', la: 'Musculus teres minor', sys: 'muscles' },
+  subscapularis: { fr: 'Subscapulaire', g: 'm', la: 'Musculus subscapularis', sys: 'muscles' },
+  'biceps brachii': { fr: 'Biceps brachial', g: 'm', la: 'Musculus biceps brachii', sys: 'muscles' },
+  'triceps brachii': { fr: 'Triceps brachial', g: 'm', la: 'Musculus triceps brachii', sys: 'muscles' },
+  brachialis: { fr: 'Brachial', g: 'm', la: 'Musculus brachialis', sys: 'muscles' },
+  coracobrachialis: { fr: 'Coraco-brachial', g: 'm', la: 'Musculus coracobrachialis', sys: 'muscles' },
+  anconeus: { fr: 'Anconé', g: 'm', la: 'Musculus anconeus', sys: 'muscles' },
+  brachioradialis: { fr: 'Brachio-radial', g: 'm', la: 'Musculus brachioradialis', sys: 'muscles' },
+  subclavius: { fr: 'Subclavier', g: 'm', la: 'Musculus subclavius', sys: 'muscles' },
+  'pectoralis major': { fr: 'Grand pectoral', g: 'm', la: 'Musculus pectoralis major', sys: 'muscles' },
+  'pectoralis minor': { fr: 'Petit pectoral', g: 'm', la: 'Musculus pectoralis minor', sys: 'muscles' },
+  'serratus anterior': { fr: 'Dentelé antérieur', g: 'm', la: 'Musculus serratus anterior', sys: 'muscles' },
+  'latissimus dorsi': { fr: 'Grand dorsal', g: 'm', la: 'Musculus latissimus dorsi', sys: 'muscles' },
+  'rhomboid major': { fr: 'Grand rhomboïde', g: 'm', la: 'Musculus rhomboideus major', sys: 'muscles' },
+  'rhomboid minor': { fr: 'Petit rhomboïde', g: 'm', la: 'Musculus rhomboideus minor', sys: 'muscles' },
+  trapezius: { fr: 'Trapèze (muscle)', g: 'm', la: 'Musculus trapezius', sys: 'muscles' },
+
+  // ------------------------------------------------ muscles — avant-bras/main
+  'pronator teres': { fr: 'Rond pronateur', g: 'm', la: 'Musculus pronator teres', sys: 'muscles' },
+  'pronator quadratus': { fr: 'Carré pronateur', g: 'm', la: 'Musculus pronator quadratus', sys: 'muscles' },
+  supinator: { fr: 'Supinateur', g: 'm', la: 'Musculus supinator', sys: 'muscles' },
+  'flexor carpi radialis': { fr: 'Fléchisseur radial du carpe', g: 'm', la: 'Musculus flexor carpi radialis', sys: 'muscles' },
+  'flexor carpi ulnaris': { fr: 'Fléchisseur ulnaire du carpe', g: 'm', la: 'Musculus flexor carpi ulnaris', sys: 'muscles' },
+  'palmaris longus': { fr: 'Long palmaire', g: 'm', la: 'Musculus palmaris longus', sys: 'muscles' },
+  'flexor digitorum superficialis': { fr: 'Fléchisseur superficiel des doigts', g: 'm', la: 'Musculus flexor digitorum superficialis', sys: 'muscles' },
+  'flexor digitorum profundus': { fr: 'Fléchisseur profond des doigts', g: 'm', la: 'Musculus flexor digitorum profundus', sys: 'muscles' },
+  'flexor pollicis longus': { fr: 'Long fléchisseur du pouce', g: 'm', la: 'Musculus flexor pollicis longus', sys: 'muscles' },
+  'flexor pollicis brevis': { fr: 'Court fléchisseur du pouce', g: 'm', la: 'Musculus flexor pollicis brevis', sys: 'muscles' },
+  'extensor carpi radialis longus': { fr: 'Long extenseur radial du carpe', g: 'm', la: 'Musculus extensor carpi radialis longus', sys: 'muscles' },
+  'extensor carpi radialis brevis': { fr: 'Court extenseur radial du carpe', g: 'm', la: 'Musculus extensor carpi radialis brevis', sys: 'muscles' },
+  'extensor carpi ulnaris': { fr: 'Extenseur ulnaire du carpe', g: 'm', la: 'Musculus extensor carpi ulnaris', sys: 'muscles' },
+  'extensor digitorum': { fr: 'Extenseur des doigts', g: 'm', la: 'Musculus extensor digitorum', sys: 'muscles' },
+  'extensor digiti minimi': { fr: 'Extenseur du petit doigt', g: 'm', la: 'Musculus extensor digiti minimi', sys: 'muscles' },
+  'extensor indicis': { fr: 'Extenseur de l’index', g: 'm', la: 'Musculus extensor indicis', sys: 'muscles' },
+  'extensor pollicis longus': { fr: 'Long extenseur du pouce', g: 'm', la: 'Musculus extensor pollicis longus', sys: 'muscles' },
+  'extensor pollicis brevis': { fr: 'Court extenseur du pouce', g: 'm', la: 'Musculus extensor pollicis brevis', sys: 'muscles' },
+  'abductor pollicis longus': { fr: 'Long abducteur du pouce', g: 'm', la: 'Musculus abductor pollicis longus', sys: 'muscles' },
+  'abductor pollicis brevis': { fr: 'Court abducteur du pouce', g: 'm', la: 'Musculus abductor pollicis brevis', sys: 'muscles' },
+  'adductor pollicis': { fr: 'Adducteur du pouce', g: 'm', la: 'Musculus adductor pollicis', sys: 'muscles' },
+  'opponens pollicis': { fr: 'Opposant du pouce', g: 'm', la: 'Musculus opponens pollicis', sys: 'muscles' },
+  'abductor digiti minimi of hand': { fr: 'Abducteur du petit doigt', g: 'm', la: 'Musculus abductor digiti minimi manus', sys: 'muscles' },
+  'flexor digiti minimi brevis of hand': { fr: 'Court fléchisseur du petit doigt', g: 'm', la: 'Musculus flexor digiti minimi brevis', sys: 'muscles' },
+  'opponens digiti minimi of hand': { fr: 'Opposant du petit doigt', g: 'm', la: 'Musculus opponens digiti minimi', sys: 'muscles' },
+  'lumbricals of hand': { fr: 'Lombricaux de la main', g: 'm', la: 'Musculi lumbricales manus', sys: 'muscles' },
+  'dorsal interossei of hand': { fr: 'Interosseux dorsaux de la main', g: 'm', la: 'Musculi interossei dorsales manus', sys: 'muscles' },
+  'palmar interossei of hand': { fr: 'Interosseux palmaires', g: 'm', la: 'Musculi interossei palmares', sys: 'muscles' },
+  'flexor retinaculum of wrist': { fr: 'Rétinaculum des fléchisseurs', g: 'm', la: 'Retinaculum musculorum flexorum', sys: 'muscles' },
+  'interosseous membrane of forearm': { fr: 'Membrane interosseuse de l’avant-bras', g: 'f', la: 'Membrana interossea antebrachii', sys: 'squelette' },
+  'intermediate tendon': { fr: 'Tendon intermédiaire', g: 'm', la: null, sys: 'muscles' },
+
+  // ------------------------------------------------- muscles — hanche/cuisse
+  'gluteus maximus': { fr: 'Grand fessier', g: 'm', la: 'Musculus gluteus maximus', sys: 'muscles' },
+  'gluteus medius': { fr: 'Moyen fessier', g: 'm', la: 'Musculus gluteus medius', sys: 'muscles' },
+  'gluteus minimus': { fr: 'Petit fessier', g: 'm', la: 'Musculus gluteus minimus', sys: 'muscles' },
+  piriformis: { fr: 'Piriforme', g: 'm', la: 'Musculus piriformis', sys: 'muscles' },
+  'obturator internus': { fr: 'Obturateur interne', g: 'm', la: 'Musculus obturatorius internus', sys: 'muscles' },
+  'obturator externus': { fr: 'Obturateur externe', g: 'm', la: 'Musculus obturatorius externus', sys: 'muscles' },
+  'gemellus superior': { fr: 'Jumeau supérieur', g: 'm', la: 'Musculus gemellus superior', sys: 'muscles' },
+  'gemellus inferior': { fr: 'Jumeau inférieur', g: 'm', la: 'Musculus gemellus inferior', sys: 'muscles' },
+  'quadratus femoris': { fr: 'Carré fémoral', g: 'm', la: 'Musculus quadratus femoris', sys: 'muscles' },
+  iliacus: { fr: 'Iliaque', g: 'm', la: 'Musculus iliacus', sys: 'muscles' },
+  'psoas major': { fr: 'Grand psoas', g: 'm', la: 'Musculus psoas major', sys: 'muscles' },
+  sartorius: { fr: 'Sartorius', g: 'm', la: 'Musculus sartorius', sys: 'muscles' },
+  gracilis: { fr: 'Gracile', g: 'm', la: 'Musculus gracilis', sys: 'muscles' },
+  pectineus: { fr: 'Pectiné', g: 'm', la: 'Musculus pectineus', sys: 'muscles' },
+  'adductor longus': { fr: 'Long adducteur', g: 'm', la: 'Musculus adductor longus', sys: 'muscles' },
+  'adductor brevis': { fr: 'Court adducteur', g: 'm', la: 'Musculus adductor brevis', sys: 'muscles' },
+  'adductor magnus': { fr: 'Grand adducteur', g: 'm', la: 'Musculus adductor magnus', sys: 'muscles' },
+  'adductor minimus': { fr: 'Petit adducteur', g: 'm', la: 'Musculus adductor minimus', sys: 'muscles' },
+  'rectus femoris': { fr: 'Droit fémoral', g: 'm', la: 'Musculus rectus femoris', sys: 'muscles' },
+  'vastus lateralis': { fr: 'Vaste latéral', g: 'm', la: 'Musculus vastus lateralis', sys: 'muscles' },
+  'vastus medialis': { fr: 'Vaste médial', g: 'm', la: 'Musculus vastus medialis', sys: 'muscles' },
+  'vastus intermedius': { fr: 'Vaste intermédiaire', g: 'm', la: 'Musculus vastus intermedius', sys: 'muscles' },
+  'biceps femoris': { fr: 'Biceps fémoral', g: 'm', la: 'Musculus biceps femoris', sys: 'muscles' },
+  semitendinosus: { fr: 'Semi-tendineux', g: 'm', la: 'Musculus semitendinosus', sys: 'muscles' },
+  semimembranosus: { fr: 'Semi-membraneux', g: 'm', la: 'Musculus semimembranosus', sys: 'muscles' },
+  'tensor fasciae latae': { fr: 'Tenseur du fascia lata', g: 'm', la: 'Musculus tensor fasciae latae', sys: 'muscles' },
+  'iliotibial tract': { fr: 'Tractus ilio-tibial', g: 'm', la: 'Tractus iliotibialis', sys: 'muscles' },
+
+  // -------------------------------------------------- muscles — jambe/pied
+  gastrocnemius: { fr: 'Gastrocnémien', g: 'm', la: 'Musculus gastrocnemius', sys: 'muscles' },
+  soleus: { fr: 'Soléaire', g: 'm', la: 'Musculus soleus', sys: 'muscles' },
+  plantaris: { fr: 'Plantaire', g: 'm', la: 'Musculus plantaris', sys: 'muscles' },
+  popliteus: { fr: 'Poplité', g: 'm', la: 'Musculus popliteus', sys: 'muscles' },
+  'tibialis anterior': { fr: 'Tibial antérieur', g: 'm', la: 'Musculus tibialis anterior', sys: 'muscles' },
+  'tibialis posterior': { fr: 'Tibial postérieur', g: 'm', la: 'Musculus tibialis posterior', sys: 'muscles' },
+  'fibularis longus': { fr: 'Long fibulaire', g: 'm', la: 'Musculus fibularis longus', sys: 'muscles' },
+  'fibularis brevis': { fr: 'Court fibulaire', g: 'm', la: 'Musculus fibularis brevis', sys: 'muscles' },
+  'fibularis tertius': { fr: 'Troisième fibulaire', g: 'm', la: 'Musculus fibularis tertius', sys: 'muscles' },
+  'extensor digitorum longus': { fr: 'Long extenseur des orteils', g: 'm', la: 'Musculus extensor digitorum longus', sys: 'muscles' },
+  'extensor digitorum brevis': { fr: 'Court extenseur des orteils', g: 'm', la: 'Musculus extensor digitorum brevis', sys: 'muscles' },
+  'extensor hallucis longus': { fr: 'Long extenseur de l’hallux', g: 'm', la: 'Musculus extensor hallucis longus', sys: 'muscles' },
+  'extensor hallucis brevis': { fr: 'Court extenseur de l’hallux', g: 'm', la: 'Musculus extensor hallucis brevis', sys: 'muscles' },
+  'flexor digitorum longus': { fr: 'Long fléchisseur des orteils', g: 'm', la: 'Musculus flexor digitorum longus', sys: 'muscles' },
+  'flexor digitorum brevis': { fr: 'Court fléchisseur des orteils', g: 'm', la: 'Musculus flexor digitorum brevis', sys: 'muscles' },
+  'flexor hallucis longus': { fr: 'Long fléchisseur de l’hallux', g: 'm', la: 'Musculus flexor hallucis longus', sys: 'muscles' },
+  'flexor hallucis brevis': { fr: 'Court fléchisseur de l’hallux', g: 'm', la: 'Musculus flexor hallucis brevis', sys: 'muscles' },
+  'abductor hallucis': { fr: 'Abducteur de l’hallux', g: 'm', la: 'Musculus abductor hallucis', sys: 'muscles' },
+  'adductor hallucis': { fr: 'Adducteur de l’hallux', g: 'm', la: 'Musculus adductor hallucis', sys: 'muscles' },
+  'abductor digiti minimi of foot': { fr: 'Abducteur du petit orteil', g: 'm', la: 'Musculus abductor digiti minimi pedis', sys: 'muscles' },
+  'flexor digiti minimi brevis of foot': { fr: 'Court fléchisseur du petit orteil', g: 'm', la: 'Musculus flexor digiti minimi brevis', sys: 'muscles' },
+  'opponens digiti minimi of foot': { fr: 'Opposant du petit orteil', g: 'm', la: 'Musculus opponens digiti minimi', sys: 'muscles' },
+  'flexor accessorius': { fr: 'Carré plantaire', g: 'm', la: 'Musculus quadratus plantae', sys: 'muscles' },
+  'dorsal interossei of foot': { fr: 'Interosseux dorsaux du pied', g: 'm', la: 'Musculi interossei dorsales pedis', sys: 'muscles' },
+  'calcaneal tendon': { fr: 'Tendon calcanéen', g: 'm', la: 'Tendo calcaneus', sys: 'muscles' },
+  'long plantar ligament': { fr: 'Ligament plantaire long', g: 'm', la: 'Ligamentum plantare longum', sys: 'squelette' },
+  'interosseous membrane of leg': { fr: 'Membrane interosseuse de la jambe', g: 'f', la: 'Membrana interossea cruris', sys: 'squelette' },
+
+  // ----------------------------------------------------- muscles — tronc/dos
+  diaphragm: { fr: 'Diaphragme', g: 'm', la: 'Diaphragma', sys: 'muscles' },
+  'rectus abdominis': { fr: 'Droit de l’abdomen', g: 'm', la: 'Musculus rectus abdominis', sys: 'muscles' },
+  'external oblique': { fr: 'Oblique externe', g: 'm', la: 'Musculus obliquus externus abdominis', sys: 'muscles' },
+  'internal oblique': { fr: 'Oblique interne', g: 'm', la: 'Musculus obliquus internus abdominis', sys: 'muscles' },
+  'transversus abdominis': { fr: 'Transverse de l’abdomen', g: 'm', la: 'Musculus transversus abdominis', sys: 'muscles' },
+  'transversus thoracis': { fr: 'Transverse du thorax', g: 'm', la: 'Musculus transversus thoracis', sys: 'muscles' },
+  pyramidalis: { fr: 'Pyramidal', g: 'm', la: 'Musculus pyramidalis', sys: 'muscles' },
+  'quadratus lumborum': { fr: 'Carré des lombes', g: 'm', la: 'Musculus quadratus lumborum', sys: 'muscles' },
+  'linea alba': { fr: 'Ligne blanche', g: 'f', la: 'Linea alba', sys: 'muscles' },
+  'inguinal ligament': { fr: 'Ligament inguinal', g: 'm', la: 'Ligamentum inguinale', sys: 'squelette' },
+  'external intercostal muscle': { fr: 'Intercostal externe', g: 'm', la: 'Musculus intercostalis externus', sys: 'muscles' },
+  'internal intercostal muscle': { fr: 'Intercostal interne', g: 'm', la: 'Musculus intercostalis internus', sys: 'muscles' },
+  'innermost intercostal muscle': { fr: 'Intercostal intime', g: 'm', la: 'Musculus intercostalis intimus', sys: 'muscles' },
+  'serratus posterior superior': { fr: 'Dentelé postéro-supérieur', g: 'm', la: 'Musculus serratus posterior superior', sys: 'muscles' },
+  'serratus posterior inferior': { fr: 'Dentelé postéro-inférieur', g: 'm', la: 'Musculus serratus posterior inferior', sys: 'muscles' },
+  'levatores costarum breves': { fr: 'Élévateurs courts des côtes', g: 'm', la: 'Musculi levatores costarum breves', sys: 'muscles' },
+  'levatores costarum longi': { fr: 'Élévateurs longs des côtes', g: 'm', la: 'Musculi levatores costarum longi', sys: 'muscles' },
+  multifidus: { fr: 'Multifide', g: 'm', la: 'Musculus multifidus', sys: 'muscles' },
+  'lumbar rotator': { fr: 'Rotateur lombaire', g: 'm', la: 'Musculi rotatores lumborum', sys: 'muscles' },
+  'thoracic rotator': { fr: 'Rotateur thoracique', g: 'm', la: 'Musculi rotatores thoracis', sys: 'muscles' },
+  'iliocostalis cervicis': { fr: 'Ilio-costal cervical', g: 'm', la: 'Musculus iliocostalis cervicis', sys: 'muscles' },
+  'iliocostalis thoracis': { fr: 'Ilio-costal thoracique', g: 'm', la: 'Musculus iliocostalis thoracis', sys: 'muscles' },
+  'iliocostalis lumborum': { fr: 'Ilio-costal lombaire', g: 'm', la: 'Musculus iliocostalis lumborum', sys: 'muscles' },
+  'longissimus capitis': { fr: 'Longissimus de la tête', g: 'm', la: 'Musculus longissimus capitis', sys: 'muscles' },
+  'longissimus cervicis': { fr: 'Longissimus cervical', g: 'm', la: 'Musculus longissimus cervicis', sys: 'muscles' },
+  'longissimus thoracis': { fr: 'Longissimus thoracique', g: 'm', la: 'Musculus longissimus thoracis', sys: 'muscles' },
+  'spinalis cervicis': { fr: 'Épineux cervical', g: 'm', la: 'Musculus spinalis cervicis', sys: 'muscles' },
+  'spinalis thoracis': { fr: 'Épineux thoracique', g: 'm', la: 'Musculus spinalis thoracis', sys: 'muscles' },
+  'semispinalis capitis': { fr: 'Semi-épineux de la tête', g: 'm', la: 'Musculus semispinalis capitis', sys: 'muscles' },
+  'semispinalis cervicis': { fr: 'Semi-épineux cervical', g: 'm', la: 'Musculus semispinalis cervicis', sys: 'muscles' },
+  'semispinalis thoracis': { fr: 'Semi-épineux thoracique', g: 'm', la: 'Musculus semispinalis thoracis', sys: 'muscles' },
+  'splenius capitis': { fr: 'Splénius de la tête', g: 'm', la: 'Musculus splenius capitis', sys: 'muscles' },
+  'splenius cervicis': { fr: 'Splénius du cou', g: 'm', la: 'Musculus splenius cervicis', sys: 'muscles' },
+  'interspinales cervicis': { fr: 'Interépineux cervicaux', g: 'm', la: 'Musculi interspinales cervicis', sys: 'muscles' },
+  'interspinales thoracis': { fr: 'Interépineux thoraciques', g: 'm', la: 'Musculi interspinales thoracis', sys: 'muscles' },
+  'interspinales lumborum': { fr: 'Interépineux lombaires', g: 'm', la: 'Musculi interspinales lumborum', sys: 'muscles' },
+  'lateral lumbar intertransversarius muscles': { fr: 'Intertransversaires lombaires latéraux', g: 'm', la: null, sys: 'muscles' },
+  'medial lumbar intertransversarius muscles': { fr: 'Intertransversaires lombaires médiaux', g: 'm', la: null, sys: 'muscles' },
+  // — plancher pelvien
+  coccygeus: { fr: 'Coccygien', g: 'm', la: 'Musculus coccygeus', sys: 'muscles' },
+  iliococcygeus: { fr: 'Ilio-coccygien', g: 'm', la: 'Musculus iliococcygeus', sys: 'muscles' },
+  pubococcygeus: { fr: 'Pubo-coccygien', g: 'm', la: 'Musculus pubococcygeus', sys: 'muscles' },
+  puborectalis: { fr: 'Pubo-rectal', g: 'm', la: 'Musculus puborectalis', sys: 'muscles' },
+  'external anal sphincter': { fr: 'Sphincter anal externe', g: 'm', la: 'Musculus sphincter ani externus', sys: 'muscles' },
+  'tendinous arch of levator ani': { fr: 'Arc tendineux du releveur de l’anus', g: 'm', la: 'Arcus tendineus musculi levatoris ani', sys: 'muscles' },
+});
+
+/* ==========================================================================
+ * VAISSEAUX, ORGANES, STRUCTURES CÉRÉBRALES
+ * ==========================================================================
+ * Le suffixe « , nsn » de la source (« not specified name ») marque un
+ * libellé non normalisé côté BodyParts3D ; il est conservé dans la clé mais
+ * n'apparaît jamais à l'écran.
+ */
+Object.assign(TERMS, {
+  // ------------------------------------------------------------- artères
+  'ascending aorta': { fr: 'Aorte ascendante', g: 'f', la: 'Aorta ascendens', sys: 'vaisseaux' },
+  'arch of aorta': { fr: 'Arc aortique', g: 'm', la: 'Arcus aortae', sys: 'vaisseaux' },
+  'descending aorta': { fr: 'Aorte descendante', g: 'f', la: 'Aorta descendens', sys: 'vaisseaux' },
+  'brachiocephalic artery, nsn': { fr: 'Tronc brachio-céphalique', g: 'm', la: 'Truncus brachiocephalicus', sys: 'vaisseaux' },
+  'subclavian artery': { fr: 'Artère subclavière', g: 'f', la: 'Arteria subclavia', sys: 'vaisseaux' },
+  'pulmonary artery': { fr: 'Artère pulmonaire', g: 'f', la: 'Arteria pulmonalis', sys: 'vaisseaux' },
+  'celiac artery': { fr: 'Tronc cœliaque', g: 'm', la: 'Truncus coeliacus', sys: 'vaisseaux' },
+  'common hepatic artery': { fr: 'Artère hépatique commune', g: 'f', la: 'Arteria hepatica communis', sys: 'vaisseaux' },
+  'gastric artery': { fr: 'Artère gastrique', g: 'f', la: 'Arteria gastrica', sys: 'vaisseaux' },
+  'splenic artery': { fr: 'Artère splénique', g: 'f', la: 'Arteria splenica', sys: 'vaisseaux' },
+  'renal artery': { fr: 'Artère rénale', g: 'f', la: 'Arteria renalis', sys: 'vaisseaux' },
+  'superior mesenteric artery': { fr: 'Artère mésentérique supérieure', g: 'f', la: 'Arteria mesenterica superior', sys: 'vaisseaux' },
+  'inferior mesenteric artery': { fr: 'Artère mésentérique inférieure', g: 'f', la: 'Arteria mesenterica inferior', sys: 'vaisseaux' },
+  'common iliac artery': { fr: 'Artère iliaque commune', g: 'f', la: 'Arteria iliaca communis', sys: 'vaisseaux' },
+  'external iliac artery': { fr: 'Artère iliaque externe', g: 'f', la: 'Arteria iliaca externa', sys: 'vaisseaux' },
+  'internal iliac artery': { fr: 'Artère iliaque interne', g: 'f', la: 'Arteria iliaca interna', sys: 'vaisseaux' },
+  'stem of left coronary artery': { fr: 'Tronc de l’artère coronaire gauche', g: 'm', la: 'Arteria coronaria sinistra', sys: 'vaisseaux' },
+  'trunk of right coronary artery': { fr: 'Tronc de l’artère coronaire droite', g: 'm', la: 'Arteria coronaria dextra', sys: 'vaisseaux' },
+  'anterior interventricular branch of left coronary artery, nsn': { fr: 'Artère interventriculaire antérieure', g: 'f', la: 'Ramus interventricularis anterior', sys: 'vaisseaux' },
+  'posterior interventricular branch of right coronary artery, nsn': { fr: 'Artère interventriculaire postérieure', g: 'f', la: 'Ramus interventricularis posterior', sys: 'vaisseaux' },
+  'circumflex branch of left coronary artery': { fr: 'Artère circonflexe', g: 'f', la: 'Ramus circumflexus', sys: 'vaisseaux' },
+  'marginal branch of right coronary artery': { fr: 'Branche marginale droite', g: 'f', la: 'Ramus marginalis dexter', sys: 'vaisseaux' },
+  'posterolateral branch of right coronary artery': { fr: 'Branche postéro-latérale droite', g: 'f', la: null, sys: 'vaisseaux' },
+  'interventricular septal branches of left coronary artery': { fr: 'Branches septales (coronaire gauche)', g: 'f', la: 'Rami interventriculares septales', sys: 'vaisseaux' },
+  'interventricular septal branches of right coronary artery': { fr: 'Branches septales (coronaire droite)', g: 'f', la: 'Rami interventriculares septales', sys: 'vaisseaux' },
+
+  // -------------------------------------------------------------- veines
+  'superior vena cava': { fr: 'Veine cave supérieure', g: 'f', la: 'Vena cava superior', sys: 'vaisseaux' },
+  'inferior vena cava': { fr: 'Veine cave inférieure', g: 'f', la: 'Vena cava inferior', sys: 'vaisseaux' },
+  'brachiocephalic vein': { fr: 'Veine brachio-céphalique', g: 'f', la: 'Vena brachiocephalica', sys: 'vaisseaux' },
+  'subclavian vein': { fr: 'Veine subclavière', g: 'f', la: 'Vena subclavia', sys: 'vaisseaux' },
+  'pulmonary vein': { fr: 'Veine pulmonaire', g: 'f', la: 'Vena pulmonalis', sys: 'vaisseaux' },
+  'renal vein': { fr: 'Veine rénale', g: 'f', la: 'Vena renalis', sys: 'vaisseaux' },
+  'splenic vein': { fr: 'Veine splénique', g: 'f', la: 'Vena splenica', sys: 'vaisseaux' },
+  'superior mesenteric vein': { fr: 'Veine mésentérique supérieure', g: 'f', la: 'Vena mesenterica superior', sys: 'vaisseaux' },
+  'common iliac vein': { fr: 'Veine iliaque commune', g: 'f', la: 'Vena iliaca communis', sys: 'vaisseaux' },
+  'external iliac vein': { fr: 'Veine iliaque externe', g: 'f', la: 'Vena iliaca externa', sys: 'vaisseaux' },
+  'internal iliac vein': { fr: 'Veine iliaque interne', g: 'f', la: 'Vena iliaca interna', sys: 'vaisseaux' },
+  'great cardiac vein': { fr: 'Grande veine cardiaque', g: 'f', la: 'Vena cardiaca magna', sys: 'vaisseaux' },
+  'middle cardiac vein': { fr: 'Veine cardiaque moyenne', g: 'f', la: 'Vena cardiaca media', sys: 'vaisseaux' },
+  'anterior cardiac veins': { fr: 'Veines cardiaques antérieures', g: 'f', la: 'Venae cardiacae anteriores', sys: 'vaisseaux' },
+  'posterior veins of left ventricle': { fr: 'Veines postérieures du ventricule gauche', g: 'f', la: null, sys: 'vaisseaux' },
+  'coronary sinus': { fr: 'Sinus coronaire', g: 'm', la: 'Sinus coronarius', sys: 'vaisseaux' },
+
+  // --------------------------------------------------------------- cœur
+  'wall of heart': { fr: 'Paroi du cœur', g: 'f', la: 'Paries cordis', sys: 'organes' },
+  'mitral valve': { fr: 'Valve mitrale', g: 'f', la: 'Valva mitralis', sys: 'organes' },
+  'tricuspid valve': { fr: 'Valve tricuspide', g: 'f', la: 'Valva tricuspidalis', sys: 'organes' },
+  'pulmonary valve': { fr: 'Valve pulmonaire', g: 'f', la: 'Valva trunci pulmonalis', sys: 'organes' },
+  'anterior papillary muscle of right ventricle': { fr: 'Muscle papillaire antérieur (VD)', g: 'm', la: 'Musculus papillaris anterior', sys: 'organes' },
+  'posterior papillary muscle of right ventricle': { fr: 'Muscle papillaire postérieur (VD)', g: 'm', la: 'Musculus papillaris posterior', sys: 'organes' },
+  'posterior papillary muscle of left ventricle': { fr: 'Muscle papillaire postérieur (VG)', g: 'm', la: 'Musculus papillaris posterior', sys: 'organes' },
+  'septal papillary muscle of right ventricle': { fr: 'Muscle papillaire septal (VD)', g: 'm', la: 'Musculus papillaris septalis', sys: 'organes' },
+  'papillary muscle of left ventricle, nsn': { fr: 'Muscle papillaire (VG)', g: 'm', la: 'Musculus papillaris', sys: 'organes' },
+
+  // ------------------------------------------------------------- viscères
+  liver: { fr: 'Foie', g: 'm', la: 'Hepar', sys: 'organes' },
+  stomach: { fr: 'Estomac', g: 'm', la: 'Gaster', sys: 'organes' },
+  spleen: { fr: 'Rate', g: 'f', la: 'Splen', sys: 'organes' },
+  'pancreas, nsn': { fr: 'Pancréas', g: 'm', la: 'Pancreas', sys: 'organes' },
+  'pancreatic duct': { fr: 'Conduit pancréatique', g: 'm', la: 'Ductus pancreaticus', sys: 'organes' },
+  gallbladder: { fr: 'Vésicule biliaire', g: 'f', la: 'Vesica biliaris', sys: 'organes' },
+  duodenum: { fr: 'Duodénum', g: 'm', la: 'Duodenum', sys: 'organes' },
+  jejunum: { fr: 'Jéjunum', g: 'm', la: 'Jejunum', sys: 'organes' },
+  ileum: { fr: 'Iléon', g: 'm', la: 'Ileum', sys: 'organes' },
+  'colon, nsn': { fr: 'Côlon', g: 'm', la: 'Colon', sys: 'organes' },
+  rectum: { fr: 'Rectum', g: 'm', la: 'Rectum', sys: 'organes' },
+  appendix: { fr: 'Appendice', g: 'm', la: 'Appendix vermiformis', sys: 'organes' },
+  'free taenia': { fr: 'Ténia libre', g: 'm', la: 'Taenia libera', sys: 'organes' },
+  'mesocolic taenia': { fr: 'Ténia mésocolique', g: 'm', la: 'Taenia mesocolica', sys: 'organes' },
+  'omental taenia': { fr: 'Ténia omentale', g: 'm', la: 'Taenia omentalis', sys: 'organes' },
+  kidney: { fr: 'Rein', g: 'm', la: 'Ren', sys: 'organes' },
+  ureter: { fr: 'Uretère', g: 'm', la: 'Ureter', sys: 'organes' },
+  urethra: { fr: 'Urètre', g: 'm', la: 'Urethra', sys: 'organes' },
+  'urinary bladder': { fr: 'Vessie', g: 'f', la: 'Vesica urinaria', sys: 'organes' },
+  'adrenal gland': { fr: 'Glande surrénale', g: 'f', la: 'Glandula suprarenalis', sys: 'organes' },
+  prostate: { fr: 'Prostate', g: 'f', la: 'Prostata', sys: 'organes' },
+  testis: { fr: 'Testicule', g: 'm', la: 'Testis', sys: 'organes' },
+  epididymis: { fr: 'Épididyme', g: 'm', la: 'Epididymis', sys: 'organes' },
+  'deferent duct': { fr: 'Conduit déférent', g: 'm', la: 'Ductus deferens', sys: 'organes' },
+  'seminal vesicle': { fr: 'Vésicule séminale', g: 'f', la: 'Vesicula seminalis', sys: 'organes' },
+  'glans penis': { fr: 'Gland', g: 'm', la: 'Glans penis', sys: 'organes' },
+  'corpus cavernosum of penis': { fr: 'Corps caverneux', g: 'm', la: 'Corpus cavernosum penis', sys: 'organes' },
+  'corpus spongiosum of penis, nsn': { fr: 'Corps spongieux', g: 'm', la: 'Corpus spongiosum penis', sys: 'organes' },
+  bronchus: { fr: 'Bronche', g: 'f', la: 'Bronchus', sys: 'organes' },
+  'upper lobe of left lung': { fr: 'Lobe supérieur du poumon gauche', g: 'm', la: 'Lobus superior', sys: 'organes' },
+  'lower lobe of left lung': { fr: 'Lobe inférieur du poumon gauche', g: 'm', la: 'Lobus inferior', sys: 'organes' },
+  'upper lobe of right lung': { fr: 'Lobe supérieur du poumon droit', g: 'm', la: 'Lobus superior', sys: 'organes' },
+  'middle lobe of lung': { fr: 'Lobe moyen du poumon droit', g: 'm', la: 'Lobus medius', sys: 'organes' },
+  'lower lobe of right lung': { fr: 'Lobe inférieur du poumon droit', g: 'm', la: 'Lobus inferior', sys: 'organes' },
+  'lobe of thymus': { fr: 'Lobe du thymus', g: 'm', la: 'Lobus thymi', sys: 'organes' },
+  skin: { fr: 'Peau', g: 'f', la: 'Cutis', sys: 'organes' },
+  'head hairs': { fr: 'Cheveux', g: 'm', la: 'Capilli', sys: 'organes' },
+  'pubic hairs': { fr: 'Poils pubiens', g: 'm', la: 'Pubes', sys: 'organes' },
+
+  // ------------------------------------------------- structures cérébrales
+  'corpus callosum': { fr: 'Corps calleux', g: 'm', la: 'Corpus callosum', sys: 'nerfs' },
+  'internal capsule': { fr: 'Capsule interne', g: 'f', la: 'Capsula interna', sys: 'nerfs' },
+  'fornix of forebrain': { fr: 'Fornix', g: 'm', la: 'Fornix', sys: 'nerfs' },
+  'commissure of fornix of forebrain': { fr: 'Commissure du fornix', g: 'f', la: 'Commissura fornicis', sys: 'nerfs' },
+  'anterior commissure': { fr: 'Commissure antérieure', g: 'f', la: 'Commissura anterior', sys: 'nerfs' },
+  'posterior commissure': { fr: 'Commissure postérieure', g: 'f', la: 'Commissura posterior', sys: 'nerfs' },
+  'stria medullaris of thalamus': { fr: 'Strie médullaire du thalamus', g: 'f', la: 'Stria medullaris thalami', sys: 'nerfs' },
+  'stria terminalis': { fr: 'Strie terminale', g: 'f', la: 'Stria terminalis', sys: 'nerfs' },
+  'mammillary body': { fr: 'Corps mamillaire', g: 'm', la: 'Corpus mammillare', sys: 'nerfs' },
+  'lamina terminalis': { fr: 'Lame terminale', g: 'f', la: 'Lamina terminalis', sys: 'nerfs' },
+  'interpeduncular fossa': { fr: 'Fosse interpédonculaire', g: 'f', la: 'Fossa interpeduncularis', sys: 'nerfs' },
+  'interventricular foramen': { fr: 'Foramen interventriculaire', g: 'm', la: 'Foramen interventriculare', sys: 'nerfs' },
+  'central canal of spinal cord': { fr: 'Canal central de la moelle', g: 'm', la: 'Canalis centralis', sys: 'nerfs' },
+  'choroid plexus of left cerebral hemisphere': { fr: 'Plexus choroïde (hémisphère gauche)', g: 'm', la: 'Plexus choroideus', sys: 'nerfs' },
+  'choroid plexus of right cerebral hemisphere': { fr: 'Plexus choroïde (hémisphère droit)', g: 'm', la: 'Plexus choroideus', sys: 'nerfs' },
+  'white matter structure of cerebral hemisphere': { fr: 'Substance blanche hémisphérique', g: 'f', la: 'Substantia alba', sys: 'nerfs' },
+});

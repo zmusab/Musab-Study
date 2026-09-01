@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Régénère l'intégralité des assets Anatomie 3D depuis les données
-# BodyParts3D locales : catalogue → GLB par (région, système) → compression.
+# BodyParts3D locales : catalogue → GLB par (région, système) → compression
+# → vignettes de structures → schéma corporel interactif.
 #
 # La compression n'enlève AUCUN triangle : `--simplify false` est explicite et
-# volontaire (voir l'en-tête de convert-headneck.mjs pour l'historique du
+# volontaire (voir l'en-tête de convert-meshes.mjs pour l'historique du
 # problème). Le script vérifie ce point à la fin et échoue si le compte de
 # triangles ne correspond plus à la source.
 set -euo pipefail
@@ -13,16 +14,16 @@ OUT="$ROOT/public/anatomy"
 RAW="$(mktemp -d)"
 trap 'rm -rf "$RAW"' EXIT
 
-echo "==> 1/3  Catalogue depuis l'arbre d'inclusion BodyParts3D"
+echo "==> 1/5  Catalogue depuis l'arbre d'inclusion BodyParts3D"
 node "$ROOT/scripts/anatomy/build-catalog.mjs"
 
 echo
-echo "==> 2/3  Conversion STL → GLB (géométrie intégrale)"
+echo "==> 2/5  Conversion STL → GLB (géométrie intégrale)"
 rm -f "$OUT"/*.glb
-node "$ROOT/scripts/anatomy/convert-headneck.mjs"
+node "$ROOT/scripts/anatomy/convert-meshes.mjs"
 
 echo
-echo "==> 3/3  Compression meshopt (taille seule, sans simplification)"
+echo "==> 3/5  Compression meshopt (taille seule, sans simplification)"
 cp "$OUT"/*.glb "$RAW/"
 for f in "$RAW"/*.glb; do
   name="$(basename "$f")"
@@ -34,6 +35,14 @@ for f in "$RAW"/*.glb; do
   npx --yes @gltf-transform/cli@4 optimize "$f" "$OUT/$name" \
     --simplify false --join false --compress meshopt --texture-compress false >/dev/null 2>&1
 done
+
+echo
+echo "==> 4/5  Vignettes : un rendu par structure, depuis son maillage réel"
+node "$ROOT/scripts/anatomy/build-thumbnails.mjs"
+
+echo
+echo "==> 5/5  Schéma corporel interactif (zones dérivées du rendu)"
+node "$ROOT/scripts/anatomy/build-schema.mjs"
 
 echo
 echo "==> Vérification : chaque structure reste un nœud distinct"
@@ -66,4 +75,6 @@ expected="$(node -e "
 echo
 echo "Assets régénérés dans $OUT"
 du -sh "$OUT"
+du -sh "$OUT/thumbs"
+du -sh "$OUT/schema"
 echo "Triangles attendus (source) : $expected — aucune simplification appliquée."

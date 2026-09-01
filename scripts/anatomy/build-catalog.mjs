@@ -1,53 +1,36 @@
 #!/usr/bin/env node
 /**
- * Génère `src/data/anatomy/headNeckCatalog.json` À PARTIR DES DONNÉES RÉELLES
- * BodyParts3D, et non d'une liste écrite à la main.
+ * Génère `src/data/anatomy/bodyCatalog.json` À PARTIR DES DONNÉES RÉELLES
+ * BodyParts3D — corps entier, et non plus seulement Tête et Cou.
  *
  * PRINCIPE
  * --------
- * La sélection « Tête et Cou » est dérivée de l'arbre d'inclusion officiel du
- * jeu de données (`conventional_part_of.txt`, le même arbre que l'onglet
- * « Tree » du BP3D Viewer) : on descend depuis `head` et `neck` et on garde
- * tout descendant qui possède réellement un fichier STL. Aucune structure
- * n'est choisie à la main, aucune n'est inventée : si le maillage n'existe
- * pas dans la source, la structure n'entre pas dans le catalogue avec un
- * maillage.
+ * Tout est dérivé de l'arbre d'inclusion officiel (`conventional_part_of.txt`,
+ * le même que l'onglet « Tree » du BP3D Viewer) :
+ *   - la SOUS-RÉGION vient de la racine anatomique la plus spécifique qui
+ *     contient la structure (voir `regionTree.mjs`) ;
+ *   - le SYSTÈME vient de la racine de système qui la contient ;
+ *   - seule la NOMENCLATURE française est fournie à la main (`naming.mjs`),
+ *     parce que la source ne contient que des libellés anglais.
  *
- * Quelques structures pertinentes ne sont pas descendantes de `head`/`neck`
- * dans cet arbre (les vaisseaux et nerfs relèvent de leur propre système, le
- * cartilage thyroïde du système respiratoire) : elles sont ajoutées via
- * `EXTRA_IDS`, chacune vérifiée individuellement dans la source.
+ * Une structure sans maillage n'entre jamais au catalogue comme maillée, et
+ * une structure présente dans les données mais absente de la nomenclature
+ * FAIT ÉCHOUER la génération : impossible d'en perdre une en silence.
  *
- * Le nom français et le nom latin viennent de `naming.mjs` (voir l'en-tête de
- * ce fichier pour la justification). Toute structure sans entrée de
- * nomenclature FAIT ÉCHOUER la génération, afin qu'aucune structure ne puisse
- * apparaître sans nom ou être oubliée en silence.
- *
- * Usage : node scripts/anatomy/build-catalog.mjs
+ * Usage : node scripts/anatomy/build-catalog.mjs [--report-missing]
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { QUALIFIERS, TERMS, TOOTH_KINDS, FDI_QUADRANT, TOOTH_LATIN, withSide } from './naming.mjs';
+import { QUALIFIERS, TERMS, DERIVED_RULES, TOOTH_KINDS, FDI_QUADRANT, TOOTH_LATIN, withSide } from './naming.mjs';
+import { SUBREGION_ROOTS, FALLBACK_BY_LABEL, SYSTEM_ROOTS, EXTRA_SUBREGIONS } from './regionTree.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 export const BP3D_DIR = path.resolve(
   REPO_ROOT, '..', 'kevin-mattheus-moerman', 'bodyparts3d', 'assets', 'BodyParts3D_data',
 );
-const OUT = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'headNeckCatalog.json');
-
-/** Structures pertinentes hors sous-arbre head/neck — chacune vérifiée dans la source. */
-const EXTRA_IDS = [
-  'FMA3941', 'FMA4058', // artères carotides communes
-  'FMA4762', 'FMA4754', // veines jugulaires internes
-  'FMA50875', 'FMA50878', 'FMA62382', 'FMA67936', 'FMA62045', // nerfs/tractus/chiasma optiques
-  'FMA55099', 'FMA71704', 'FMA7394', 'FMA7131', // cartilage thyroïde, cartilages du nez, trachée, œsophage
-  'FMA81752', 'FMA81753', 'FMA71442', 'FMA71443', // rotateurs et intertransversaires cervicaux
-  'FMA32540', 'FMA32541', // élévateurs de la scapula
-  'FMA13322', 'FMA13323', 'FMA7486', // clavicules, manubrium
-  'FMA13889', 'FMA71098', // hypophyse, sourcils
-];
+const OUT = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'bodyCatalog.json');
 
 export function loadBp3d() {
   if (!existsSync(BP3D_DIR)) {
@@ -66,7 +49,6 @@ export function loadBp3d() {
     if (!children.has(id)) children.set(id, new Set());
     children.get(id).add(pid);
   }
-  // parts_list_e.txt fait foi pour les libellés téléchargeables.
   for (const line of readFileSync(path.join(BP3D_DIR, 'parts_list_e.txt'), 'utf8').split('\n').slice(1)) {
     if (!line.trim()) continue;
     const [id, en] = line.split('\t');
@@ -75,10 +57,9 @@ export function loadBp3d() {
   return { children, nameOf };
 }
 
-export const stlPath = (id) => path.join(BP3D_DIR, 'stl', `${id}.stl`);
-export const hasMesh = (id) => existsSync(stlPath(id));
+export const hasMesh = (id) => existsSync(path.join(BP3D_DIR, 'stl', `${id}.stl`));
 export const triangleCount = (id) => {
-  try { return readFileSync(stlPath(id)).readUInt32LE(80); } catch { return 0; }
+  try { return readFileSync(path.join(BP3D_DIR, 'stl', `${id}.stl`)).readUInt32LE(80); } catch { return 0; }
 };
 
 function descendants(children, rootId) {
@@ -94,26 +75,70 @@ function descendants(children, rootId) {
   return seen;
 }
 
-/** Décompose un libellé anglais en { side, qualifiers[], base }. */
+/**
+ * Qualificatifs composables génériques : « <modificateur> part/head/belly of X ».
+ * Les traiter par motif plutôt qu'un à un évite d'énumérer les dizaines de
+ * combinaisons présentes dans la source.
+ */
+const GENERIC_QUALIFIER =
+  /^(deep|superficial|anterior|posterior|superior|inferior|medial|lateral|upper|lower|long|short|oblique|transverse|descending|ascending|vertical|horizontal|abdominal|acromial|clavicular|sternocostal|costal|spinal|iliac|lumbar|thoracic|cervical|straight|first|second|third|fourth|fifth|sixth|seventh|external|internal|innermost|accessory|humeral|ulnar|radial|humeroulnar|tibial|fibular|femoral)\s+(part|head|belly|portion|limb|fibers|bundle|layer)\s+of\s+/i;
+
+const QUALIFIER_FR = {
+  deep: 'profond', superficial: 'superficiel', anterior: 'antérieur', posterior: 'postérieur',
+  superior: 'supérieur', inferior: 'inférieur', medial: 'médial', lateral: 'latéral',
+  upper: 'supérieur', lower: 'inférieur', long: 'long', short: 'court', oblique: 'oblique',
+  transverse: 'transverse', descending: 'descendant', ascending: 'ascendant', vertical: 'vertical',
+  horizontal: 'horizontal', abdominal: 'abdominal', acromial: 'acromial', clavicular: 'claviculaire',
+  sternocostal: 'sterno-costal', costal: 'costal', spinal: 'spinal', iliac: 'iliaque',
+  lumbar: 'lombaire', thoracic: 'thoracique', cervical: 'cervical', straight: 'droit',
+  first: 'premier', second: 'deuxième', third: 'troisième', fourth: 'quatrième', fifth: 'cinquième',
+  sixth: 'sixième', seventh: 'septième', external: 'externe', internal: 'interne',
+  innermost: 'le plus interne', accessory: 'accessoire', humeral: 'huméral', ulnar: 'ulnaire',
+  radial: 'radial', humeroulnar: 'huméro-ulnaire', tibial: 'tibial', fibular: 'fibulaire',
+  femoral: 'fémoral',
+};
+const PART_FR = {
+  part: 'partie', head: 'chef', belly: 'ventre', portion: 'portion', limb: 'bras',
+  fibers: 'fibres', bundle: 'faisceau', layer: 'couche',
+};
+
+/** Décompose un libellé anglais en { side, notes[], base }. */
 function parseLabel(en) {
   let rest = en;
-  const quals = [];
-  let matched = true;
-  while (matched) {
-    matched = false;
+  const notes = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
     for (const q of QUALIFIERS) {
-      if (q.en.test(rest)) { quals.push(q); rest = rest.replace(q.en, ''); matched = true; }
+      if (q.en.test(rest)) { notes.push(q.fr); rest = rest.replace(q.en, ''); changed = true; }
     }
-    const side = /^(left|right) /.exec(rest);
-    if (side && !TERMS[rest]) { /* le côté est retiré plus bas */ }
+    const generic = GENERIC_QUALIFIER.exec(rest);
+    if (generic) {
+      const mod = QUALIFIER_FR[generic[1].toLowerCase()] ?? generic[1].toLowerCase();
+      const kind = PART_FR[generic[2].toLowerCase()] ?? generic[2].toLowerCase();
+      notes.push((b) => `${b} (${kind} ${mod})`);
+      rest = rest.replace(GENERIC_QUALIFIER, '');
+      changed = true;
+    }
+    if (/^(left|right)\s+/i.test(rest) && !TERMS[rest]) {
+      // le côté est extrait plus bas, une seule fois
+    }
   }
   let side = null;
-  const m = /^(left|right) /.exec(rest);
-  if (m && !TERMS[rest]) { side = m[1]; rest = rest.replace(/^(left|right) /, ''); }
-  return { side, quals, base: rest };
+  // Côté en tête : « left masseter ».
+  const leading = /^(left|right)\s+/i.exec(rest);
+  if (leading && !TERMS[rest]) { side = leading[1].toLowerCase(); rest = rest.replace(/^(left|right)\s+/i, ''); }
+  // Côté enchâssé : « abductor digiti minimi of left foot » — fréquent aux
+  // membres. Sans cette règle, chaque muscle apparaîtrait deux fois comme
+  // deux racines distinctes à nommer.
+  const embedded = /\bof (left|right) (hand|foot|forearm|leg|arm|thigh|wrist|ankle|thumb|big toe|great toe|second toe|third toe|fourth toe|little toe|index finger|middle finger|ring finger|little finger)\b/i.exec(rest);
+  if (embedded && !TERMS[rest]) {
+    side = side ?? embedded[1].toLowerCase();
+    rest = rest.replace(/\bof (left|right) /i, 'of ');
+  }
+  return { side, notes, base: rest.trim() };
 }
 
-/** Dents : « right upper first secondary molar tooth » → { fdi: 16, fr, la }. */
 function parseTooth(en) {
   const m = /^(left|right) (upper|lower) (.+) tooth$/.exec(en);
   if (!m) return null;
@@ -123,44 +148,54 @@ function parseTooth(en) {
   const quadrant = FDI_QUADRANT[`${level}-${side}`];
   if (!quadrant) return null;
   const fdi = quadrant * 10 + kind.pos;
-  const sideFr = side === 'left' ? 'gauche' : 'droite';
-  const levelFr = level === 'upper' ? 'supérieure' : 'inférieure';
   return {
     fdi,
-    fr: `${kind.fr} ${levelFr} ${sideFr} (${fdi})`,
+    fr: `${kind.fr} ${level === 'upper' ? 'supérieure' : 'inférieure'} ${side === 'left' ? 'gauche' : 'droite'} (${fdi})`,
     la: TOOTH_LATIN[kind.fr] ?? null,
   };
 }
 
-/** Identifiant stable, lisible et sans accent, dérivé du nom français. */
 function slugify(fr) {
   return fr.normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
-export function buildCatalog() {
+/** Sous-région → région de premier niveau, dérivée des déclarations ci-dessus. */
+const REGION_OF = new Map([
+  ...SUBREGION_ROOTS.map((s) => [s.id, s.region]),
+  ...EXTRA_SUBREGIONS.map((s) => [s.id, s.region]),
+]);
+
+export function buildCatalog({ reportMissing = false } = {}) {
   const { children, nameOf } = loadBp3d();
   const idOf = (label) => [...nameOf.entries()].find(([, v]) => v === label)?.[0];
 
-  const headId = idOf('head');
-  const neckId = idOf('neck');
-  if (!headId || !neckId) throw new Error('Racines « head » / « neck » introuvables dans l’arbre BodyParts3D.');
+  // Ensembles de descendants, calculés une fois.
+  const subregionSets = SUBREGION_ROOTS.map((meta) => {
+    const rootId = idOf(meta.root);
+    return { ...meta, members: rootId ? descendants(children, rootId) : new Set() };
+  });
+  const systemSets = SYSTEM_ROOTS.map((meta) => {
+    const rootId = idOf(meta.root);
+    return { ...meta, members: rootId ? descendants(children, rootId) : new Set() };
+  });
 
-  const selected = new Set([...descendants(children, headId), ...descendants(children, neckId)]);
-  for (const id of EXTRA_IDS) {
-    if (!hasMesh(id)) throw new Error(`EXTRA_IDS : ${id} n'a pas de maillage dans la source.`);
-    selected.add(id);
-  }
-
-  const brainId = idOf('brain');
-  const brainSet = brainId ? descendants(children, brainId) : new Set();
+  const allMeshed = [...new Set([...nameOf.keys()])].filter(hasMesh);
 
   const entries = [];
-  const missing = [];
+  const missing = new Map();
 
-  for (const fmaId of [...selected].filter(hasMesh)) {
+  for (const fmaId of allMeshed) {
     const en = nameOf.get(fmaId);
-    if (!en) { missing.push(`${fmaId} (aucun libellé)`); continue; }
+    if (!en) continue;
+
+    // --- Système : première racine de système qui contient la structure.
+    const system = systemSets.find((s) => s.members.has(fmaId))?.category ?? 'organes';
+
+    // --- Sous-région : racine la plus spécifique (l'ordre du tableau fait foi),
+    //     puis rattachement par libellé pour ce que l'arbre ne couvre pas.
+    let subregion = subregionSets.find((s) => s.members.has(fmaId))?.id ?? null;
+    if (!subregion) subregion = FALLBACK_BY_LABEL.find((f) => f.match.test(en))?.subregion ?? null;
 
     const tooth = parseTooth(en);
     if (tooth) {
@@ -168,36 +203,45 @@ export function buildCatalog() {
         id: `dent_${tooth.fdi}`,
         name: tooth.fr,
         latinName: tooth.la,
-        // Tissu minéralisé, affiché et basculé avec le squelette : c'est ce
-        // qu'attend l'utilisateur en dentisterie (cocher « Squelette » doit
-        // montrer les dents). La gencive, elle, reste un tissu mou.
         category: 'squelette',
-        region: 'tete-et-cou',
         subregion: 'dents',
+        region: REGION_OF.get('dents') ?? null,
         fmaId,
         hasMesh: true,
-        fdi: tooth.fdi,
         triangles: triangleCount(fmaId),
         sourceLabel: en,
+        fdi: tooth.fdi,
       });
       continue;
     }
 
-    const { side, quals, base } = parseLabel(en);
-    const term = TERMS[base];
-    if (!term) { missing.push(`${fmaId}  «${en}»  (terme de base : «${base}»)`); continue; }
+    const { side, notes, base } = parseLabel(en);
+    // Motifs réguliers (côtes, vertèbres, métacarpiens, phalanges…) : une règle
+    // dérivée plutôt qu'une entrée par numéro — même auditabilité, sans
+    // centaines de lignes quasi identiques.
+    const term = TERMS[base] ?? DERIVED_RULES.reduce((found, rule) => found ?? rule(base), null);
+    if (!term) {
+      if (!missing.has(base)) missing.set(base, en);
+      continue;
+    }
 
     let name = term.fr;
-    for (const q of quals) name = q.fr(name);
+    for (const note of notes) name = note(name);
     name = withSide(name, term.g, side);
+
+    // La mâchoire est une sous-division de la face côté source : on la
+    // distingue explicitement, elle est centrale en dentisterie.
+    if (term.sub === 'machoire') subregion = 'machoire';
+    if (term.sub === 'dents') subregion = 'dents';
+    if (!subregion) subregion = term.sub ?? null;
 
     entries.push({
       id: slugify(name),
       name,
-      latinName: term.la,
-      category: term.sys,
-      region: 'tete-et-cou',
-      subregion: brainSet.has(fmaId) ? 'encephale' : term.sub,
+      latinName: term.la ?? null,
+      category: term.sys ?? system,
+      subregion,
+      region: subregion ? (REGION_OF.get(subregion) ?? null) : null,
       fmaId,
       hasMesh: true,
       triangles: triangleCount(fmaId),
@@ -205,28 +249,32 @@ export function buildCatalog() {
     });
   }
 
-  if (missing.length) {
+  if (reportMissing) return { entries, missing: [...missing.entries()] };
+
+  if (missing.size) {
+    const list = [...missing.entries()].map(([base, en]) => `  «${base}»  (ex. « ${en} »)`).join('\n');
     throw new Error(
-      `${missing.length} structure(s) sans entrée de nomenclature dans naming.mjs :\n  ` +
-      missing.join('\n  ') +
-      `\n\nAjoute-les à TERMS plutôt que de les ignorer : une structure présente dans les ` +
-      `données doit être nommée, pas écartée en silence.`,
+      `${missing.size} racine(s) sans entrée dans naming.mjs :\n${list}\n\n` +
+      `Ajoute-les à TERMS : une structure présente dans les données doit être nommée, pas écartée.`,
     );
   }
 
-  // Doublons d'identifiant : révèlent une collision de nommage, à corriger.
-  const byId = new Map();
+  // Identifiants uniques : une collision révèle deux structures qui
+  // porteraient le même nom, donc indistinguables à l'écran.
+  const seen = new Map();
   for (const e of entries) {
-    if (byId.has(e.id)) throw new Error(`Identifiant en double : « ${e.id} » (${byId.get(e.id).sourceLabel} / ${e.sourceLabel})`);
-    byId.set(e.id, e);
+    if (seen.has(e.id)) {
+      throw new Error(`Identifiant en double « ${e.id} » : ${seen.get(e.id)} / ${e.sourceLabel}`);
+    }
+    seen.set(e.id, e.sourceLabel);
   }
 
-  entries.sort((a, b) => a.subregion.localeCompare(b.subregion) || a.name.localeCompare(b.name, 'fr'));
-  return entries;
+  entries.sort((a, b) => (a.subregion ?? '').localeCompare(b.subregion ?? '') || a.name.localeCompare(b.name, 'fr'));
+  return { entries, missing: [] };
 }
 
 /**
- * Structures réelles connues mais SANS maillage dans le jeu de données —
+ * Structures réelles connues mais SANS géométrie dans le jeu de données —
  * conservées comme structures « cours » (recherchables, explicables par l'IA)
  * et affichées comme telles. Aucune géométrie n'est fabriquée pour elles.
  */
@@ -262,28 +310,38 @@ const COURSE_ONLY = [
 
 export function courseOnlyEntries() {
   return COURSE_ONLY.map(([id, name, latinName, category, subregion]) => ({
-    id, name, latinName, category, region: 'tete-et-cou', subregion,
+    id, name, latinName, category, subregion,
+    region: REGION_OF.get(subregion) ?? null,
     fmaId: null, hasMesh: false, triangles: 0, sourceLabel: null,
   }));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const meshed = buildCatalog();
-  const all = [...meshed, ...courseOnlyEntries()];
+  const reportMissing = process.argv.includes('--report-missing');
+  const { entries, missing } = buildCatalog({ reportMissing });
+
+  if (reportMissing) {
+    console.log(`${missing.length} racines manquantes dans naming.mjs :\n`);
+    for (const [base] of missing.sort((a, b) => a[0].localeCompare(b[0]))) console.log(base);
+    process.exit(0);
+  }
+
+  const all = [...entries, ...courseOnlyEntries()];
   writeFileSync(OUT, `${JSON.stringify(all, null, 2)}\n`);
 
   const bySub = {};
   let tri = 0;
-  for (const e of meshed) {
-    bySub[e.subregion] ??= { n: 0, tri: 0 };
-    bySub[e.subregion].n++;
-    bySub[e.subregion].tri += e.triangles;
+  for (const e of entries) {
+    const key = e.subregion ?? '(non rattaché)';
+    bySub[key] ??= { n: 0, tri: 0 };
+    bySub[key].n++;
+    bySub[key].tri += e.triangles;
     tri += e.triangles;
   }
   console.log(`Catalogue écrit : ${OUT}`);
-  console.log(`  ${meshed.length} structures avec maillage réel (${tri.toLocaleString('fr-FR')} triangles)`);
-  console.log(`  ${all.length - meshed.length} structures « cours » (aucun maillage dans la source)`);
-  for (const [sub, s] of Object.entries(bySub).sort()) {
-    console.log(`    ${sub.padEnd(12)} ${String(s.n).padStart(3)} structures  ${s.tri.toLocaleString('fr-FR').padStart(11)} tri`);
+  console.log(`  ${entries.length} structures avec maillage réel (${tri.toLocaleString('fr-FR')} triangles)`);
+  console.log(`  ${all.length - entries.length} structures « cours » (aucune géométrie dans la source)`);
+  for (const [sub, s] of Object.entries(bySub).sort((a, b) => b[1].n - a[1].n)) {
+    console.log(`    ${sub.padEnd(18)} ${String(s.n).padStart(3)} structures ${s.tri.toLocaleString('fr-FR').padStart(12)} tri`);
   }
 }

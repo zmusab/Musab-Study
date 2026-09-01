@@ -9,8 +9,10 @@ import { RegionBreadcrumb } from '@/components/features/anatomy/RegionBreadcrumb
 import { AnatomySearchBar } from '@/components/features/anatomy/AnatomySearchBar';
 import { StructureInfoPanel } from '@/components/features/anatomy/StructureInfoPanel';
 import { RegionExplorerCard } from '@/components/features/anatomy/RegionExplorerCard';
+import { StructureThumbnail } from '@/components/features/anatomy/StructureThumbnail';
+import { pickRepresentative } from '@/services/anatomy/representative';
 import { LearningModeCard } from '@/components/features/anatomy/LearningModeCard';
-import { seedHeadNeckCatalog } from '@/data/repositories/anatomy';
+import { seedBodyCatalog } from '@/data/repositories/anatomy';
 import { useAnatomyStructures, useAnatomyStructure } from '@/hooks/useAnatomy';
 import { useProfile } from '@/hooks/useProfile';
 import { structuresInSubregion, DEFAULT_LOADED_SUBREGIONS } from '@/services/anatomy/regions';
@@ -19,7 +21,6 @@ import { db } from '@/data/db';
 import type { AnatomyCategory, ID } from '@/types';
 import type { ContextLookup } from '@/services/rag/retrieval';
 
-const REGION = 'tete-et-cou';
 const DEFAULT_SYSTEMS: Record<AnatomyCategory, boolean> = {
   squelette: true,
   muscles: true,
@@ -29,12 +30,17 @@ const DEFAULT_SYSTEMS: Record<AnatomyCategory, boolean> = {
 };
 const ALL_CATEGORIES: AnatomyCategory[] = ['squelette', 'muscles', 'nerfs', 'vaisseaux', 'organes'];
 
-/** Combinaisons proposées (§12) — chacune applique réellement l'état des 5 systèmes. */
-const COMBINATIONS: { label: string; icons: string; categories: AnatomyCategory[] }[] = [
-  { label: 'Squelette et nerfs', icons: '🦴🧠', categories: ['squelette', 'nerfs'] },
-  { label: 'Muscles et vaisseaux', icons: '💪🩸', categories: ['muscles', 'vaisseaux'] },
-  { label: 'Squelette seul', icons: '🦴', categories: ['squelette'] },
-  { label: 'Tout afficher', icons: '🦴💪🧠🩸', categories: ALL_CATEGORIES },
+/**
+ * Combinaisons proposées (§12) — chacune applique réellement l'état des 5
+ * systèmes. La tuile montre les VRAIES vignettes des systèmes combinés
+ * (une par système, superposées), donc à quoi la combinaison ressemble
+ * vraiment dans le modèle — pas une paire d'emojis.
+ */
+const COMBINATIONS: { label: string; categories: AnatomyCategory[] }[] = [
+  { label: 'Squelette et nerfs', categories: ['squelette', 'nerfs'] },
+  { label: 'Muscles et vaisseaux', categories: ['muscles', 'vaisseaux'] },
+  { label: 'Squelette seul', categories: ['squelette'] },
+  { label: 'Tout afficher', categories: ALL_CATEGORIES },
 ];
 
 /** Charge chunks + lookup à la demande, seulement une fois qu'une structure est sélectionnée. */
@@ -111,7 +117,7 @@ export function AnatomyPage() {
   const reduced = useReducedMotion();
   const viewerRef = useRef<Anatomy3DViewerHandle>(null);
 
-  const structures = useAnatomyStructures(REGION);
+  const structures = useAnatomyStructures();
   const [activeSystems, setActiveSystems] = useState<Record<AnatomyCategory, boolean>>(DEFAULT_SYSTEMS);
   const [selectedId, setSelectedId] = useState<ID | null>(null);
   const [isolated, setIsolated] = useState(false);
@@ -122,10 +128,12 @@ export function AnatomyPage() {
   const [learningActive, setLearningActive] = useState(false);
   const [learningTargetId, setLearningTargetId] = useState<ID | null>(null);
   const [learningResult, setLearningResult] = useState<LearningResult | null>(null);
+  /** Structure réellement cliquée en réponse — sert à la corriger EN ROUGE sur le modèle. */
+  const [learningAnsweredId, setLearningAnsweredId] = useState<ID | null>(null);
   const [learningStreak, setLearningStreak] = useState(0);
 
   useEffect(() => {
-    void seedHeadNeckCatalog();
+    void seedBodyCatalog();
   }, []);
 
   // Un lien externe (recherche globale, plus tard un renvoi depuis Cours)
@@ -145,16 +153,69 @@ export function AnatomyPage() {
     () => structures?.find((s) => s.id === selectedId) ?? null,
     [structures, selectedId],
   );
+  /** Une vignette réelle par système, pour les tuiles de combinaison. */
+  const systemSamples = useMemo(() => {
+    const map = new Map<AnatomyCategory, ReturnType<typeof pickRepresentative>>();
+    for (const category of ALL_CATEGORIES) {
+      map.set(category, pickRepresentative(structures ?? [], (s) => s.category === category));
+    }
+    return map;
+  }, [structures]);
+
   const learningTarget = useMemo(
     () => (learningTargetId ? (structures?.find((s) => s.id === learningTargetId) ?? null) : null),
     [structures, learningTargetId],
+  );
+  /**
+   * Périmètre de chargement (§ chargement progressif) : par défaut toutes les
+   * régions sauf celles marquées `lazy` (l'encéphale, 1,4 M triangles à lui
+   * seul). Ouvrir explicitement une région lourde l'ajoute au périmètre —
+   * c'est le seul moment où ses assets sont téléchargés.
+   */
+  const loadedSubregions = useMemo(() => {
+    if (focusedSubregion) {
+      return DEFAULT_LOADED_SUBREGIONS.includes(focusedSubregion)
+        ? DEFAULT_LOADED_SUBREGIONS
+        : [...DEFAULT_LOADED_SUBREGIONS, focusedSubregion];
+    }
+    return DEFAULT_LOADED_SUBREGIONS;
+  }, [focusedSubregion]);
+
+  /**
+   * Structures pouvant être demandées : uniquement celles dont les assets
+   * sont RÉELLEMENT chargés et dont le système est actif. Sans ce filtre, le
+   * jeu demandait des structures absentes de l'écran (un muscle du pied
+   * pendant qu'on regarde la tête) — introuvables, et impossibles à corriger
+   * en vert sur le modèle.
+   */
+  const learningCandidates = useMemo(
+    () =>
+      (structures ?? []).filter(
+        (s) =>
+          s.model3dRef !== null &&
+          activeSystems[s.category] === true &&
+          loadedSubregions.includes(s.subregion ?? ''),
+      ),
+    [structures, activeSystems, loadedSubregions],
+  );
+
+  const learningAnswered = useMemo(
+    () => (learningAnsweredId ? (structures?.find((s) => s.id === learningAnsweredId) ?? null) : null),
+    [structures, learningAnsweredId],
   );
 
   const selectStructure = (id: ID | null) => {
     if (learningActive && id !== null && learningTargetId) {
       const result = evaluateGuess(learningTargetId, id);
       setLearningResult(result);
+      setLearningAnsweredId(id);
       if (result === 'correct') setLearningStreak((n) => n + 1);
+      // Sur une erreur, la caméra va vers LA BONNE structure : c'est elle
+      // qu'il faut voir. La structure cliquée reste visible en rouge à côté
+      // (cf. `computeVisibility`), ce qui permet de comparer les deux.
+      setSelectedId(result === 'correct' ? id : learningTargetId);
+      setFlyToToken((t) => t + 1);
+      return;
     }
     setSelectedId(id);
     if (id === null) setIsolated(false);
@@ -220,45 +281,31 @@ export function AnatomyPage() {
 
   const startLearning = () => {
     if (!structures) return;
-    setFocusedSubregion(null);
     setSelectedId(null);
     setIsolated(false);
-    const candidates = structures.filter((s) => activeSystems[s.category] === true);
-    const target = pickLearningTarget(candidates);
+    const target = pickLearningTarget(learningCandidates);
     setLearningActive(true);
     setLearningTargetId(target?.id ?? null);
     setLearningResult(null);
+    setLearningAnsweredId(null);
     setLearningStreak(0);
   };
   const nextLearningQuestion = () => {
     if (!structures) return;
-    const candidates = structures.filter((s) => activeSystems[s.category] === true);
-    const target = pickLearningTarget(candidates, learningTargetId);
+    const target = pickLearningTarget(learningCandidates, learningTargetId);
     setLearningTargetId(target?.id ?? null);
     setLearningResult(null);
+    setLearningAnsweredId(null);
     setSelectedId(null);
   };
   const stopLearning = () => {
     setLearningActive(false);
     setLearningTargetId(null);
     setLearningResult(null);
+    setLearningAnsweredId(null);
     setSelectedId(null);
   };
 
-  /**
-   * Périmètre de chargement (§ chargement progressif) : par défaut toutes les
-   * régions sauf celles marquées `lazy` (l'encéphale, 1,4 M triangles à lui
-   * seul). Ouvrir explicitement une région lourde l'ajoute au périmètre —
-   * c'est le seul moment où ses assets sont téléchargés.
-   */
-  const loadedSubregions = useMemo(() => {
-    if (focusedSubregion) {
-      return DEFAULT_LOADED_SUBREGIONS.includes(focusedSubregion)
-        ? DEFAULT_LOADED_SUBREGIONS
-        : [...DEFAULT_LOADED_SUBREGIONS, focusedSubregion];
-    }
-    return DEFAULT_LOADED_SUBREGIONS;
-  }, [focusedSubregion]);
 
   const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
   const handleLoadProgress = useCallback(
@@ -266,12 +313,34 @@ export function AnatomyPage() {
     [],
   );
 
+  /**
+   * État d'apprentissage transmis au modèle 3D — `answeredId` reste nul tant
+   * qu'aucune réponse n'est donnée, la cible n'est donc jamais révélée avant
+   * le clic.
+   */
+  const learningState = useMemo(
+    () =>
+      learningActive && learningTargetId
+        ? { targetId: learningTargetId, answeredId: learningAnsweredId }
+        : null,
+    [learningActive, learningTargetId, learningAnsweredId],
+  );
+
   const markerStructureIds = useMemo(() => {
-    if (learningActive || !focusedSubregion || !structures) return [];
+    // Pendant l'apprentissage : aucun marqueur avant la réponse (ils
+    // donneraient la solution), puis exactement les deux structures de la
+    // correction — la bonne, et celle cliquée si elle diffère.
+    if (learningActive) {
+      if (!learningState || learningState.answeredId === null) return [];
+      const ids = [learningState.targetId];
+      if (learningState.answeredId !== learningState.targetId) ids.push(learningState.answeredId);
+      return ids;
+    }
+    if (!focusedSubregion || !structures) return [];
     return structuresInSubregion(structures, focusedSubregion)
       .filter((s) => s.model3dRef !== null)
       .map((s) => s.id);
-  }, [learningActive, focusedSubregion, structures]);
+  }, [learningActive, learningState, focusedSubregion, structures]);
 
   const showInfoPanel = selectedStructure && !learningActive;
 
@@ -279,7 +348,7 @@ export function AnatomyPage() {
     <div className="flex h-full min-h-0 flex-col" style={{ background: 'var(--bg)', color: 'var(--ink)' }}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
         <div>
-          <h1 className="text-[1.15rem] leading-tight text-[var(--ink)]">🫀 Anatomie 3D</h1>
+          <h1 className="text-[1.15rem] leading-tight text-[var(--ink)]">Anatomie 3D</h1>
           <RegionBreadcrumb
             subregionId={focusedSubregion}
             structureName={selectedStructure?.name ?? null}
@@ -297,14 +366,30 @@ export function AnatomyPage() {
           Le rail de navigation de l'app passe en mode icônes sur cette route,
           ce qui rend ~176 px au contenu et permet de tenir les 4 colonnes sur
           un iPad en paysage sans écraser le modèle. */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[10.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[12rem_minmax(0,1fr)_20rem_16rem]">
-        <aside className="col-span-2 flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:col-span-1 lg:border-b-0 lg:border-r">
-          <div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[12.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[14rem_minmax(0,1fr)_20rem_16rem]">
+        {/* Rail gauche pleine hauteur : les systèmes, puis le schéma
+            anatomique interactif — c'est la colonne qui a la hauteur
+            nécessaire pour afficher un corps entier lisible. */}
+        <aside className="col-span-2 flex min-h-0 shrink-0 flex-col gap-3 overflow-y-auto border-b border-[var(--line)] p-3 lg:col-span-1 lg:overflow-hidden lg:border-b-0 lg:border-r">
+          <div className="shrink-0">
             <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Systèmes</p>
-            <SystemToggleBar active={activeSystems} onToggle={toggleSystem} />
+            <SystemToggleBar structures={structures ?? []} active={activeSystems} onToggle={toggleSystem} />
           </div>
-          <p className="mt-auto text-[0.7rem] leading-relaxed text-[var(--ink-faint)]">
-            Modèle : spécimen unique (données ouvertes BodyParts3D/DBCLS, CC BY-SA) — pas de variante homme/femme distincte disponible aujourd'hui.
+          <div className="min-h-[26rem] flex-1 lg:min-h-0">
+            <RegionExplorerCard
+              structures={structures ?? []}
+              focusedSubregion={focusedSubregion}
+              onOpenSubregion={setFocusedSubregion}
+              onCloseSubregion={closeSubregion}
+              selectedId={selectedId}
+              onSelectStructure={selectStructure}
+            />
+          </div>
+          <p
+            className="shrink-0 text-[0.64rem] leading-tight text-[var(--ink-faint)]"
+            title="Les données BodyParts3D proviennent d'un spécimen unique : aucune variante homme/femme distincte n'existe dans la source, elle n'est donc pas proposée."
+          >
+            BodyParts3D/DBCLS (CC BY-SA) — spécimen unique.
           </p>
         </aside>
 
@@ -323,10 +408,12 @@ export function AnatomyPage() {
                 activeSystems={activeSystems}
                 selectedId={selectedId}
                 isolated={isolated}
+                learning={learningState}
                 onSelectStructure={selectStructure}
                 flyToToken={flyToToken}
                 markerStructureIds={markerStructureIds}
                 loadedSubregions={loadedSubregions}
+                focusedSubregion={focusedSubregion}
                 reducedMotion={!!reduced}
                 onFullscreenChange={setIsFullscreen}
                 onLoadProgress={handleLoadProgress}
@@ -378,19 +465,13 @@ export function AnatomyPage() {
       {/* Bande d'outils VOLONTAIREMENT compacte et de hauteur bornée : le
           viewport 3D doit rester la zone dominante de l'écran. Chaque carte
           défile en interne plutôt que de pousser le modèle vers le haut. */}
-      <div className="grid shrink-0 grid-cols-1 gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 lg:h-[13.5rem] lg:grid-cols-5">
-        <RegionExplorerCard
-          structures={structures ?? []}
-          focusedSubregion={focusedSubregion}
-          onOpenSubregion={setFocusedSubregion}
-          onCloseSubregion={closeSubregion}
-          selectedId={selectedId}
-          onSelectStructure={selectStructure}
-        />
-
+      <div className="grid shrink-0 grid-cols-1 gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 lg:h-[12rem] lg:grid-cols-4">
         {/* Mode isolation (§10) — trois vrais outils de mise en évidence. */}
         <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
-          <p className="mb-1.5 text-[0.85rem] font-semibold text-[var(--ink)]">Mode isolation</p>
+          <div className="mb-1.5 flex items-center gap-2">
+            <StructureThumbnail structure={selectedStructure ?? null} size={30} />
+            <p className="min-w-0 flex-1 truncate text-[0.85rem] font-semibold text-[var(--ink)]">Mode isolation</p>
+          </div>
           <p className="mb-2 min-h-0 flex-1 overflow-y-auto text-[0.76rem] leading-snug text-[var(--ink-faint)]">
             {isolated && selectedStructure ? (
               <>
@@ -422,10 +503,10 @@ export function AnatomyPage() {
               disabled={!selectedStructure}
               onClick={() => setIsolated(true)}
             >
-              🚫 Masquer le reste
+              Masquer le reste
             </Button>
             <Button size="sm" variant="ghost" className="justify-start" onClick={resetView}>
-              ⟲ Réinitialiser la vue
+              Réinitialiser la vue
             </Button>
           </div>
         </div>
@@ -433,6 +514,7 @@ export function AnatomyPage() {
         <LearningModeCard
           active={learningActive}
           target={learningTarget}
+          answered={learningAnswered}
           result={learningResult}
           streak={learningStreak}
           onStart={startLearning}
@@ -460,8 +542,15 @@ export function AnatomyPage() {
                       : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
                   }
                 >
-                  <span aria-hidden className="text-[1.05rem] leading-none">
-                    {combo.icons}
+                  <span aria-hidden className="flex items-center justify-center -space-x-1.5">
+                    {combo.categories.map((category) => (
+                      <StructureThumbnail
+                        key={category}
+                        structure={systemSamples.get(category) ?? null}
+                        size={24}
+                        className="ring-1 ring-[var(--surface-1)]"
+                      />
+                    ))}
                   </span>
                   <span className="text-[0.68rem] leading-tight text-[var(--ink-soft)]">{combo.label}</span>
                 </button>

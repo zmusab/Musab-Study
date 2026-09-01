@@ -1,14 +1,17 @@
+import { useMemo } from 'react';
 import { cn } from '@/lib/cn';
 import assetManifest from '@/data/anatomy/assetManifest.json';
-import type { AnatomyCategory } from '@/types';
+import { StructureThumbnail } from './StructureThumbnail';
+import { pickRepresentative } from '@/services/anatomy/representative';
+import type { AnatomyCategory, AnatomyStructure } from '@/types';
 import type { SystemVisibility } from '@/services/anatomy/visibility';
 
-const SYSTEMS: { category: AnatomyCategory; label: string; icon: string }[] = [
-  { category: 'squelette', label: 'Squelette', icon: '🦴' },
-  { category: 'muscles', label: 'Muscles', icon: '💪' },
-  { category: 'nerfs', label: 'Nerfs', icon: '🧠' },
-  { category: 'vaisseaux', label: 'Vaisseaux', icon: '🩸' },
-  { category: 'organes', label: 'Organes', icon: '🫀' },
+const SYSTEMS: { category: AnatomyCategory; label: string }[] = [
+  { category: 'squelette', label: 'Squelette' },
+  { category: 'muscles', label: 'Muscles' },
+  { category: 'nerfs', label: 'Nerfs' },
+  { category: 'vaisseaux', label: 'Vaisseaux' },
+  { category: 'organes', label: 'Organes' },
 ];
 
 /**
@@ -27,14 +30,27 @@ const CATEGORIES_WITH_MESH = new Set(
  * est calculé depuis le manifeste d'assets : un système ne s'affiche comme
  * dépourvu de 3D que si aucun maillage n'existe réellement pour lui, et le
  * marqueur disparaît de lui-même le jour où des maillages sont ajoutés.
+ *
+ * Chaque système est illustré par la vignette d'une structure réelle de ce
+ * système, prise dans le périmètre actuellement chargé — pas par un emoji.
  */
 export function SystemToggleBar({
   active,
   onToggle,
+  structures,
 }: {
   active: SystemVisibility;
   onToggle: (category: AnatomyCategory) => void;
+  structures: readonly AnatomyStructure[];
 }) {
+  const sample = useMemo(() => {
+    const map = new Map<AnatomyCategory, AnatomyStructure | null>();
+    for (const system of SYSTEMS) {
+      map.set(system.category, pickRepresentative(structures, (s) => s.category === system.category));
+    }
+    return map;
+  }, [structures]);
+
   return (
     <div className="flex flex-col gap-0.5" role="group" aria-label="Systèmes anatomiques">
       {SYSTEMS.map((system) => {
@@ -46,12 +62,10 @@ export function SystemToggleBar({
             aria-pressed={isActive}
             data-touch-target
             onClick={() => onToggle(system.category)}
-            className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-2 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
+            className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
           >
-            <span aria-hidden className="text-[1.05rem]">
-              {system.icon}
-            </span>
-            <span className="flex-1 text-[0.88rem] font-medium text-[var(--ink)]">
+            <StructureThumbnail structure={sample.get(system.category) ?? null} size={24} />
+            <span className="flex-1 text-[0.84rem] font-medium text-[var(--ink)]">
               {system.label}
               {!CATEGORIES_WITH_MESH.has(system.category) && (
                 <span
