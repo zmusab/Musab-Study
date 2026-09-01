@@ -95,8 +95,8 @@ check(
   await masteryValue(),
 );
 check(
-  'La page dit explicitement qu’il manque des données',
-  await page.getByText('Pas assez de données pour calculer ta maîtrise.').isVisible(),
+  'La page dit explicitement ce qu’il manque pour mesurer',
+  await page.getByText(/Encore \d+ cartes? à réviser pour la calculer/).isVisible(),
 );
 const lowDataCounters = await page.locator('[data-progress-counters]').innerText();
 check(
@@ -111,11 +111,11 @@ check(
 );
 check(
   'Sans historique, l’évolution affiche un état vide explicite',
-  await page.getByText('Ton évolution apparaîtra ici après plusieurs sessions.').isVisible(),
+  await page.getByText('Continue à étudier pour voir ton évolution ici.').isVisible(),
 );
 check(
   'Sans réponse enregistrée, les points faibles ne sont pas inventés',
-  await page.getByText('Tes points faibles apparaîtront ici après quelques sessions d’étude.').isVisible(),
+  await page.getByText('Rien de fragile pour l’instant.').isVisible(),
 );
 
 // ────────────────── 3. Assez de données ──────────────────
@@ -184,16 +184,16 @@ check(
 const weakCount = await page.locator('[data-progress-weak] li').count();
 check('Des points faibles réels sont identifiés', weakCount > 0, `${weakCount} point(s)`);
 const weakText = await page.locator('[data-progress-weak]').first().innerText();
-check('Chaque point faible affiche son taux de réussite mesuré', /\d+ % de réussite/.test(weakText));
 check(
-  'Chaque point faible propose une révision ciblée',
-  (await page.locator('[data-progress-weak]').getByRole('link', { name: 'Réviser' }).count()) === weakCount,
+  'Chaque point faible affiche son taux de réussite, nommé pour ne pas se confondre avec la maîtrise',
+  /\d+ %\s*\n?\s*réussite/.test(weakText),
+  weakText.replace(/\n/g, ' | ').slice(0, 90),
 );
-const weakHref = await page
-  .locator('[data-progress-weak]')
-  .getByRole('link', { name: 'Réviser' })
-  .first()
-  .getAttribute('href');
+check(
+  'Chaque point faible ouvre une séance ciblée',
+  (await page.locator('[data-progress-weak] a').count()) === weakCount,
+);
+const weakHref = await page.locator('[data-progress-weak] a').first().getAttribute('href');
 check('Le lien de révision cible des cartes précises', /\/revisions\?cards=.+/.test(weakHref ?? ''), weakHref ?? '');
 
 // Recommandation.
@@ -231,6 +231,10 @@ check(
   !/dans \d+ jours|aujourd’hui|demain/i.test(prioritiesText),
 );
 
+check(
+  'Le détail du calcul est replié par défaut',
+  (await page.locator('[data-progress-readiness-detail]').count()) === 0,
+);
 await page.getByRole('button', { name: 'Voir le détail du calcul' }).click();
 await page.waitForTimeout(500);
 const detail = await page.locator('[data-progress-readiness-detail]').innerText();
@@ -318,6 +322,107 @@ check('La série de jours est comptée sur une activité réelle', /^1 jour/.tes
 const upcoming = await page.locator('[data-progress-upcoming] li').count();
 check('Les prochaines échéances viennent de la répétition espacée', upcoming >= 1, `${upcoming} jour(s)`);
 
+// ────────────────── 3 quater. Hiérarchie et compacité ──────────────────
+// Le premier écran doit répondre aux quatre questions du quotidien, et les
+// listes longues doivent rester courtes par défaut.
+const hero = page.locator('[data-progress-hero]');
+check('Le premier écran regroupe le résumé utile', await hero.isVisible());
+const heroText = await hero.innerText();
+for (const block of ['PROGRESSION GLOBALE', 'SUFFISANCE EXAMEN', 'À TRAVAILLER MAINTENANT', 'PROCHAINE ÉVALUATION']) {
+  check(`Le premier écran répond à « ${block.toLowerCase()} »`, heroText.includes(block));
+}
+const heroPriorities = await page.locator('[data-progress-hero-priorities] li').count();
+check(
+  'Le premier écran ne montre jamais plus de trois priorités',
+  heroPriorities <= 3 && heroPriorities > 0,
+  `${heroPriorities} ligne(s)`,
+);
+check(
+  'Le premier écran reprend la même suffisance que le détail',
+  ((await page.locator('[data-progress-hero-readiness]').textContent()) ?? '').trim() ===
+    ((await page.locator('[data-progress-readiness-pct]').textContent()) ?? '').trim(),
+);
+
+const listedPriorities = await page.locator('[data-progress-priorities] li').count();
+const moreButton = page.locator('[data-progress-priorities-more]');
+check('La liste de priorités reste courte par défaut', listedPriorities <= 3, `${listedPriorities} ligne(s)`);
+check(
+  'Aucun bouton « Voir tout » inutile quand tout est déjà affiché',
+  (await moreButton.count()) === 0 || listedPriorities > 3,
+);
+
+check(
+  'Points faibles et points forts sont présentés ensemble et compacts',
+  (await page.locator('[data-progress-weak]').count()) + (await page.locator('[data-progress-strengths]').count()) >
+    0,
+);
+check(
+  'Les points forts disent honnêtement qu’aucun chapitre n’atteint le seuil',
+  await page.getByText('Aucun chapitre n’atteint encore ce niveau.').isVisible(),
+);
+
+// Plusieurs évaluations : la liste se limite et propose « Voir toutes ».
+for (const [title, offset] of [
+  ['Contrôle de physiologie', 6],
+  ['Examen de biochimie', 12],
+  ['Devoir d’histologie', 20],
+  ['Examen final d’anatomie', 40],
+]) {
+  await page.getByRole('button', { name: 'Ajouter une évaluation' }).first().click();
+  await page.waitForTimeout(350);
+  await page.getByLabel('Intitulé').fill(title);
+  await page.getByLabel('Date').fill(new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10));
+  await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  await page.waitForTimeout(700);
+}
+const shownEvaluations = await page.locator('[data-progress-evaluations] li').count();
+check('La liste des évaluations reste courte', shownEvaluations === 3, `${shownEvaluations} affichée(s)`);
+const evaluationsMore = page.locator('[data-progress-evaluations-more]');
+check('Un bouton donne accès à toutes les évaluations', await evaluationsMore.isVisible());
+await evaluationsMore.click();
+await page.waitForTimeout(500);
+check(
+  '« Voir toutes » révèle réellement les évaluations restantes',
+  (await page.locator('[data-progress-evaluations] li').count()) === 4,
+  `${await page.locator('[data-progress-evaluations] li').count()} affichée(s)`,
+);
+check(
+  'Les évaluations restent triées de la plus proche à la plus lointaine',
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('[data-progress-evaluations] li')].map((li) => li.innerText);
+    const days = rows.map((text) => Number((text.match(/Dans (\d+) jours/) ?? [])[1] ?? 0));
+    return days.every((value, index) => index === 0 || days[index - 1] <= value);
+  }),
+);
+
+// Nettoyage : on retire les trois évaluations ajoutées pour ce contrôle.
+for (const title of [
+  'Examen final d’anatomie',
+  'Devoir d’histologie',
+  'Examen de biochimie',
+  'Contrôle de physiologie',
+]) {
+  await page.getByRole('button', { name: `Supprimer ${title}` }).click();
+  await page.waitForTimeout(600);
+}
+
+// Animations : la cascade doit disparaître sous « animations réduites ».
+await page.emulateMedia({ reducedMotion: 'reduce' });
+await page.waitForTimeout(250);
+const reducedTiming = await page.evaluate(() => {
+  const el = document.querySelector('.reveal');
+  if (!el) return { duration: '0s', delay: '0s' };
+  const style = getComputedStyle(el);
+  return { duration: style.animationDuration, delay: style.animationDelay };
+});
+check(
+  'Sous « animations réduites », ni durée ni décalage ne subsistent',
+  parseFloat(reducedTiming.duration) <= 0.001 && parseFloat(reducedTiming.delay) === 0,
+  JSON.stringify(reducedTiming),
+);
+await page.emulateMedia({ reducedMotion: 'no-preference' });
+await page.waitForTimeout(200);
+
 // ────────────────── 4. Objectifs réellement enregistrés ──────────────────
 await page.getByRole('button', { name: 'Modifier' }).first().click();
 await page.waitForTimeout(400);
@@ -356,8 +461,8 @@ check(
   (await page.locator('[data-progress-subject-row]').count()) === 1,
 );
 check(
-  'Le titre de section rappelle le périmètre filtré',
-  await page.getByRole('heading', { name: /Ma progression — Anatomie/ }).isVisible(),
+  'Le périmètre filtré est rappelé explicitement',
+  await page.getByText('Toute la page est restreinte à Anatomie.').isVisible(),
 );
 
 // ────────────────── 6. Responsive ──────────────────

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Button, Card, Icon, Input, Modal, Select, useToast } from '@/components/ui';
 import { createEvaluation, deleteEvaluation } from '@/data/repositories/calendar';
 import { dayKey, parseDayKey } from '@/lib/date';
@@ -25,13 +25,19 @@ export function EvaluationsCard({
   evaluations,
   subjects,
   onChanged,
+  limit = 3,
 }: {
   evaluations: Evaluation[];
   subjects: Subject[];
   onChanged?: () => void;
+  /** Évaluations montrées d'emblée ; le reste passe derrière « Voir toutes ». */
+  limit?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { notify } = useToast();
+  const shown = expanded ? evaluations : evaluations.slice(0, limit);
+  const hidden = evaluations.length - shown.length;
 
   return (
     <>
@@ -50,8 +56,14 @@ export function EvaluationsCard({
       ) : (
         <Card padded={false}>
           <ul className="divide-y divide-[var(--line)]" data-progress-evaluations>
-            {evaluations.map((evaluation) => (
-              <li key={evaluation.event.id} className="flex items-center gap-3 px-4 py-3">
+            {shown.map((evaluation, index) => (
+              <li
+                key={evaluation.event.id}
+                className={
+                  'flex items-center gap-3 px-4 py-3' + (index >= limit ? ' reveal' : '')
+                }
+                style={index >= limit ? ({ '--reveal-index': index - limit } as CSSProperties) : undefined}
+              >
                 <span
                   aria-hidden
                   className="h-8 w-1 shrink-0 rounded-full"
@@ -91,10 +103,21 @@ export function EvaluationsCard({
               </li>
             ))}
           </ul>
-          <div className="border-t border-[var(--line)] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] px-4 py-3">
             <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
               Ajouter une évaluation
             </Button>
+            {(hidden > 0 || expanded) && (
+              <button
+                type="button"
+                data-progress-evaluations-more
+                onClick={() => setExpanded((value) => !value)}
+                aria-expanded={expanded}
+                className="rounded-full px-3 py-1.5 text-[0.8rem] font-medium text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+              >
+                {expanded ? 'Voir moins' : `Voir toutes les évaluations (${evaluations.length})`}
+              </button>
+            )}
           </div>
         </Card>
       )}

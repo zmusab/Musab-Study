@@ -1,3 +1,4 @@
+import { useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card } from '@/components/ui';
 import { BandDot } from './ProgressBits';
@@ -12,13 +13,24 @@ import { URGENCY_HORIZON_DAYS, type PriorityItem } from '@/core/progress/exam';
  * valeurs mesurées : un chapitre jamais révisé est annoncé comme tel, il ne
  * reçoit pas un faux 0 %.
  */
-export function PriorityList({ items }: { items: PriorityItem[] }) {
+export function PriorityList({ items, limit = 3 }: { items: PriorityItem[]; limit?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? items : items.slice(0, limit);
+  const hidden = items.length - shown.length;
+
   return (
-    <ul className="flex flex-col gap-2" data-progress-priorities>
-      {items.map((item) => {
+    <>
+      <ul className="flex flex-col gap-2" data-progress-priorities>
+      {shown.map((item, index) => {
         const urgent = item.evaluation !== null && item.evaluation.daysUntil <= URGENCY_HORIZON_DAYS;
         return (
-          <li key={item.id}>
+          <li
+            key={item.id}
+            // Les lignes révélées par « Voir tout » entrent en cascade ;
+            // celles déjà présentes ne rejouent pas leur animation.
+            className={index >= limit ? 'reveal' : undefined}
+            style={index >= limit ? ({ '--reveal-index': index - limit } as CSSProperties) : undefined}
+          >
             <Card className="flex flex-wrap items-center gap-3">
               <span
                 aria-hidden
@@ -70,6 +82,18 @@ export function PriorityList({ items }: { items: PriorityItem[] }) {
           </li>
         );
       })}
-    </ul>
+      </ul>
+      {(hidden > 0 || expanded) && (
+        <button
+          type="button"
+          data-progress-priorities-more
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          className="mt-2 rounded-full border border-[var(--line)] px-3 py-1.5 text-[0.8rem] font-medium text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+        >
+          {expanded ? 'Voir moins' : `Voir tout — ${hidden} de plus`}
+        </button>
+      )}
+    </>
   );
 }

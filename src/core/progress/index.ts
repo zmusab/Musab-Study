@@ -37,11 +37,19 @@ export interface BandMeta {
   colorVar: string;
 }
 
+/**
+ * Échelle sémantique de la page : rouge = faible, orange = à renforcer,
+ * jaune = correct mais perfectible, vert = bon niveau.
+ *
+ * Elle utilise les jetons `--mastery-*` du thème, et JAMAIS `--accent` : le
+ * violet est réservé aux éléments interactifs (boutons, liens, sélection).
+ * Mélanger les deux ferait passer un état pour une action, et inversement.
+ */
 const BANDS: readonly { min: number; meta: BandMeta }[] = [
-  { min: 80, meta: { band: 'strong', label: 'Maîtrisé', colorVar: 'var(--success)' } },
-  { min: 60, meta: { band: 'good', label: 'Correct', colorVar: 'var(--accent)' } },
-  { min: 40, meta: { band: 'fragile', label: 'À revoir', colorVar: 'var(--warning)' } },
-  { min: 0, meta: { band: 'weak', label: 'Faible', colorVar: 'var(--danger)' } },
+  { min: 80, meta: { band: 'strong', label: 'Maîtrisé', colorVar: 'var(--mastery-3)' } },
+  { min: 60, meta: { band: 'good', label: 'Correct', colorVar: 'var(--mastery-2)' } },
+  { min: 40, meta: { band: 'fragile', label: 'À renforcer', colorVar: 'var(--mastery-1)' } },
+  { min: 0, meta: { band: 'weak', label: 'Faible', colorVar: 'var(--mastery-0)' } },
 ];
 
 /** Quatre paliers seulement : la page doit se lire d'un coup d'œil, pas se déchiffrer. */

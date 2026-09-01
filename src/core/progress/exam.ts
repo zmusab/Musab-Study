@@ -2,6 +2,7 @@ import type { CalendarEvent, Chapter, DayKey, Flashcard, ID, ISODateTime, Review
 import { masteryPct } from '@/core/mastery';
 import { DAY_MS, dayKey, daysBetweenDayKeys } from '@/lib/date';
 import { chapterProgress, MIN_REVIEWED_CARDS, MIN_REVIEWS_FOR_RATE, type ChapterProgress } from './index';
+import { DEFAULT_PRIORITY_CONFIG, DEFAULT_READINESS_CONFIG } from './readinessConfig';
 
 /**
  * SUFFISANCE EXAMEN, ÉVALUATIONS ET PRIORITÉS.
@@ -31,12 +32,13 @@ export interface ReadinessMeta {
   colorVar: string;
 }
 
+/** Mêmes jetons sémantiques que `masteryBand` — le violet reste interactif. */
 const LEVELS: readonly { min: number; meta: ReadinessMeta }[] = [
-  { min: 95, meta: { level: 'mastered', label: 'Très bonne maîtrise', colorVar: 'var(--success)' } },
-  { min: 85, meta: { level: 'strong', label: 'Très bonne préparation', colorVar: 'var(--success)' } },
-  { min: 70, meta: { level: 'good', label: 'Bonne préparation', colorVar: 'var(--accent)' } },
-  { min: 50, meta: { level: 'fragile', label: 'Préparation fragile', colorVar: 'var(--warning)' } },
-  { min: 0, meta: { level: 'insufficient', label: 'Préparation insuffisante', colorVar: 'var(--danger)' } },
+  { min: 95, meta: { level: 'mastered', label: 'Très bonne maîtrise', colorVar: 'var(--mastery-3)' } },
+  { min: 85, meta: { level: 'strong', label: 'Très bonne préparation', colorVar: 'var(--mastery-3)' } },
+  { min: 70, meta: { level: 'good', label: 'Bonne préparation', colorVar: 'var(--mastery-2)' } },
+  { min: 50, meta: { level: 'fragile', label: 'Préparation fragile', colorVar: 'var(--mastery-1)' } },
+  { min: 0, meta: { level: 'insufficient', label: 'Préparation insuffisante', colorVar: 'var(--mastery-0)' } },
 ];
 
 export function readinessLevel(pct: number): ReadinessMeta {
@@ -73,24 +75,21 @@ export interface ExamReadiness {
   reviews: number;
 }
 
-/** Jours au-delà desquels une révision ne compte plus comme « fraîche ». */
-const FRESHNESS_HORIZON_DAYS = 40;
-/** Plancher de fraîcheur : une connaissance ancienne s'affaiblit, elle ne disparaît pas. */
-const FRESHNESS_FLOOR = 0.25;
-/** Part de la note tirée du maillon faible plutôt que de la moyenne. */
-const WEAKEST_SHARE = 0.25;
-
-/** Poids des deux signaux de CONNAISSANCE dans la note de départ. */
-const MASTERY_WEIGHT = 0.55;
-const RELIABILITY_WEIGHT = 0.45;
 /**
- * Planchers des deux MODULATEURS. Ils ne peuvent que faire baisser la note :
- * couvrir tout le programme ou avoir révisé hier ne rend pas prêt en soi, mais
- * n'avoir vu qu'un quart du cours, ou n'y avoir plus touché depuis six
- * semaines, rend clairement moins prêt.
+ * Tous les coefficients vivent dans `readinessConfig.ts`, documentés comme
+ * des HEURISTIQUES de conception et regroupés pour pouvoir être réglés d'un
+ * seul endroit le jour où de vraies données d'examens existeront.
  */
-const COVERAGE_FLOOR = 0.5;
-const FRESHNESS_MODULATOR_FLOOR = 0.75;
+const {
+  masteryWeight: MASTERY_WEIGHT,
+  reliabilityWeight: RELIABILITY_WEIGHT,
+  coverageFloor: COVERAGE_FLOOR,
+  freshnessModulatorFloor: FRESHNESS_MODULATOR_FLOOR,
+  weakestShare: WEAKEST_SHARE,
+  freshnessHorizonDays: FRESHNESS_HORIZON_DAYS,
+  freshnessFloor: FRESHNESS_FLOOR,
+  maxLapsePenalty: MAX_LAPSE_PENALTY,
+} = DEFAULT_READINESS_CONFIG;
 
 /**
  * Suffisance examen d'une matière — deux signaux de connaissance, deux
@@ -166,7 +165,7 @@ export function examReadiness(
   const totalReps = reviewed.reduce((sum, card) => sum + card.reps, 0);
   const totalLapses = reviewed.reduce((sum, card) => sum + card.lapses, 0);
   const lapseRatio = totalReps > 0 ? totalLapses / totalReps : 0;
-  const reliability = successRate * (1 - Math.min(0.35, lapseRatio)) * 100;
+  const reliability = successRate * (1 - Math.min(MAX_LAPSE_PENALTY, lapseRatio)) * 100;
 
   // 4. FRAÎCHEUR — moyenne pondérée par le nombre de cartes de chaque groupe.
   let freshWeighted = 0;
@@ -284,7 +283,7 @@ export function isEvaluationKind(kind: string): boolean {
 const KIND_LABELS = EVALUATION_KIND_LABELS;
 
 /** Poids d'urgence par nature d'évaluation — un final pèse plus qu'un devoir. */
-const KIND_WEIGHT: Record<string, number> = { final: 1.5, exam: 1.3, midterm: 1, task: 0.5 };
+const KIND_WEIGHT = DEFAULT_PRIORITY_CONFIG.kindWeight;
 
 export interface Evaluation {
   event: CalendarEvent;
@@ -336,7 +335,7 @@ export function nextEvaluationFor(evaluations: readonly Evaluation[], subjectId:
  * connue : l'absence d'examen au calendrier ne doit PAS faire disparaître le
  * travail à faire, elle doit seulement cesser de l'accélérer.
  */
-export const URGENCY_HORIZON_DAYS = 30;
+export const URGENCY_HORIZON_DAYS = DEFAULT_PRIORITY_CONFIG.urgencyHorizonDays;
 
 export function urgencyMultiplier(evaluation: Evaluation | null): number {
   if (!evaluation || evaluation.daysUntil > URGENCY_HORIZON_DAYS) return 1;
@@ -365,7 +364,13 @@ export interface PriorityItem {
   reasons: string[];
 }
 
-const STALENESS_HORIZON_DAYS = 45;
+const {
+  weaknessWeight: WEAKNESS_WEIGHT,
+  errorWeight: ERROR_WEIGHT,
+  stalenessWeight: STALENESS_WEIGHT,
+  shareWeight: SHARE_WEIGHT,
+  stalenessHorizonDays: STALENESS_HORIZON_DAYS,
+} = DEFAULT_PRIORITY_CONFIG;
 
 /**
  * « À travailler en priorité ».
@@ -408,7 +413,11 @@ export function priorityItems(
       const staleness = days === null ? 1 : Math.min(days, STALENESS_HORIZON_DAYS) / STALENESS_HORIZON_DAYS;
       const share = subjectCardCount > 0 ? row.cards / subjectCardCount : 0;
 
-      const base = weakness * 45 + errorRate * 25 + staleness * 20 + share * 10;
+      const base =
+        weakness * WEAKNESS_WEIGHT +
+        errorRate * ERROR_WEIGHT +
+        staleness * STALENESS_WEIGHT +
+        share * SHARE_WEIGHT;
       if (base <= 0) continue;
 
       items.push({
@@ -509,31 +518,52 @@ export function mainRecommendation(priorities: readonly PriorityItem[]): MainRec
   if (!top) return null;
 
   const where = top.chapterId === null ? top.subjectName : `${top.subjectName} — ${top.chapterName}`;
-  const parts: string[] = [];
 
+  // Deux phrases courtes au maximum. Un pavé explicatif se saute ; une
+  // consigne brève se suit.
+  let body: string;
   if (top.evaluation && top.evaluation.daysUntil <= URGENCY_HORIZON_DAYS) {
-    // « en » et non « de » : « de Anatomie » demanderait une élision que le
-    // nom de matière, saisi librement, ne permet pas de deviner.
-    parts.push(
+    const when =
       top.evaluation.daysUntil === 0
-        ? `Ton ${top.evaluation.label.toLowerCase()} en ${top.subjectName} a lieu aujourd’hui.`
-        : `Ton ${top.evaluation.label.toLowerCase()} en ${top.subjectName} est dans ${top.evaluation.daysUntil} jour${top.evaluation.daysUntil > 1 ? 's' : ''}.`,
-    );
-  }
-  if (top.masteryPct === null) parts.push('Ce chapitre n’a encore jamais été révisé.');
-  else parts.push(`Ta maîtrise y est de ${top.masteryPct} %.`);
-  if (top.successRate !== null && top.successRate < 0.7) {
-    parts.push(`Tu n’y réussis que ${Math.round(top.successRate * 100)} % de tes réponses.`);
-  } else if (top.daysSinceReview !== null && top.daysSinceReview >= 7) {
-    parts.push(`Tu n’y es pas revenu depuis ${top.daysSinceReview} jours.`);
+        ? 'a lieu aujourd’hui'
+        : top.evaluation.daysUntil === 1
+          ? 'a lieu demain'
+          : `approche dans ${top.evaluation.daysUntil} jours`;
+    // On nomme les deux points les plus faibles de CETTE matière, pris dans
+    // le classement de priorité — donc mesurés, jamais choisis au hasard.
+    const sameSubject = priorities
+      .filter((item) => item.subjectId === top.subjectId && item.chapterId !== null)
+      .slice(0, 2)
+      .map((item) => item.chapterName);
+    const start =
+      sameSubject.length >= 2
+        ? `Commence par ${sameSubject[0]} et ${sameSubject[1]}, tes deux points les plus faibles.`
+        : sameSubject.length === 1
+          ? `Commence par ${sameSubject[0]}, ton point le plus faible.`
+          : describeWeakness(top);
+    body = `Ton ${top.evaluation.label.toLowerCase()} en ${top.subjectName} ${when}. ${start}`;
+  } else {
+    body = describeWeakness(top);
   }
 
   return {
-    title: `Travaille ${where}`,
-    body: parts.join(' '),
+    title: where,
+    body,
     cardIds: top.cardIds,
     subjectId: top.subjectId,
     chapterId: top.chapterId,
     evaluation: top.evaluation,
   };
+}
+
+/** Une phrase, tirée du signal le plus parlant réellement mesuré. */
+function describeWeakness(item: PriorityItem): string {
+  if (item.masteryPct === null) return 'Ce chapitre n’a encore jamais été révisé.';
+  if (item.successRate !== null && item.successRate < 0.6) {
+    return `Tu n’y réussis que ${Math.round(item.successRate * 100)} % de tes réponses.`;
+  }
+  if (item.daysSinceReview !== null && item.daysSinceReview >= 14) {
+    return `Tu n’y es pas revenu depuis ${item.daysSinceReview} jours.`;
+  }
+  return `Ta maîtrise y est de ${item.masteryPct} % — c’est ce qui te freine le plus aujourd’hui.`;
 }

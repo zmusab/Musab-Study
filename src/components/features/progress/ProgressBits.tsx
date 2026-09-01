@@ -95,61 +95,6 @@ export function StatTile({
   );
 }
 
-/**
- * Anneau de maîtrise. `pct === null` signifie « pas encore mesurable » : le
- * cercle reste creux et le centre affiche un tiret, jamais 0 %.
- */
-export function MasteryRing({ pct, size = 168 }: { pct: number | null; size?: number }) {
-  const mounted = useMounted();
-  const stroke = 12;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const shown = pct === null ? 0 : pct;
-  const offset = circumference * (1 - (mounted ? shown : 0) / 100);
-  const color = pct === null ? 'var(--line-strong)' : masteryBand(pct).colorVar;
-
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="var(--surface-2)"
-          strokeWidth={stroke}
-        />
-        {pct !== null && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-            style={{ transition: 'stroke-dashoffset 900ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}
-          />
-        )}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          data-progress-mastery
-          className="text-[2.4rem] font-semibold leading-none tabular-nums text-[var(--ink)]"
-        >
-          {pct === null ? '—' : `${pct} %`}
-        </span>
-        <span className="mt-1 text-[0.8rem] text-[var(--ink-faint)]">
-          {pct === null ? 'non mesurable' : masteryBand(pct).label}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /** Barre de maîtrise horizontale, colorée par palier. */
 export function MasteryBar({ pct, height = 6 }: { pct: number | null; height?: number }) {
   const mounted = useMounted();
