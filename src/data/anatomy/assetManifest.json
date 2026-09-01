@@ -1,0 +1,128 @@
+[
+  {
+    "key": "cou-muscles",
+    "subregion": "cou",
+    "category": "muscles",
+    "structures": 54,
+    "triangles": 818638
+  },
+  {
+    "key": "cou-organes",
+    "subregion": "cou",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 39658
+  },
+  {
+    "key": "cou-squelette",
+    "subregion": "cou",
+    "category": "squelette",
+    "structures": 16,
+    "triangles": 81160
+  },
+  {
+    "key": "cou-vaisseaux",
+    "subregion": "cou",
+    "category": "vaisseaux",
+    "structures": 4,
+    "triangles": 6422
+  },
+  {
+    "key": "crane-muscles",
+    "subregion": "crane",
+    "category": "muscles",
+    "structures": 5,
+    "triangles": 703004
+  },
+  {
+    "key": "crane-organes",
+    "subregion": "crane",
+    "category": "organes",
+    "structures": 2,
+    "triangles": 28766
+  },
+  {
+    "key": "crane-squelette",
+    "subregion": "crane",
+    "category": "squelette",
+    "structures": 8,
+    "triangles": 166436
+  },
+  {
+    "key": "dents-organes",
+    "subregion": "dents",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 25228
+  },
+  {
+    "key": "dents-squelette",
+    "subregion": "dents",
+    "category": "squelette",
+    "structures": 28,
+    "triangles": 198846
+  },
+  {
+    "key": "encephale-nerfs",
+    "subregion": "encephale",
+    "category": "nerfs",
+    "structures": 74,
+    "triangles": 1405946
+  },
+  {
+    "key": "face-muscles",
+    "subregion": "face",
+    "category": "muscles",
+    "structures": 29,
+    "triangles": 303022
+  },
+  {
+    "key": "face-organes",
+    "subregion": "face",
+    "category": "organes",
+    "structures": 1,
+    "triangles": 6826
+  },
+  {
+    "key": "face-squelette",
+    "subregion": "face",
+    "category": "squelette",
+    "structures": 11,
+    "triangles": 26342
+  },
+  {
+    "key": "machoire-muscles",
+    "subregion": "machoire",
+    "category": "muscles",
+    "structures": 12,
+    "triangles": 285254
+  },
+  {
+    "key": "machoire-squelette",
+    "subregion": "machoire",
+    "category": "squelette",
+    "structures": 4,
+    "triangles": 55846
+  },
+  {
+    "key": "orbite-muscles",
+    "subregion": "orbite",
+    "category": "muscles",
+    "structures": 6,
+    "triangles": 69110
+  },
+  {
+    "key": "orbite-nerfs",
+    "subregion": "orbite",
+    "category": "nerfs",
+    "structures": 5,
+    "triangles": 48596
+  },
+  {
+    "key": "orbite-organes",
+    "subregion": "orbite",
+    "category": "organes",
+    "structures": 2,
+    "triangles": 19148
+  }
+]

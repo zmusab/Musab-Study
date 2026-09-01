@@ -12,9 +12,24 @@
  * seulement position + normale par sommet + une couleur de matériau par
  * catégorie).
  *
- * Usage : node scripts/anatomy/convert-headneck.mjs
+ * RÈGLE ABSOLUE — AUCUNE SIMPLIFICATION DE MAILLAGE
+ * -------------------------------------------------
+ * Ce script conserve INTÉGRALEMENT la géométrie source. Une version
+ * antérieure passait la sortie dans `gltf-transform optimize` avec ses
+ * réglages par défaut (`--simplify true`, `--simplify-ratio 0`), ce qui
+ * détruisait ~70 % des triangles (286 346 → 85 868 pour le squelette) et
+ * arrondissait visiblement les cuspides dentaires. La réduction de poids
+ * doit venir de la COMPRESSION (meshopt, quantification) et du CHARGEMENT
+ * PROGRESSIF, jamais de la destruction de détail anatomique.
+ *
+ * Le jeu de données lui-même est déjà le palier le plus précis publiquement
+ * distribué par le DBCLS (« polygon reduction rate = 95 % », cinq fois plus
+ * de polygones que le palier 99 %) : simplifier davantage revient à jeter la
+ * seule précision disponible.
+ *
+ * Usage : node scripts/anatomy/build-catalog.mjs && node scripts/anatomy/convert-headneck.mjs
  * Source des .stl : ../kevin-mattheus-moerman/bodyparts3d/assets/BodyParts3D_data/stl
- * Sortie : public/anatomy/<categorie>.glb
+ * Sortie : public/anatomy/<region>-<systeme>.glb + manifest.json
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,8 +47,13 @@ const CATEGORY_COLOR = {
   squelette: [0.86, 0.82, 0.72], // ivoire
   muscles: [0.66, 0.24, 0.27], // rouge muscle
   organes: [0.82, 0.56, 0.62], // rose tissu mou
+  nerfs: [0.95, 0.85, 0.45], // jaune nerf
+  vaisseaux: [0.75, 0.15, 0.15],
 };
 const VESSEL_COLOR = { artery: [0.75, 0.15, 0.15], vein: [0.16, 0.35, 0.62] };
+/** Artère ou veine : déduit du nom français généré, pas d'un champ saisi à la main. */
+const vesselTypeOf = (structure) =>
+  /veine|jugulaire/i.test(structure.name) ? 'vein' : /artère|carotide/i.test(structure.name) ? 'artery' : null;
 
 /**
  * Parse un fichier STL binaire : 80 octets d'en-tête + uint32 nb triangles +
@@ -240,18 +260,28 @@ function main() {
   const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8'));
   const withMesh = catalog.filter((s) => s.hasMesh);
 
-  const byCategory = new Map();
+  // Découpage RÉGION × SYSTÈME plutôt qu'un fichier par système : le
+  // visualiseur ne télécharge alors que les combinaisons réellement
+  // demandées (§ chargement progressif). Ouvrir « Mâchoire » avec seulement
+  // « Squelette » actif ne charge ni les muscles du cou ni l'encéphale.
+  const byGroup = new Map();
   for (const structure of withMesh) {
-    if (!byCategory.has(structure.category)) byCategory.set(structure.category, []);
-    byCategory.get(structure.category).push(structure);
+    const key = `${structure.subregion}-${structure.category}`;
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(structure);
   }
 
   let totalTriangles = 0;
-  for (const [category, structures] of byCategory) {
+  const manifest = [];
+  for (const [groupKey, structures] of [...byGroup].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const category = structures[0].category;
     const materials = [];
     const materialIndexFor = (structure) => {
       let color = CATEGORY_COLOR[category] ?? [0.7, 0.7, 0.7];
-      if (category === 'vaisseaux' && structure.vesselType) color = VESSEL_COLOR[structure.vesselType];
+      if (category === 'vaisseaux') {
+        const vesselType = vesselTypeOf(structure);
+        if (vesselType) color = VESSEL_COLOR[vesselType];
+      }
       const key = color.join(',');
       let idx = materials.findIndex((m) => m.key === key);
       if (idx === -1) {
@@ -283,17 +313,44 @@ function main() {
     }
 
     if (meshes.length === 0) {
-      console.warn(`Aucun maillage réel pour la catégorie « ${category} » — fichier .glb non généré.`);
+      console.warn(`Aucun maillage réel pour « ${groupKey} » — fichier .glb non généré.`);
       continue;
     }
 
     const glb = buildGlb(meshes, materials.map((m) => m.color));
-    const outPath = path.join(OUT_DIR, `${category}.glb`);
+    const outPath = path.join(OUT_DIR, `${groupKey}.glb`);
     writeFileSync(outPath, glb);
-    console.log(`✓ ${category}.glb — ${meshes.length} structures, ${(glb.length / 1024 / 1024).toFixed(2)} Mo`);
+    const triangles = structures.reduce((sum, s) => sum + (s.triangles ?? 0), 0);
+    manifest.push({
+      key: groupKey,
+      subregion: structures[0].subregion,
+      category,
+      structures: meshes.length,
+      triangles,
+    });
+    console.log(
+      `✓ ${`${groupKey}.glb`.padEnd(28)} ${String(meshes.length).padStart(3)} structures  ` +
+      `${triangles.toLocaleString('fr-FR').padStart(10)} tri  ${(glb.length / 1024 / 1024).toFixed(2)} Mo`,
+    );
   }
 
-  console.log(`\nTotal : ${totalTriangles.toLocaleString('fr-FR')} triangles convertis depuis des données réelles BodyParts3D (CC BY-SA 2.1 Japan).`);
+  // Le manifeste est lu par le visualiseur pour savoir quels fichiers
+  // existent réellement : aucun groupe n'est deviné côté client, donc aucune
+  // requête vers un asset inexistant.
+  manifest.sort((a, b) => a.key.localeCompare(b.key));
+  writeFileSync(
+    path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'assetManifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+
+  console.log(
+    `\nTotal : ${totalTriangles.toLocaleString('fr-FR')} triangles convertis depuis des données réelles ` +
+    `BodyParts3D (CC BY-SA 2.1 Japan), en ${manifest.length} fichiers.\n` +
+    `AUCUNE simplification de maillage n'est appliquée : la géométrie source est conservée intégralement.\n` +
+    `Étape de compression (taille seule, sans perte de triangles) :\n` +
+    `  npx @gltf-transform/cli@4 optimize <in> <out> --simplify false --join false --compress meshopt --texture-compress false`
+    + `\n(utiliser plutôt ./scripts/anatomy/build-assets.sh, qui vérifie aussi que rien n'est fusionné)`,
+  );
 }
 
 main();

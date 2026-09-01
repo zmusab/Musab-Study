@@ -28,7 +28,7 @@ export function RegionExplorerCard({
   const focusedStructures = focused ? structuresInSubregion(structures, focused.id) : [];
 
   return (
-    <div className="surface-card flex h-full flex-col p-4">
+    <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[0.85rem] font-semibold text-[var(--ink)]">Exploration par région</p>
         {focused && (
@@ -44,7 +44,7 @@ export function RegionExplorerCard({
       </div>
 
       {!focused ? (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
           {summaries.map((summary) => (
             <li key={summary.id}>
               <button

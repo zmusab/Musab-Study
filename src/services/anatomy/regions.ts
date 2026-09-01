@@ -10,15 +10,42 @@ export interface SubregionMeta {
   id: string;
   label: string;
   icon: string;
+  /** Région lourde, chargée uniquement sur ouverture explicite. */
+  lazy?: boolean;
 }
 
+/**
+ * Clé du fichier `.glb` contenant une structure : le pipeline écrit un
+ * fichier par couple (sous-région, système) — voir
+ * `scripts/anatomy/convert-headneck.mjs`. Le visualiseur n'a donc jamais à
+ * charger les muscles du cou pour afficher les dents.
+ */
+export function assetKey(subregion: string, category: string): string {
+  return `${subregion}-${category}`;
+}
+
+/**
+ * Sous-régions réelles du catalogue généré. Chacune correspond à un
+ * regroupement dérivé de l'arbre d'inclusion BodyParts3D (voir
+ * `scripts/anatomy/build-catalog.mjs`), pas à un découpage décoratif.
+ *
+ * `lazy` : région volumineuse et secondaire pour la dentisterie, dont les
+ * assets ne sont chargés que si l'utilisateur ouvre explicitement la région.
+ * L'encéphale pèse à lui seul 1,4 M triangles — le charger d'office
+ * pénaliserait chaque ouverture de /anatomie sans servir le cas d'usage.
+ */
 export const SUBREGIONS: readonly SubregionMeta[] = [
   { id: 'crane', label: 'Crâne', icon: '🦴' },
+  { id: 'face', label: 'Face', icon: '🙂' },
   { id: 'machoire', label: 'Mâchoire', icon: '🦷' },
   { id: 'dents', label: 'Dents', icon: '🪥' },
-  { id: 'face', label: 'Face', icon: '👁️' },
+  { id: 'orbite', label: 'Orbite', icon: '👁️' },
   { id: 'cou', label: 'Cou', icon: '⬇️' },
+  { id: 'encephale', label: 'Encéphale', icon: '🧠', lazy: true },
 ];
+
+/** Régions chargées d'emblée quand aucune sous-région n'est ouverte. */
+export const DEFAULT_LOADED_SUBREGIONS: readonly string[] = SUBREGIONS.filter((s) => !s.lazy).map((s) => s.id);
 
 const SUBREGION_BY_ID = new Map(SUBREGIONS.map((s) => [s.id, s]));
 

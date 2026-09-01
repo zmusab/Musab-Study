@@ -42,10 +42,27 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       workbox: {
-        // pdf.js, le SDK et les modèles 3D Anatomie sont volumineux : on
-        // autorise leur mise en cache pour que l'app démarre hors ligne.
+        // pdf.js et le SDK sont volumineux mais indispensables au démarrage :
+        // ils restent en précache.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,glb}'],
+        // Les modèles 3D (~17 Mo au total) sont volontairement EXCLUS du
+        // précache : les télécharger à l'installation de la PWA pénaliserait
+        // tout utilisateur qui n'ouvre jamais /anatomie. Ils passent par le
+        // cache d'exécution ci-dessous — mis en cache dès la première
+        // consultation, donc disponibles hors ligne ensuite, région par
+        // région, exactement comme ils sont chargés à l'écran.
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/anatomy/') && url.pathname.endsWith('.glb'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'anatomie-3d',
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'Musab Study',

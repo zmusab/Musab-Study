@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReducedMotion } from 'motion/react';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -13,7 +13,7 @@ import { LearningModeCard } from '@/components/features/anatomy/LearningModeCard
 import { seedHeadNeckCatalog } from '@/data/repositories/anatomy';
 import { useAnatomyStructures, useAnatomyStructure } from '@/hooks/useAnatomy';
 import { useProfile } from '@/hooks/useProfile';
-import { structuresInSubregion } from '@/services/anatomy/regions';
+import { structuresInSubregion, DEFAULT_LOADED_SUBREGIONS } from '@/services/anatomy/regions';
 import { pickLearningTarget, evaluateGuess, type LearningResult } from '@/services/anatomy/learning';
 import { db } from '@/data/db';
 import type { AnatomyCategory, ID } from '@/types';
@@ -232,6 +232,27 @@ export function AnatomyPage() {
     setSelectedId(null);
   };
 
+  /**
+   * Périmètre de chargement (§ chargement progressif) : par défaut toutes les
+   * régions sauf celles marquées `lazy` (l'encéphale, 1,4 M triangles à lui
+   * seul). Ouvrir explicitement une région lourde l'ajoute au périmètre —
+   * c'est le seul moment où ses assets sont téléchargés.
+   */
+  const loadedSubregions = useMemo(() => {
+    if (focusedSubregion) {
+      return DEFAULT_LOADED_SUBREGIONS.includes(focusedSubregion)
+        ? DEFAULT_LOADED_SUBREGIONS
+        : [...DEFAULT_LOADED_SUBREGIONS, focusedSubregion];
+    }
+    return DEFAULT_LOADED_SUBREGIONS;
+  }, [focusedSubregion]);
+
+  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
+  const handleLoadProgress = useCallback(
+    (loaded: number, total: number) => setLoadProgress({ loaded, total }),
+    [],
+  );
+
   const markerStructureIds = useMemo(() => {
     if (learningActive || !focusedSubregion || !structures) return [];
     return structuresInSubregion(structures, focusedSubregion)
@@ -259,7 +280,7 @@ export function AnatomyPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15rem_1fr_20rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[13rem_1fr_minmax(17rem,22%)]">
         <aside className="flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:border-b-0 lg:border-r">
           <div>
             <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Systèmes</p>
@@ -288,10 +309,18 @@ export function AnatomyPage() {
                 onSelectStructure={selectStructure}
                 flyToToken={flyToToken}
                 markerStructureIds={markerStructureIds}
+                loadedSubregions={loadedSubregions}
                 reducedMotion={!!reduced}
                 onFullscreenChange={setIsFullscreen}
+                onLoadProgress={handleLoadProgress}
               />
               <ViewportControls viewerRef={viewerRef} isFullscreen={isFullscreen} />
+              {loadProgress.total > 0 && loadProgress.loaded < loadProgress.total && (
+                <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-[0.75rem] text-white backdrop-blur">
+                  <Spinner size={12} />
+                  Chargement de l’anatomie… {loadProgress.loaded}/{loadProgress.total}
+                </div>
+              )}
               {learningActive && (
                 <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/55 px-4 py-1.5 text-[0.82rem] font-medium text-white backdrop-blur">
                   {learningTarget ? <>Trouve : <span className="font-semibold">{learningTarget.name}</span></> : 'Aucune structure disponible'}
@@ -312,7 +341,10 @@ export function AnatomyPage() {
         </div>
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 xl:grid-cols-5">
+      {/* Bande d'outils VOLONTAIREMENT compacte et de hauteur bornée : le
+          viewport 3D doit rester la zone dominante de l'écran. Chaque carte
+          défile en interne plutôt que de pousser le modèle vers le haut. */}
+      <div className="grid shrink-0 grid-cols-1 gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 lg:h-[13.5rem] lg:grid-cols-5">
         <RegionExplorerCard
           structures={structures ?? []}
           focusedSubregion={focusedSubregion}
@@ -322,11 +354,11 @@ export function AnatomyPage() {
           onSelectStructure={selectStructure}
         />
 
-        <div className="surface-card flex h-full flex-col p-4">
+        <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
           <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Mode isolation</p>
           {isolated && selectedStructure ? (
             <>
-              <p className="flex-1 text-[0.82rem] leading-relaxed text-[var(--ink)]">
+              <p className="min-h-0 flex-1 overflow-y-auto text-[0.82rem] leading-relaxed text-[var(--ink)]">
                 <span className="font-medium">{selectedStructure.name}</span> isolé — tout le reste est masqué.
               </p>
               <Button size="sm" variant="secondary" onClick={() => setIsolated(false)}>
@@ -335,7 +367,7 @@ export function AnatomyPage() {
             </>
           ) : (
             <>
-              <p className="flex-1 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+              <p className="min-h-0 flex-1 overflow-y-auto text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
                 Sélectionne une structure dans le modèle, puis isole-la pour la voir seule.
               </p>
               <Button size="sm" variant="secondary" disabled={!selectedStructure} onClick={() => setIsolated(true)}>
@@ -355,9 +387,9 @@ export function AnatomyPage() {
           onNext={nextLearningQuestion}
         />
 
-        <div className="surface-card flex h-full flex-col p-4">
+        <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
           <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Combinaisons</p>
-          <div className="flex flex-1 flex-col gap-1.5">
+          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
             <Button size="sm" variant="ghost" className="justify-start" onClick={() => applyPreset(['squelette', 'nerfs'])}>
               🦴 + 🧠 Squelette et nerfs
             </Button>
@@ -373,9 +405,9 @@ export function AnatomyPage() {
           </Button>
         </div>
 
-        <div className="surface-card flex h-full flex-col p-4">
+        <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
           <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Intégration cours</p>
-          <p className="flex-1 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+          <p className="min-h-0 flex-1 overflow-y-auto text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
             Toutes les informations affichées viennent de tes cours importés, avec la page source cliquable — jamais
             inventées.
           </p>

@@ -1,21 +1,32 @@
 import { cn } from '@/lib/cn';
+import assetManifest from '@/data/anatomy/assetManifest.json';
 import type { AnatomyCategory } from '@/types';
 import type { SystemVisibility } from '@/services/anatomy/visibility';
 
-const SYSTEMS: { category: AnatomyCategory; label: string; icon: string; hasMesh: boolean }[] = [
-  { category: 'squelette', label: 'Squelette', icon: '🦴', hasMesh: true },
-  { category: 'muscles', label: 'Muscles', icon: '💪', hasMesh: true },
-  { category: 'nerfs', label: 'Nerfs', icon: '🧠', hasMesh: false },
-  { category: 'vaisseaux', label: 'Vaisseaux', icon: '🩸', hasMesh: true },
-  { category: 'organes', label: 'Organes', icon: '🫀', hasMesh: true },
+const SYSTEMS: { category: AnatomyCategory; label: string; icon: string }[] = [
+  { category: 'squelette', label: 'Squelette', icon: '🦴' },
+  { category: 'muscles', label: 'Muscles', icon: '💪' },
+  { category: 'nerfs', label: 'Nerfs', icon: '🧠' },
+  { category: 'vaisseaux', label: 'Vaisseaux', icon: '🩸' },
+  { category: 'organes', label: 'Organes', icon: '🫀' },
 ];
 
 /**
+ * Un système n'est marqué « (cours) » que s'il n'a RÉELLEMENT aucun maillage
+ * dans les assets produits — déduit du manifeste généré, jamais d'un
+ * booléen écrit à la main qui se désynchroniserait des données. C'est ce qui
+ * évite d'annoncer comme absent un système qui existe (ou l'inverse).
+ */
+const CATEGORIES_WITH_MESH = new Set(
+  (assetManifest as { category: AnatomyCategory }[]).map((g) => g.category),
+);
+
+/**
  * Toggles NON exclusifs — 0, 1, 2, ... ou les 5 systèmes peuvent être actifs
- * en même temps (§3 du cahier des charges). « Nerfs » reste un vrai toggle
- * (les structures nerveuses existent, restent recherchables et explicables
- * par l'IA) mais est marqué comme sans maillage 3D disponible aujourd'hui —
- * honnête plutôt que silencieux sur cette limite (voir SOURCES.md).
+ * en même temps (§3 du cahier des charges). Le marqueur « (cours) »
+ * est calculé depuis le manifeste d'assets : un système ne s'affiche comme
+ * dépourvu de 3D que si aucun maillage n'existe réellement pour lui, et le
+ * marqueur disparaît de lui-même le jour où des maillages sont ajoutés.
  */
 export function SystemToggleBar({
   active,
@@ -42,7 +53,7 @@ export function SystemToggleBar({
             </span>
             <span className="flex-1 text-[0.88rem] font-medium text-[var(--ink)]">
               {system.label}
-              {!system.hasMesh && (
+              {!CATEGORIES_WITH_MESH.has(system.category) && (
                 <span
                   className="ml-1.5 text-[0.65rem] font-normal text-[var(--ink-faint)]"
                   title="Aucun maillage 3D dans les données ouvertes intégrées — structure réelle, recherchable et explicable par l'IA, sans représentation visuelle"

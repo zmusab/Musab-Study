@@ -29,12 +29,12 @@ export function LearningModeCard({
   onNext: () => void;
 }) {
   return (
-    <div className="surface-card flex h-full flex-col p-4">
+    <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
       <p className="mb-2 text-[0.85rem] font-semibold text-[var(--ink)]">Mode apprentissage</p>
 
       {!active ? (
         <>
-          <p className="flex-1 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+          <p className="min-h-0 flex-1 overflow-y-auto text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
             Trouve la structure demandée en cliquant directement dans le modèle 3D — parmi les systèmes actuellement
             actifs.
           </p>
@@ -44,7 +44,7 @@ export function LearningModeCard({
         </>
       ) : (
         <>
-          <div className="flex-1">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {target ? (
               <p className="text-[0.9rem] text-[var(--ink)]">
                 Trouve : <span className="font-semibold">{target.name}</span>

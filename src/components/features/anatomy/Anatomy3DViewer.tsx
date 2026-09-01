@@ -14,6 +14,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { CameraControls, Html, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { computeVisibility, type SystemVisibility } from '@/services/anatomy/visibility';
+import assetManifest from '@/data/anatomy/assetManifest.json';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
 
 /**
@@ -23,20 +24,33 @@ import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
  * Three.js directement : remplacer ce composant par un autre moteur plus
  * tard n'affecterait aucun autre fichier.
  *
- * Un fichier `.glb` par système (voir `public/anatomy/`, généré par
- * `scripts/anatomy/convert-headneck.mjs` depuis des données réelles
- * BodyParts3D — voir `src/data/anatomy/SOURCES.md`), chargé au premier
- * moment où ce système est activé et jamais reléchargé ensuite
- * (`useGLTF` met en cache par URL).
+ * Un fichier `.glb` par couple (sous-région, système) — voir
+ * `public/anatomy/`, généré par `scripts/anatomy/convert-headneck.mjs`
+ * depuis des données réelles BodyParts3D (voir `src/data/anatomy/SOURCES.md`).
+ * Un groupe n'est téléchargé qu'au premier moment où sa région est dans le
+ * périmètre ET son système actif, puis jamais retéléchargé (`useGLTF` met en
+ * cache par URL).
+ *
+ * C'est ce chargement sélectif — et non une réduction du nombre de triangles —
+ * qui tient le budget de performance : la géométrie source est conservée
+ * intégralement (4,29 M triangles sur 267 structures).
  */
 
-const SYSTEM_FILES: Partial<Record<AnatomyCategory, string>> = {
-  squelette: '/anatomy/squelette.glb',
-  muscles: '/anatomy/muscles.glb',
-  vaisseaux: '/anatomy/vaisseaux.glb',
-  organes: '/anatomy/organes.glb',
-  // 'nerfs' : aucun maillage réel disponible dans le jeu de données intégré — voir SOURCES.md.
-};
+/**
+ * Groupes d'assets réellement produits par le pipeline — un fichier par
+ * couple (sous-région, système). Le manifeste est GÉNÉRÉ par
+ * `scripts/anatomy/convert-headneck.mjs` : le client ne devine jamais un nom
+ * de fichier, il ne demande que des groupes dont l'existence est attestée.
+ */
+interface AssetGroup {
+  key: string;
+  subregion: string;
+  category: AnatomyCategory;
+  structures: number;
+  triangles: number;
+}
+const ASSET_GROUPS = assetManifest as AssetGroup[];
+const assetUrl = (key: string) => `/anatomy/${key}.glb`;
 
 export interface Anatomy3DViewerHandle {
   /** Cadre la caméra sur la boîte englobante réelle des structures données (sous-région, résultat de recherche). */
@@ -57,8 +71,16 @@ export interface Anatomy3DViewerProps {
   flyToToken: number;
   /** Structures dont le point interactif doit être affiché (sous-région actuellement ouverte) — vide = aucun marqueur. */
   markerStructureIds: ID[];
+  /**
+   * Sous-régions dont les assets doivent être chargés. Seuls les fichiers
+   * correspondant à ces régions ET à un système actif sont téléchargés —
+   * c'est le levier de performance, à la place de toute simplification.
+   */
+  loadedSubregions: readonly string[];
   reducedMotion: boolean;
   onFullscreenChange?: (isFullscreen: boolean) => void;
+  /** Signale la progression du chargement des groupes d'assets. */
+  onLoadProgress?: (loaded: number, total: number) => void;
 }
 
 /** Un système chargé : applique la visibilité calculée à chaque maillage nommé, matériaux clonés (jamais partagés entre structures). */
@@ -155,6 +177,25 @@ function SystemModel({
       onPointerOut={handlePointerOut}
     />
   );
+}
+
+/**
+ * En mode `demand`, rien n'est redessiné tant que personne ne le demande :
+ * ce composant redemande une image à chaque changement d'état qui modifie
+ * l'apparence de la scène (visibilité, sélection, arrivée d'un groupe
+ * d'assets). Les mouvements de caméra, eux, invalident déjà d'eux-mêmes.
+ */
+function Invalidator({ deps }: { deps: unknown[] }) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    invalidate();
+    // Deux images : la seconde laisse le temps aux effets de visibilité de
+    // s'appliquer sur les maillages avant le rendu définitif.
+    const id = requestAnimationFrame(() => invalidate());
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return null;
 }
 
 /** Corrige l'axe vertical des données BodyParts3D (Z-haut) vers la convention Three.js (Y-haut). */
@@ -255,6 +296,7 @@ function CameraRig({
   reducedMotion,
   hasFramed,
   setHasFramed,
+  framingIds,
 }: {
   controlsRef: RefObject<CameraControls | null>;
   meshRegistry: RefObject<Map<ID, THREE.Object3D>>;
@@ -263,8 +305,20 @@ function CameraRig({
   reducedMotion: boolean;
   hasFramed: boolean;
   setHasFramed: (v: boolean) => void;
+  framingIds: ID[];
 }) {
-  const { scene } = useThree();
+  const { scene, invalidate } = useThree();
+
+  // En mode `demand`, aucune image n'est produite spontanément : tant que le
+  // cadrage initial n'a pas pu se faire (les .glb arrivent de façon
+  // asynchrone), on redemande une image régulièrement. La boucle s'arrête
+  // d'elle-même dès que le cadrage a réussi — elle ne tourne donc que
+  // pendant le chargement, pas pendant l'utilisation.
+  useEffect(() => {
+    if (hasFramed) return undefined;
+    const id = window.setInterval(invalidate, 120);
+    return () => window.clearInterval(id);
+  }, [hasFramed, invalidate]);
 
   // Premier cadrage automatique une fois que la scène a du contenu réel —
   // pas de position de caméra codée en dur : elle s'adapte à la bounding
@@ -275,9 +329,26 @@ function CameraRig({
   // continue de tourner et voit la scène se remplir dès qu'elle a du contenu.
   useFrame(() => {
     if (hasFramed || !controlsRef.current) return;
-    const box = new THREE.Box3().setFromObject(scene);
+
+    // Cadrage initial sur les structures de CADRAGE (crâne, face, mâchoire,
+    // dents) plutôt que sur la boîte englobante de toute la scène : la
+    // trachée et l'œsophage descendent bien plus bas que la tête et
+    // rétréciraient la zone réellement intéressante. On retombe sur la
+    // scène entière tant qu'aucune structure de référence n'est chargée.
+    const framingBox = new THREE.Box3();
+    let framingCount = 0;
+    for (const id of framingIds) {
+      const object = meshRegistry.current.get(id);
+      if (!object || !object.visible) continue;
+      framingBox.expandByObject(object);
+      framingCount++;
+    }
+    const box = framingCount > 0 && !framingBox.isEmpty()
+      ? framingBox
+      : new THREE.Box3().setFromObject(scene);
     if (!Number.isFinite(box.min.x) || box.isEmpty()) return;
-    void controlsRef.current.fitToBox(box, false, { paddingLeft: 0.3, paddingRight: 0.3, paddingTop: 0.3, paddingBottom: 0.3 });
+
+    void controlsRef.current.fitToBox(box, false, { paddingLeft: 0.08, paddingRight: 0.08, paddingTop: 0.08, paddingBottom: 0.08 });
     setHasFramed(true);
   });
 
@@ -308,8 +379,10 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
     onSelectStructure,
     flyToToken,
     markerStructureIds,
+    loadedSubregions,
     reducedMotion,
     onFullscreenChange,
+    onLoadProgress,
   },
   forwardedRef,
 ) {
@@ -317,25 +390,50 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   const controlsRef = useRef<CameraControls | null>(null);
   const meshRegistry = useRef<Map<ID, THREE.Object3D>>(new Map());
   const [hasFramed, setHasFramed] = useState(false);
-  const [everActivated, setEverActivated] = useState<Set<AnatomyCategory>>(new Set());
+  const [everLoaded, setEverLoaded] = useState<Set<string>>(new Set());
   const [registryVersion, setRegistryVersion] = useState(0);
   const [hoveredId, setHoveredId] = useState<ID | null>(null);
 
   const structuresById = useMemo(() => new Map(structures.map((s) => [s.id, s])), [structures]);
 
+  // Structures servant de repère au cadrage initial : la tête proprement
+  // dite. Sans cela, la trachée et l'œsophage — bien réels et conservés —
+  // étireraient la boîte englobante vers le bas et afficheraient un crâne
+  // minuscule à l'ouverture.
+  const framingIds = useMemo(
+    () => structures.filter((s) => ['crane', 'face', 'machoire', 'dents'].includes(s.subregion ?? '')).map((s) => s.id),
+    [structures],
+  );
+
+  // Un groupe déjà téléchargé reste monté même si son système est désactivé :
+  // `useGLTF` met en cache par URL, le re-cocher est donc instantané, et la
+  // visibilité par structure suffit à le masquer. On ne télécharge en
+  // revanche jamais un groupe qui n'a pas été demandé au moins une fois.
   useEffect(() => {
-    setEverActivated((prev) => {
+    setEverLoaded((prev) => {
       const next = new Set(prev);
       let changed = false;
-      for (const [category, active] of Object.entries(activeSystems) as [AnatomyCategory, boolean][]) {
-        if (active && !next.has(category)) {
-          next.add(category);
+      for (const group of ASSET_GROUPS) {
+        if (!loadedSubregions.includes(group.subregion)) continue;
+        if (activeSystems[group.category] !== true) continue;
+        if (!next.has(group.key)) {
+          next.add(group.key);
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [activeSystems]);
+  }, [activeSystems, loadedSubregions]);
+
+  const groupsToLoad = useMemo(() => ASSET_GROUPS.filter((g) => everLoaded.has(g.key)), [everLoaded]);
+
+  useEffect(() => {
+    if (!onLoadProgress) return;
+    const wanted = ASSET_GROUPS.filter(
+      (g) => loadedSubregions.includes(g.subregion) && activeSystems[g.category] === true,
+    ).length;
+    onLoadProgress(groupsToLoad.length, wanted);
+  }, [groupsToLoad, loadedSubregions, activeSystems, onLoadProgress]);
 
   const registerMesh = useCallback((id: ID, object: THREE.Object3D) => {
     meshRegistry.current.set(id, object);
@@ -396,12 +494,20 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
       className="relative h-full w-full"
       style={{ background: 'radial-gradient(ellipse at 50% 40%, #182338 0%, #0a0f1c 70%, #05070d 100%)' }}
     >
+      {/* `frameloop="demand"` : la scène est STATIQUE tant que l'utilisateur
+          n'interagit pas. Rendre 4,3 M de triangles 60 fois par seconde pour
+          une image identique saturait le thread principal (FPS mesuré à 0) ;
+          on ne redessine donc que sur invalidation explicite — déplacement de
+          caméra, changement de sélection, de visibilité ou de chargement.
+          C'est la contrepartie du choix de conserver toute la géométrie. */}
       <Canvas
+        frameloop="demand"
         camera={{ fov: 45, near: 1, far: 5000 }}
         dpr={[1, 2]}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         onPointerMissed={() => onSelectStructure(null)}
       >
+        <Invalidator deps={[activeSystems, selectedId, isolated, groupsToLoad.length, markerStructureIds]} />
         <ToneMapping />
         {/* Éclairage à trois points : chaude en clé (avant-haut), froide en
             remplissage (côté opposé) et une lumière de contour derrière pour
@@ -412,24 +518,24 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         <directionalLight position={[0, 300, -600]} intensity={0.9} color="#6fa8ff" />
         <CameraControls ref={controlsRef} smoothTime={reducedMotion ? 0 : 0.35} dollyToCursor={false} />
         <AxisCorrection>
-          <Suspense fallback={null}>
-            {Object.entries(SYSTEM_FILES).map(([category, url]) =>
-              everActivated.has(category as AnatomyCategory) ? (
-                <SystemModel
-                  key={category}
-                  url={url}
-                  category={category as AnatomyCategory}
-                  structuresById={structuresById}
-                  activeSystems={activeSystems}
-                  selectedId={selectedId}
-                  isolated={isolated}
-                  onSelectStructure={onSelectStructure}
-                  onHover={setHoveredId}
-                  registerMesh={registerMesh}
-                />
-              ) : null,
-            )}
-          </Suspense>
+          {/* Un <Suspense> PAR groupe : chaque fichier apparaît dès qu'il est
+              prêt, au lieu d'attendre que tous les groupes soient téléchargés
+              — c'est ce qui rend le chargement réellement progressif. */}
+          {groupsToLoad.map((group) => (
+            <Suspense key={group.key} fallback={null}>
+              <SystemModel
+                url={assetUrl(group.key)}
+                category={group.category}
+                structuresById={structuresById}
+                activeSystems={activeSystems}
+                selectedId={selectedId}
+                isolated={isolated}
+                onSelectStructure={onSelectStructure}
+                onHover={setHoveredId}
+                registerMesh={registerMesh}
+              />
+            </Suspense>
+          ))}
         </AxisCorrection>
         {/* Hors du groupe `AxisCorrection` : `Markers` calcule déjà des
             positions MONDE (`Box3.setFromObject`, post-correction) — les
@@ -453,6 +559,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
           reducedMotion={reducedMotion}
           hasFramed={hasFramed}
           setHasFramed={setHasFramed}
+          framingIds={framingIds}
         />
       </Canvas>
 

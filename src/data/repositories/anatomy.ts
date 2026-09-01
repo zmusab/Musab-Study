@@ -4,18 +4,26 @@ import { nowISO } from '@/lib/date';
 import headNeckCatalog from '@/data/anatomy/headNeckCatalog.json';
 import type { AnatomyCategory, AnatomySheet, AnatomyStructure, Citation, ID } from '@/types';
 
-/** Entrée brute du catalogue statique versionné (source de vérité — voir SOURCES.md). */
+/**
+ * Entrée du catalogue — GÉNÉRÉ, jamais écrit à la main :
+ * `node scripts/anatomy/build-catalog.mjs` le dérive de l'arbre d'inclusion
+ * officiel de BodyParts3D. Voir SOURCES.md.
+ */
 export interface CatalogEntry {
   id: string;
   name: string;
-  latinName: string;
+  latinName: string | null;
   category: AnatomyCategory;
   region: string;
   subregion: string;
   fmaId: string | null;
   hasMesh: boolean;
-  fdi?: string;
-  vesselType?: 'artery' | 'vein';
+  /** Nombre de triangles réellement présents dans la source (0 si structure « cours »). */
+  triangles: number;
+  /** Libellé anglais d'origine dans BodyParts3D — trace de provenance vérifiable. */
+  sourceLabel: string | null;
+  /** Numérotation FDI, uniquement pour les dents. */
+  fdi?: number;
 }
 
 export const HEAD_NECK_CATALOG: readonly CatalogEntry[] = headNeckCatalog as CatalogEntry[];
@@ -37,7 +45,10 @@ export async function seedHeadNeckCatalog(): Promise<void> {
     return {
       id: entry.id,
       name: entry.name,
-      latinName: entry.latinName,
+      // Le catalogue laisse `latinName` à null quand le nom de la
+      // Terminologia Anatomica n'est pas certain (plutôt qu'un latin
+      // approximatif) ; l'UI traite déjà la chaîne vide comme « absent ».
+      latinName: entry.latinName ?? '',
       category: entry.category,
       subjectId: previous?.subjectId ?? null,
       model3dRef: entry.hasMesh ? entry.id : null,
