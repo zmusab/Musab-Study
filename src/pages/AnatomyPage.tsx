@@ -280,7 +280,11 @@ export function AnatomyPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[13rem_1fr_minmax(17rem,22%)]">
+      {/* 4 colonnes (§4/§17) : Systèmes → Modèle → Informations → Recherche.
+          Le rail de navigation de l'app passe en mode icônes sur cette route,
+          ce qui rend ~176 px au contenu et permet de tenir les 4 colonnes sur
+          un iPad en paysage sans écraser le modèle. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[12rem_minmax(0,1fr)_20rem_16rem]">
         <aside className="flex shrink-0 flex-col gap-4 overflow-y-auto border-b border-[var(--line)] p-3 lg:border-b-0 lg:border-r">
           <div>
             <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Systèmes</p>
@@ -330,14 +334,31 @@ export function AnatomyPage() {
           )}
         </div>
 
-        <div className="min-h-[40vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-t-0 lg:border-l">
+        {/* Colonne INFORMATIONS — une vraie colonne du layout, visible en
+            même temps que le modèle ET que la recherche (§4). Elle ne
+            remplace jamais la recherche et ne recouvre jamais le modèle. */}
+        <div className="min-h-[32vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
           {showInfoPanel ? (
             <StructureDetailWrapper structureId={selectedStructure!.id} onClose={() => selectStructure(null)} />
           ) : (
-            <div className="h-full p-3">
-              <AnatomySearchBar structures={structures ?? []} selectedId={selectedId} onSelect={selectStructure} />
+            <div className="flex h-full flex-col p-4">
+              <p className="mb-2 text-[0.78rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
+                Informations
+              </p>
+              <p className="text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
+                {learningActive
+                  ? 'Masqué pendant le mode apprentissage — il révélerait la réponse.'
+                  : 'Sélectionne une structure dans le modèle, un marqueur, la recherche ou l’exploration par région pour afficher sa fiche.'}
+              </p>
             </div>
           )}
+        </div>
+
+        {/* Colonne RECHERCHE — permanente, jamais remplacée par le panneau. */}
+        <div className="min-h-[28vh] shrink-0 overflow-hidden border-t border-[var(--line)] lg:h-full lg:min-h-0 lg:border-l lg:border-t-0">
+          <div className="h-full p-3">
+            <AnatomySearchBar structures={structures ?? []} selectedId={selectedId} onSelect={selectStructure} />
+          </div>
         </div>
       </div>
 

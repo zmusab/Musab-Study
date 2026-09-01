@@ -228,9 +228,16 @@ export function StructureInfoPanel({
       <div className="border-b border-[var(--line)] px-4 py-2.5">
         <SegmentedControl
           size="sm"
+          // `flex-nowrap` local : la colonne Informations est étroite, le
+          // sélecteur doit rester sur une ligne ici sans changer son
+          // comportement partout ailleurs dans l'app.
+          className="w-full flex-nowrap"
           segments={[
+            // Libellés courts : la colonne Informations est étroite sur
+            // iPad, des libellés longs faisaient passer le sélecteur sur
+            // deux lignes.
             { value: 'informations', label: 'Informations' },
-            { value: 'cours', label: citationCount > 0 ? `Dans tes cours (${citationCount})` : 'Dans tes cours' },
+            { value: 'cours', label: citationCount > 0 ? `Cours (${citationCount})` : 'Cours' },
           ]}
           value={tab}
           onChange={setTab}

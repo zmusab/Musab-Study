@@ -21,17 +21,23 @@ import { Icon } from '@/components/ui/Icon';
  * « Plus », qui déroule la liste complète.
  */
 
-function NavItem({ entry, indicatorId }: { entry: NavEntry; indicatorId: string }) {
+function NavItem({ entry, indicatorId, compact }: { entry: NavEntry; indicatorId: string; compact?: boolean }) {
   const reduced = useReducedMotion();
   return (
     <NavLink
       to={entry.to}
       end={entry.to === '/'}
       style={{ color: entry.color }}
+      // En mode compact le libellé n'est plus rendu : `aria-label` et `title`
+      // conservent le nom accessible, donc la navigation reste utilisable au
+      // lecteur d'écran comme au survol.
+      aria-label={compact ? entry.label : undefined}
+      title={compact ? entry.label : undefined}
       className={cn(
-        'group relative flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2.5',
+        'group relative flex items-center rounded-[var(--radius-control)] py-2.5',
         'text-[0.9rem] font-medium transition-colors duration-150',
         '[-webkit-tap-highlight-color:transparent] hover:bg-[var(--surface-2)]',
+        compact ? 'justify-center px-2' : 'gap-3 px-3',
       )}
     >
       {({ isActive }) => (
@@ -46,30 +52,47 @@ function NavItem({ entry, indicatorId }: { entry: NavEntry; indicatorId: string 
             />
           )}
           <Icon name={entry.icon} className="relative z-10 shrink-0" />
-          <span className="relative z-10">{entry.label}</span>
+          {!compact && <span className="relative z-10">{entry.label}</span>}
         </>
       )}
     </NavLink>
   );
 }
 
-function Sidebar() {
+/**
+ * `compact` : rail réduit aux icônes. Utilisé sur les routes plein écran
+ * (Anatomie 3D), où chaque pixel de largeur rendu au contenu compte — le rail
+ * complet y consommait 240 px sur les ~1194 px d'un iPad en paysage, au
+ * détriment du modèle et des panneaux.
+ */
+function Sidebar({ compact }: { compact?: boolean }) {
   const indicatorId = useId();
   const profile = useProfile();
 
   return (
-    <aside className="hidden w-60 shrink-0 border-r border-[var(--line)] bg-[var(--bg-elevated)] md:flex md:flex-col">
-      <div className="sticky top-0 flex h-dvh flex-col gap-5 overflow-y-auto scroll-contain px-3 py-5 pt-safe">
-        <div className="px-2">
-          <h1 className="text-[1.1rem] leading-tight">Musab Study</h1>
-          <p className="mt-0.5 text-[0.72rem] text-[var(--ink-faint)]">
-            {profile ? `${profile.program} — ${profile.section}` : 'Chargement…'}
+    <aside
+      className={cn(
+        'hidden shrink-0 border-r border-[var(--line)] bg-[var(--bg-elevated)] md:flex md:flex-col',
+        compact ? 'w-16' : 'w-60',
+      )}
+    >
+      <div className={cn('sticky top-0 flex h-dvh flex-col gap-5 overflow-y-auto scroll-contain py-5 pt-safe', compact ? 'px-2' : 'px-3')}>
+        {compact ? (
+          <p className="px-1 text-center text-[0.95rem] font-semibold leading-none text-[var(--ink)]" title="Musab Study">
+            M
           </p>
-        </div>
+        ) : (
+          <div className="px-2">
+            <h1 className="text-[1.1rem] leading-tight">Musab Study</h1>
+            <p className="mt-0.5 text-[0.72rem] text-[var(--ink-faint)]">
+              {profile ? `${profile.program} — ${profile.section}` : 'Chargement…'}
+            </p>
+          </div>
+        )}
 
         <nav className="flex flex-col gap-0.5">
           {NAV_ENTRIES.map((entry) => (
-            <NavItem key={entry.to} entry={entry} indicatorId={indicatorId} />
+            <NavItem key={entry.to} entry={entry} indicatorId={indicatorId} compact={compact} />
           ))}
         </nav>
       </div>
@@ -155,7 +178,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     // héritée de `<html>` pour tout ce sous-arbre, sans nouvelle feuille de
     // style — les mêmes variables déjà utilisées partout ailleurs.
     <div className="flex min-h-dvh" data-theme={fullBleed ? 'dark' : undefined} style={fullBleed ? { background: 'var(--bg)' } : undefined}>
-      <Sidebar />
+      <Sidebar compact={fullBleed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main
           key={location.pathname}

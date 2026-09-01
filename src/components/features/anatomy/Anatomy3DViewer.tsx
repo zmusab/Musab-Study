@@ -11,10 +11,11 @@ import {
   type RefObject,
 } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { CameraControls, Html, useGLTF } from '@react-three/drei';
+import { CameraControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { computeVisibility, type SystemVisibility } from '@/services/anatomy/visibility';
 import assetManifest from '@/data/anatomy/assetManifest.json';
+import { layoutMarkers, type MarkerAnchor } from '@/services/anatomy/markerLayout';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
 
 /**
@@ -51,6 +52,9 @@ interface AssetGroup {
 }
 const ASSET_GROUPS = assetManifest as AssetGroup[];
 const assetUrl = (key: string) => `/anatomy/${key}.glb`;
+
+/** Au-delà, les étiquettes secondaires sont masquées et comptées (§8). */
+const DEFAULT_MAX_LABELS = 8;
 
 export interface Anatomy3DViewerHandle {
   /** Cadre la caméra sur la boîte englobante réelle des structures données (sous-région, résultat de recherche). */
@@ -213,78 +217,174 @@ function ToneMapping() {
   return null;
 }
 
+/** Ancre d'un marqueur : position MONDE réelle du maillage + taille apparente. */
+interface MarkerAnchorWorld {
+  id: ID;
+  world: THREE.Vector3;
+  radius: number;
+}
+
 /**
- * Points interactifs (§4/§6) — un marqueur par structure de la sous-région
- * actuellement ouverte, positionné sur la position RÉELLE du maillage chargé
- * (centre de sa boîte englobante monde), jamais une coordonnée inventée.
- * `registryVersion` force une réévaluation quand de nouveaux maillages
- * s'enregistrent (chargement asynchrone du `.glb`).
+ * Projection des ancres vers l'écran (§8), À L'INTÉRIEUR du Canvas.
+ *
+ * Ce composant ne rend RIEN : il calcule à chaque image la position écran de
+ * chaque ancre, délègue le placement à `layoutMarkers` (fonction pure testée
+ * à part) puis écrit DIRECTEMENT dans le DOM de la couche d'étiquettes via
+ * des refs. Passer par un `setState` à 60 Hz re-rendrait tout l'arbre React à
+ * chaque image.
+ *
+ * Les étiquettes elles-mêmes sont rendues HORS du Canvas (`MarkerOverlay`) :
+ * `<Html fullscreen>` de drei applique sa propre transformation au conteneur,
+ * dont l'origine ne coïncide pas avec le coin haut-gauche du canevas — les
+ * étiquettes se retrouvaient positionnées hors du cadre visible.
  */
-function Markers({
-  ids,
-  meshRegistry,
-  registryVersion,
+function MarkerProjector({
+  anchors,
+  labelRefs,
+  lineRefs,
+  selectedId,
+  showAll,
+  onHiddenCountChange,
+}: {
+  anchors: MarkerAnchorWorld[];
+  labelRefs: RefObject<Map<ID, HTMLButtonElement>>;
+  lineRefs: RefObject<Map<ID, SVGPathElement>>;
+  selectedId: ID | null;
+  showAll: boolean;
+  onHiddenCountChange: (n: number) => void;
+}) {
+  const { camera, size } = useThree();
+  const lastHidden = useRef(-1);
+  const scratch = useRef(new THREE.Vector3());
+
+  useFrame(() => {
+    if (anchors.length === 0) return;
+
+    const screenAnchors: MarkerAnchor[] = anchors.map(({ id, world, radius }) => {
+      scratch.current.copy(world).project(camera);
+      const x = (scratch.current.x * 0.5 + 0.5) * size.width;
+      const y = (-scratch.current.y * 0.5 + 0.5) * size.height;
+      return {
+        id,
+        x,
+        y,
+        onScreen: scratch.current.z < 1 && x > -40 && x < size.width + 40 && y > -40 && y < size.height + 40,
+        // Priorité = taille apparente : les grosses structures portent le
+        // repérage, les petites cèdent la place quand ça se bouscule.
+        priority: radius,
+      };
+    });
+
+    const { placed, hiddenIds } = layoutMarkers(screenAnchors, {
+      width: size.width,
+      height: size.height,
+      maxLabels: showAll ? screenAnchors.length : DEFAULT_MAX_LABELS,
+      // 48 px > 44 px de hauteur d'étiquette (cible tactile) : en dessous,
+      // deux étiquettes voisines se recouvriraient.
+      spacing: 48,
+      pinnedId: selectedId,
+    });
+
+    if (hiddenIds.length !== lastHidden.current) {
+      lastHidden.current = hiddenIds.length;
+      onHiddenCountChange(hiddenIds.length);
+    }
+
+    const placedIds = new Set(placed.map((p) => p.id));
+    for (const [id, el] of labelRefs.current) if (!placedIds.has(id)) el.style.display = 'none';
+    for (const [id, el] of lineRefs.current) if (!placedIds.has(id)) el.style.display = 'none';
+
+    for (const p of placed) {
+      const label = labelRefs.current.get(p.id);
+      if (label) {
+        label.style.display = '';
+        // Côté droit : l'étiquette est ancrée par son bord droit pour rester
+        // collée à la marge.
+        label.style.transform =
+          p.side === 'left'
+            ? `translate(${p.labelX}px, ${p.labelY}px) translate(0, -50%)`
+            : `translate(${p.labelX}px, ${p.labelY}px) translate(-100%, -50%)`;
+      }
+      const line = lineRefs.current.get(p.id);
+      if (line) {
+        line.style.display = '';
+        // Coude horizontal court près de l'étiquette, puis segment direct
+        // vers la structure : lisible et sans croisement inutile.
+        const elbowX = p.side === 'left' ? p.labelX + 10 : p.labelX - 10;
+        line.setAttribute('d', `M ${elbowX} ${p.labelY} L ${(elbowX + p.anchorX) / 2} ${p.labelY} L ${p.anchorX} ${p.anchorY}`);
+      }
+    }
+  });
+
+  return null;
+}
+
+/** Couche DOM des étiquettes + lignes de rappel, superposée au canevas. */
+function MarkerOverlay({
+  anchors,
   structuresById,
   selectedId,
   onSelectStructure,
+  labelRefs,
+  lineRefs,
 }: {
-  ids: ID[];
-  meshRegistry: RefObject<Map<ID, THREE.Object3D>>;
-  registryVersion: number;
+  anchors: MarkerAnchorWorld[];
   structuresById: Map<ID, AnatomyStructure>;
   selectedId: ID | null;
   onSelectStructure: (id: ID) => void;
+  labelRefs: RefObject<Map<ID, HTMLButtonElement>>;
+  lineRefs: RefObject<Map<ID, SVGPathElement>>;
 }) {
-  const markers = useMemo(() => {
-    const box = new THREE.Box3();
-    const center = new THREE.Vector3();
-    const out: { id: ID; position: [number, number, number] }[] = [];
-    for (const id of ids) {
-      const object = meshRegistry.current.get(id);
-      if (!object || !object.visible) continue;
-      box.setFromObject(object);
-      if (box.isEmpty()) continue;
-      box.getCenter(center);
-      out.push({ id, position: [center.x, center.y, center.z] });
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids, registryVersion]);
-
+  if (anchors.length === 0) return null;
   return (
-    <>
-      {markers.map((marker) => {
-        const structure = structuresById.get(marker.id);
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <svg className="absolute inset-0 h-full w-full" aria-hidden>
+        {anchors.map(({ id }) => (
+          <path
+            key={id}
+            ref={(el) => {
+              if (el) lineRefs.current.set(id, el);
+              else lineRefs.current.delete(id);
+            }}
+            fill="none"
+            stroke={id === selectedId ? 'var(--accent)' : 'rgba(255,255,255,0.32)'}
+            strokeWidth={id === selectedId ? 1.6 : 1}
+            style={{ display: 'none' }}
+          />
+        ))}
+      </svg>
+      {anchors.map(({ id }) => {
+        const structure = structuresById.get(id);
         if (!structure) return null;
-        const isSelected = selectedId === marker.id;
+        const isSelected = selectedId === id;
         return (
-          <Html key={marker.id} position={marker.position} center zIndexRange={[10, 0]}>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectStructure(marker.id);
-              }}
-              aria-label={structure.name}
-              data-touch-target
-              className={
-                'group flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.72rem] font-medium whitespace-nowrap shadow-lg backdrop-blur transition-all duration-150 ' +
-                (isSelected
-                  ? 'scale-110 border-[var(--accent)] bg-[var(--accent)] text-white'
-                  : 'border-white/40 bg-black/55 text-white hover:scale-105 hover:border-[var(--accent)]')
-              }
-            >
-              <span
-                className={
-                  'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)] animate-pulse')
-                }
-              />
-              {structure.name}
-            </button>
-          </Html>
+          <button
+            key={id}
+            type="button"
+            ref={(el) => {
+              if (el) labelRefs.current.set(id, el);
+              else labelRefs.current.delete(id);
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectStructure(id);
+            }}
+            aria-label={structure.name}
+            data-touch-target
+            style={{ position: 'absolute', top: 0, left: 0, display: 'none', pointerEvents: 'auto' }}
+            className={
+              'flex max-w-[9rem] items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] font-medium leading-tight shadow-lg backdrop-blur transition-colors duration-150 ' +
+              (isSelected
+                ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                : 'border-white/30 bg-black/60 text-white hover:border-[var(--accent)]')
+            }
+          >
+            <span className={'h-1.5 w-1.5 shrink-0 rounded-full ' + (isSelected ? 'bg-white' : 'bg-[var(--accent)]')} />
+            <span className="truncate">{structure.name}</span>
+          </button>
         );
       })}
-    </>
+    </div>
   );
 }
 
@@ -358,11 +458,22 @@ function CameraRig({
     if (!object) return;
     const box = new THREE.Box3().setFromObject(object);
     if (box.isEmpty()) return;
-    void controlsRef.current.fitToBox(box, !reducedMotion, {
-      paddingLeft: 0.6,
-      paddingRight: 0.6,
-      paddingTop: 0.6,
-      paddingBottom: 0.6,
+
+    // On élargit la boîte autour de son centre avant de cadrer : coller au
+    // plus près de la structure la fait remplir tout le viewport et fait
+    // perdre le repère anatomique (on ne sait plus OÙ elle se trouve). Un
+    // facteur constant garde la structure dominante tout en laissant voir ce
+    // qui l'entoure.
+    const CONTEXT_FACTOR = 2.2;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).multiplyScalar(CONTEXT_FACTOR / 2);
+    const framed = new THREE.Box3(center.clone().sub(size), center.clone().add(size));
+
+    void controlsRef.current.fitToBox(framed, !reducedMotion, {
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyToToken]);
@@ -393,6 +504,12 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   const [everLoaded, setEverLoaded] = useState<Set<string>>(new Set());
   const [registryVersion, setRegistryVersion] = useState(0);
   const [hoveredId, setHoveredId] = useState<ID | null>(null);
+  // Étiquettes secondaires masquées quand la région est dense (§8) : on
+  // compte celles qui n'ont pas pu être placées pour proposer de les révéler.
+  const [showAllMarkers, setShowAllMarkers] = useState(false);
+  const [hiddenMarkerCount, setHiddenMarkerCount] = useState(0);
+  const labelRefs = useRef<Map<ID, HTMLButtonElement>>(new Map());
+  const lineRefs = useRef<Map<ID, SVGPathElement>>(new Map());
 
   const structuresById = useMemo(() => new Map(structures.map((s) => [s.id, s])), [structures]);
 
@@ -400,6 +517,26 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   // dite. Sans cela, la trachée et l'œsophage — bien réels et conservés —
   // étireraient la boîte englobante vers le bas et afficheraient un crâne
   // minuscule à l'ouverture.
+  // Ancres MONDE des marqueurs : centre réel de la boîte englobante de chaque
+  // maillage chargé, jamais une coordonnée inventée.
+  const markerAnchors = useMemo<MarkerAnchorWorld[]>(() => {
+    const box = new THREE.Box3();
+    const out: MarkerAnchorWorld[] = [];
+    for (const id of markerStructureIds) {
+      const object = meshRegistry.current.get(id);
+      if (!object || !object.visible) continue;
+      box.setFromObject(object);
+      if (box.isEmpty()) continue;
+      out.push({
+        id,
+        world: box.getCenter(new THREE.Vector3()),
+        radius: box.getSize(new THREE.Vector3()).length(),
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerStructureIds, registryVersion]);
+
   const framingIds = useMemo(
     () => structures.filter((s) => ['crane', 'face', 'machoire', 'dents'].includes(s.subregion ?? '')).map((s) => s.id),
     [structures],
@@ -541,14 +678,14 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
             positions MONDE (`Box3.setFromObject`, post-correction) — les
             re-nester dans le groupe appliquerait la rotation une seconde
             fois et enverrait chaque marqueur hors champ. */}
-        {markerStructureIds.length > 0 && (
-          <Markers
-            ids={markerStructureIds}
-            meshRegistry={meshRegistry}
-            registryVersion={registryVersion}
-            structuresById={structuresById}
+        {markerAnchors.length > 0 && (
+          <MarkerProjector
+            anchors={markerAnchors}
+            labelRefs={labelRefs}
+            lineRefs={lineRefs}
             selectedId={selectedId}
-            onSelectStructure={onSelectStructure}
+            showAll={showAllMarkers}
+            onHiddenCountChange={setHiddenMarkerCount}
           />
         )}
         <CameraRig
@@ -563,10 +700,32 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         />
       </Canvas>
 
+      <MarkerOverlay
+        anchors={markerAnchors}
+        structuresById={structuresById}
+        selectedId={selectedId}
+        onSelectStructure={onSelectStructure}
+        labelRefs={labelRefs}
+        lineRefs={lineRefs}
+      />
+
       {hoveredStructure && !selectedId && (
         <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1.5 text-[0.8rem] font-medium text-white backdrop-blur">
           {hoveredStructure.name}
         </div>
+      )}
+
+      {/* Révélation des étiquettes secondaires (§8) — n'apparaît que si des
+          étiquettes ont réellement été écartées faute de place. */}
+      {markerAnchors.length > 0 && (hiddenMarkerCount > 0 || showAllMarkers) && (
+        <button
+          type="button"
+          onClick={() => setShowAllMarkers((v) => !v)}
+          data-touch-target
+          className="absolute bottom-3 left-3 rounded-full border border-white/25 bg-black/60 px-3 py-1.5 text-[0.72rem] font-medium text-white backdrop-blur transition-colors hover:border-[var(--accent)]"
+        >
+          {showAllMarkers ? 'Réduire les étiquettes' : `+${hiddenMarkerCount} étiquette${hiddenMarkerCount > 1 ? 's' : ''}`}
+        </button>
       )}
     </div>
   );
