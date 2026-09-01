@@ -14,6 +14,9 @@ import {
 } from '@/components/features/progress/ProgressBits';
 import { StudyTimeChart } from '@/components/features/progress/StudyTimeChart';
 import { TrendChart } from '@/components/features/progress/TrendChart';
+import { ReadinessPanel } from '@/components/features/progress/ReadinessPanel';
+import { EvaluationsCard } from '@/components/features/progress/EvaluationsCard';
+import { PriorityList } from '@/components/features/progress/PriorityList';
 import { useProgress } from '@/hooks/useProgress';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
@@ -22,10 +25,13 @@ import {
   chapterProgress,
   formatDuration,
   MIN_REVIEWED_CARDS,
+  type AnswerStats,
   type ChapterProgress,
   type SubjectProgress,
 } from '@/core/progress';
-import { dayKey, formatRelativePast, parseDayKey } from '@/lib/date';
+import { readinessLevel } from '@/core/progress/exam';
+import type { SubjectReadiness } from '@/core/progress/view';
+import { dayKey, parseDayKey } from '@/lib/date';
 import type { ID } from '@/types';
 
 /**
@@ -106,7 +112,46 @@ export function ProgressionPage() {
     );
   }
 
-  const { mastery, answers, time, weak, activity, trend, upcoming, goals, streak: regularity } = view;
+  const { mastery, time, weak, activity, trend, upcoming, goals, streak: regularity } = view;
+
+  // MATIÈRE MISE EN AVANT pour la suffisance examen : celle dont l'évaluation
+  // est la plus proche si une date existe au calendrier, sinon la plus
+  // fragile parmi celles réellement mesurables. Sans aucune mesure, la
+  // section entière disparaît plutôt que d'afficher une carte vide.
+  const measuredReadiness = view.readiness.filter((entry) => entry.readiness.pct !== null);
+  const readinessFocus: SubjectReadiness | null =
+    view.focus ??
+    (measuredReadiness.length > 0
+      ? measuredReadiness.reduce((low, entry) => (entry.readiness.pct! < low.readiness.pct! ? entry : low))
+      : null);
+
+  const focusChapters = readinessFocus
+    ? chapterProgress(
+        readinessFocus.subject.id,
+        source.tables.chapters,
+        source.tables.cards,
+        source.tables.logs,
+      )
+    : [];
+
+  // Cartes par chapitre : un lien « renforcer » n'est proposé que s'il ouvre
+  // réellement une séance.
+  const focusChapterCards = new Map<string, string[]>();
+  if (readinessFocus) {
+    for (const card of source.tables.cards) {
+      if (card.subjectId !== readinessFocus.subject.id) continue;
+      const key = card.chapterId ?? 'orphan';
+      const list = focusChapterCards.get(key);
+      if (list) list.push(card.id);
+      else focusChapterCards.set(key, [card.id]);
+    }
+  }
+  const focusWeakCards = readinessFocus
+    ? focusChapters
+        .filter((chapter) => chapter.masteryPct === null || chapter.masteryPct < 70)
+        .flatMap((chapter) => focusChapterCards.get(chapter.chapterId ?? 'orphan') ?? [])
+    : [];
+  const focusReviseHref = focusWeakCards.length > 0 ? `/revisions?cards=${focusWeakCards.join(',')}` : null;
   const todayIndex = time.week.findIndex((bucket) => bucket.day === dayKey(new Date(source.loadedAt)));
   const periodMs = period === 'week' ? time.weekMs : period === 'month' ? time.monthMs : view.totalStudyMs;
   const activeSubject = source.tables.subjects.find((s) => s.id === subjectId) ?? null;
@@ -176,14 +221,18 @@ export function ProgressionPage() {
           />
         </StaggerItem>
         <StaggerItem as="li">
+          {/* SUFFISANCE EXAMEN — distincte de la maîtrise (§25). Sans matière
+              mesurable, elle affiche « — » et dit ce qui manque, jamais 0 %. */}
           <StatTile
-            label="Réponses"
-            icon={<Icon name="cards" size={14} />}
-            value={answers.total}
+            label="Suffisance examen"
+            icon={<Icon name="quiz" size={14} />}
+            value={view.globalReadiness === null ? '—' : `${view.globalReadiness.pct} %`}
             detail={
-              answers.successRate === null
-                ? 'taux de réussite dès 4 réponses'
-                : `${Math.round(answers.successRate * 100)} % de réussite`
+              view.globalReadiness === null
+                ? 'données insuffisantes'
+                : view.globalReadiness.subjects === 1
+                  ? readinessLabel(view.globalReadiness.pct)
+                  : `moyenne de ${view.globalReadiness.subjects} matières`
             }
           />
         </StaggerItem>
@@ -201,6 +250,90 @@ export function ProgressionPage() {
           />
         </StaggerItem>
       </Stagger>
+
+      {/* ── RECOMMANDATION PRINCIPALE (§19) ── */}
+      <section className="mt-8">
+        <SectionTitle hint="Une seule action, choisie à partir de ce qui est mesuré — pas un conseil générique.">
+          Recommandation
+        </SectionTitle>
+        {view.recommendation === null ? (
+          <EmptyHint title="Aucune priorité ne peut encore être établie.">
+            La recommandation croise ta maîtrise, ton taux d’erreur, l’ancienneté de tes révisions et — si une date
+            est inscrite au calendrier — la proximité d’une évaluation. Il faut donc au moins une séance
+            enregistrée.
+          </EmptyHint>
+        ) : (
+          <Card data-progress-reco className="border-[var(--accent)]/40">
+            <p className="flex items-center gap-2 text-[0.8rem] font-medium uppercase tracking-wide text-[var(--accent)]">
+              <Icon name="sparkles" size={14} /> Priorité du jour
+            </p>
+            <p className="mt-2 text-[1.15rem] font-semibold leading-snug">{view.recommendation.title}</p>
+            <p className="mt-1.5 max-w-[46rem] text-[0.9rem] leading-relaxed text-[var(--ink-soft)]">
+              {view.recommendation.body}
+            </p>
+            {view.recommendation.cardIds.length > 0 && (
+              <Link to={`/revisions?cards=${view.recommendation.cardIds.join(',')}`} className="mt-4 inline-block">
+                <Button>Commencer</Button>
+              </Link>
+            )}
+          </Card>
+        )}
+      </section>
+
+      {/* ── À TRAVAILLER EN PRIORITÉ (§12/§13) ── */}
+      <section className="mt-8">
+        <SectionTitle
+          hint={
+            view.evaluations.length > 0
+              ? 'Classement piloté par ta faiblesse mesurée, accéléré par les échéances de ton calendrier.'
+              : 'Classement piloté par ta faiblesse mesurée. Aucune date d’examen n’est nécessaire.'
+          }
+        >
+          À travailler en priorité
+        </SectionTitle>
+        {view.priorities.length === 0 ? (
+          <EmptyHint title="Rien à classer pour l’instant.">
+            Les priorités se calculent sur tes flashcards et tes réponses. Ajoute des cartes à tes cours, puis
+            lance une séance : le classement apparaîtra dès la première.
+          </EmptyHint>
+        ) : (
+          <PriorityList items={view.priorities} />
+        )}
+      </section>
+
+      {/* ── PROCHAINES ÉVALUATIONS (§8) ── */}
+      <section className="mt-8">
+        <SectionTitle hint="Lues dans ton calendrier. Aucune date n’est déduite ni supposée.">
+          Prochaines évaluations
+        </SectionTitle>
+        <EvaluationsCard evaluations={view.evaluations} subjects={source.tables.subjects} />
+      </section>
+
+      {/* ── SUFFISANCE EXAMEN (§5/§6/§9/§10/§14) ──
+          Avec une date au calendrier, la carte devient une préparation
+          d'examen ; sans date, elle reste pleinement utile en montrant la
+          matière la plus fragile. Rien n'est inventé dans les deux cas. */}
+      {readinessFocus && (
+        <section className="mt-8">
+          <SectionTitle
+            hint={
+              readinessFocus.evaluation
+                ? 'Croise ta maîtrise, ta couverture, ta fiabilité et la fraîcheur de tes révisions avec la date réelle de l’évaluation.'
+                : 'Aucune date d’examen n’est enregistrée — la préparation reste estimable à partir de tes seules révisions.'
+            }
+          >
+            {readinessFocus.evaluation ? 'Préparation à l’examen' : 'Suffisance examen'}
+          </SectionTitle>
+          <ReadinessPanel
+            subjectName={readinessFocus.subject.name}
+            readiness={readinessFocus.readiness}
+            evaluation={readinessFocus.evaluation}
+            chapters={focusChapters}
+            chapterCardIds={focusChapterCards}
+            reviseHref={focusReviseHref}
+          />
+        </section>
+      )}
 
       {/* ── MAÎTRISE GLOBALE + ÉVOLUTION ── */}
       <section className="mt-8">
@@ -222,6 +355,7 @@ export function ProgressionPage() {
                     {mastery.missing > 1 ? 's' : ''}. Lance une séance de révision : la maîtrise se calcule à partir
                     de l’intervalle atteint et de la facilité ressentie sur chaque carte.
                   </p>
+                  <AnswerCounters answers={view.answers} cards={mastery.totalCards} />
                   <Link to="/revisions" className="mt-3 inline-block">
                     <Button size="sm">Commencer une séance</Button>
                   </Link>
@@ -234,6 +368,7 @@ export function ProgressionPage() {
                   <p className="mt-1.5 text-[0.8rem] leading-relaxed text-[var(--ink-faint)]">
                     Une carte jamais révisée compte 0 %, une carte espacée sur deux mois 100 %.
                   </p>
+                  <AnswerCounters answers={view.answers} cards={mastery.totalCards} />
                 </>
               )}
             </div>
@@ -277,10 +412,15 @@ export function ProgressionPage() {
               <li key={entry.subject.id}>
                 <SubjectRow
                   entry={entry}
+                  readiness={view.readiness.find((row) => row.subject.id === entry.subject.id) ?? null}
                   open={openSubject === entry.subject.id}
                   onToggle={() =>
                     setOpenSubject((current) => (current === entry.subject.id ? null : entry.subject.id))
                   }
+                  onFocusSubject={() => {
+                    setSubjectId(entry.subject.id);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   chapters={openSubject === entry.subject.id ? chapters : []}
                 />
               </li>
@@ -289,7 +429,7 @@ export function ProgressionPage() {
         )}
       </section>
 
-      {/* ── POINTS FAIBLES ── */}
+      {/* ── POINTS FAIBLES ET POINTS FORTS (§17/§18) ── */}
       <section className="mt-8">
         <SectionTitle hint="Mesurés sur ton taux de réussite réel, jamais devinés.">Tes points faibles</SectionTitle>
         {weak.length === 0 ? (
@@ -337,40 +477,39 @@ export function ProgressionPage() {
         )}
       </section>
 
-      {/* ── RECOMMANDATION ── */}
+      {/* ── POINTS FORTS (§18) — uniquement des chapitres réellement solides.
+             La liste est vide quand rien n'atteint le seuil : on ne comble pas
+             une colonne avec le « moins mauvais ». ── */}
       <section className="mt-8">
-        <SectionTitle>Que devrais-tu réviser maintenant ?</SectionTitle>
-        {view.recommendation === null ? (
-          <EmptyHint title="Aucune priorité ne peut encore être établie.">
-            La recommandation croise ton taux d’échec, le temps écoulé depuis ta dernière révision et les cartes
-            dues. Il faut donc au moins une séance enregistrée.
+        <SectionTitle hint="Chapitres dont la maîtrise mesurée dépasse 80 %.">Tes points forts</SectionTitle>
+        {view.strengths.length === 0 ? (
+          <EmptyHint title="Aucun chapitre n’atteint encore ce niveau.">
+            Un chapitre entre ici quand la maîtrise moyenne de ses cartes dépasse 80 % — c’est-à-dire quand la
+            répétition espacée les a réellement espacées dans le temps.
           </EmptyHint>
         ) : (
-          <Card data-progress-reco className="border-[var(--accent)]/40">
-            <p className="flex items-center gap-2 text-[0.8rem] font-medium uppercase tracking-wide text-[var(--accent)]">
-              <Icon name="sparkles" size={14} /> Priorité du jour
-            </p>
-            <p className="mt-2 text-[1.15rem] font-semibold leading-snug">
-              {view.recommendation.subjectName && view.recommendation.subjectName !== view.recommendation.title
-                ? `${view.recommendation.subjectName} — `
-                : ''}
-              {view.recommendation.title}
-            </p>
-            <p className="mt-1.5 text-[0.88rem] leading-relaxed text-[var(--ink-soft)]">
-              {view.recommendation.reason}
-            </p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.82rem] text-[var(--ink-faint)]">
-              {view.recommendation.masteryPct !== null && (
-                <span className="flex items-center gap-1.5">
-                  <BandDot pct={view.recommendation.masteryPct} />
-                  Maîtrise {view.recommendation.masteryPct} %
-                </span>
-              )}
-              <span>Dernière révision {formatRelativePast(view.recommendation.lastReviewAt)}</span>
-            </div>
-            <Link to={`/revisions?cards=${view.recommendation.cardIds.join(',')}`} className="mt-4 inline-block">
-              <Button>Réviser maintenant</Button>
-            </Link>
+          <Card padded={false}>
+            <ul className="divide-y divide-[var(--line)]" data-progress-strengths>
+              {view.strengths.map((item) => (
+                <li key={item.id} className="flex items-center gap-3 px-4 py-3">
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: 'var(--success)' }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.92rem] font-medium">{item.chapterName}</span>
+                    <span className="mt-0.5 block text-[0.8rem] text-[var(--ink-faint)]">
+                      {item.subjectName}
+                      {item.reviews > 0 && ` · ${item.reviews} réponse${item.reviews > 1 ? 's' : ''}`}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[0.9rem] font-semibold tabular-nums text-[var(--success)]">
+                    {item.masteryPct} %
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Card>
         )}
       </section>
@@ -585,6 +724,35 @@ export function ProgressionPage() {
 
 // ───────────────────────────── Sous-composants ─────────────────────────────
 
+/**
+ * Compteurs bruts sous l'anneau : uniquement ce que l'application enregistre
+ * réellement. Le taux de réussite n'apparaît qu'au-delà du seuil de
+ * fiabilité, et les quiz n'y figurent pas puisqu'aucune réponse de quiz
+ * n'existe.
+ */
+function AnswerCounters({ answers, cards }: { answers: AnswerStats; cards: number }) {
+  return (
+    <p data-progress-counters className="mt-2.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8rem] text-[var(--ink-soft)]">
+      <span>
+        {cards} flashcard{cards > 1 ? 's' : ''}
+      </span>
+      <span className="text-[var(--ink-faint)]">·</span>
+      <span>
+        {answers.total} réponse{answers.total > 1 ? 's' : ''}
+      </span>
+      {answers.successRate !== null && (
+        <>
+          <span className="text-[var(--ink-faint)]">·</span>
+          <span>{Math.round(answers.successRate * 100)} % de réussite</span>
+        </>
+      )}
+    </p>
+  );
+}
+
+/** Libellé du niveau de préparation — même barème que `ReadinessPanel`. */
+const readinessLabel = (pct: number) => readinessLevel(pct).label.toLowerCase();
+
 const chipClass = (active: boolean) =>
   'rounded-full border px-3 py-1.5 text-[0.83rem] transition-colors ' +
   (active
@@ -594,13 +762,17 @@ const chipClass = (active: boolean) =>
 /** Une matière, dépliable sur ses chapitres réels. */
 function SubjectRow({
   entry,
+  readiness,
   open,
   onToggle,
+  onFocusSubject,
   chapters,
 }: {
   entry: SubjectProgress;
+  readiness: SubjectReadiness | null;
   open: boolean;
   onToggle: () => void;
+  onFocusSubject: () => void;
   chapters: ChapterProgress[];
 }) {
   return (
@@ -628,7 +800,34 @@ function SubjectRow({
           <span className="mt-2 block">
             <MasteryBar pct={entry.masteryPct} />
           </span>
-          <span className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[0.8rem] text-[var(--ink-faint)]">
+          {/* PROGRESSION et SUFFISANCE côte à côte, nommées : ce sont deux
+              mesures différentes et les confondre viderait la seconde de son
+              sens (§25). */}
+          <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8rem]">
+            <span className="flex items-center gap-1.5 text-[var(--ink-soft)]">
+              Suffisance examen
+              <span
+                className="font-semibold tabular-nums"
+                style={{
+                  color:
+                    readiness?.readiness.level?.colorVar ?? 'var(--ink-faint)',
+                }}
+              >
+                {readiness?.readiness.pct === null || readiness === null
+                  ? 'données insuffisantes'
+                  : `${readiness.readiness.pct} %`}
+              </span>
+            </span>
+            {readiness?.evaluation && (
+              <span className="text-[var(--warning)]">
+                {readiness.evaluation.label}{' '}
+                {readiness.evaluation.daysUntil === 0
+                  ? 'aujourd’hui'
+                  : `dans ${readiness.evaluation.daysUntil} j`}
+              </span>
+            )}
+          </span>
+          <span className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[0.8rem] text-[var(--ink-faint)]">
             <span>{formatDuration(entry.studyMs)} de révision</span>
             <span>
               {entry.reviews} réponse{entry.reviews > 1 ? 's' : ''}
@@ -661,7 +860,16 @@ function SubjectRow({
               Aucune carte n’est encore rattachée à un chapitre de cette matière.
             </p>
           ) : (
-            <ul className="flex flex-col gap-2.5" data-progress-chapters>
+            <>
+              <button
+                type="button"
+                onClick={onFocusSubject}
+                data-progress-focus-subject
+                className="mb-3 rounded-full border border-[var(--line)] px-3 py-1.5 text-[0.8rem] text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+              >
+                Voir la préparation de cette matière
+              </button>
+              <ul className="flex flex-col gap-2.5" data-progress-chapters>
               {chapters.map((chapter) => (
                 <li key={chapter.chapterId ?? 'orphan'} className="reveal">
                   <div className="flex items-baseline justify-between gap-3">
@@ -682,7 +890,8 @@ function SubjectRow({
                   </p>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </div>
       )}

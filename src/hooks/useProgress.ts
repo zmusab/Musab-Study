@@ -21,16 +21,20 @@ export interface ProgressSource {
 
 export function useProgress(): ProgressSource | undefined {
   return useLiveQuery(async () => {
-    const [subjects, chapters, cards, logs, storedProfile] = await Promise.all([
+    const [subjects, chapters, cards, logs, events, storedProfile] = await Promise.all([
       db.subjects.orderBy('position').toArray(),
       db.chapters.toArray(),
       db.flashcards.toArray(),
       db.reviewLogs.toArray(),
+      // Le calendrier est lu en entier : la table ne contient que des
+      // événements saisis à la main, elle reste petite, et « Progression » a
+      // besoin des dates passées comme futures pour ne rien manquer.
+      db.calendarEvents.toArray(),
       db.profile.get('me'),
     ]);
     const profile = { ...DEFAULT_PROFILE, ...storedProfile };
     return {
-      tables: { subjects, chapters, cards, logs },
+      tables: { subjects, chapters, cards, logs, events },
       goals: {
         weeklyStudyMinutes: profile.weeklyStudyMinutesGoal,
         weeklyReviews: profile.weeklyReviewGoal,

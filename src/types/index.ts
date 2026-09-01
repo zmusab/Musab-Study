@@ -228,7 +228,14 @@ export interface Note {
 
 // ───────────────────────────── Calendrier ─────────────────────────────
 
-export type CalendarEventKind = 'exam' | 'course' | 'task' | 'review';
+/**
+ * Nature d'un événement. `midterm` (contrôle) et `final` (examen final) sont
+ * des ajouts ADDITIFS aux valeurs d'origine : les événements déjà
+ * enregistrés restent valides, l'index `[kind+day]` n'en est pas affecté, et
+ * la distinction sert réellement — un examen final ne pèse pas comme un
+ * contrôle dans le calcul des priorités.
+ */
+export type CalendarEventKind = 'exam' | 'midterm' | 'final' | 'course' | 'task' | 'review';
 
 export interface CalendarEvent {
   id: ID;

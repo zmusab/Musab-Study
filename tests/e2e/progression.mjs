@@ -98,9 +98,16 @@ check(
   'La page dit explicitement qu’il manque des données',
   await page.getByText('Pas assez de données pour calculer ta maîtrise.').isVisible(),
 );
+const lowDataCounters = await page.locator('[data-progress-counters]').innerText();
+check(
+  'Les compteurs bruts disent la vérité : une carte créée, aucune réponse encore donnée',
+  /1 flashcard/.test(lowDataCounters) && /0 réponse/.test(lowDataCounters),
+  lowDataCounters.replace(/\n/g, ' '),
+);
 check(
   'Le taux de réussite n’est pas publié sous le seuil de fiabilité',
-  await page.getByText('taux de réussite dès 4 réponses').isVisible(),
+  !/% de réussite/.test(lowDataCounters),
+  lowDataCounters.replace(/\n/g, ' '),
 );
 check(
   'Sans historique, l’évolution affiche un état vide explicite',
@@ -193,6 +200,98 @@ check('Le lien de révision cible des cartes précises', /\/revisions\?cards=.+/
 check('Une priorité du jour est proposée', await page.locator('[data-progress-reco]').isVisible());
 const recoText = await page.locator('[data-progress-reco]').innerText();
 check('La priorité est motivée par une mesure, pas par un slogan', /%|jours|carte/.test(recoText), recoText.split('\n')[2] ?? '');
+
+// ────────────────── 3 bis. Suffisance examen SANS aucune date ──────────────────
+// Le point central : la page doit être pleinement utile alors qu'aucun examen
+// n'est inscrit au calendrier, et ne jamais afficher d'échéance inventée.
+check(
+  'Sans date connue, la section s’intitule « Suffisance examen » et non « Préparation à l’examen »',
+  await page.getByRole('heading', { name: 'Suffisance examen', exact: true }).isVisible(),
+);
+check(
+  'Sans évaluation enregistrée, l’état vide invite à en ajouter une',
+  await page.getByText('Aucune évaluation connue').isVisible(),
+);
+const readinessPct = ((await page.locator('[data-progress-readiness-pct]').textContent()) ?? '').trim();
+check('La suffisance examen est calculée sans aucune date', /^\d+ %$/.test(readinessPct), readinessPct);
+
+const masteryPct = Number(((await page.locator('[data-progress-mastery]').textContent()) ?? '').replace(/\D/g, ''));
+const readinessValue = Number(readinessPct.replace(/\D/g, ''));
+check(
+  'Suffisance examen et maîtrise sont deux mesures distinctes',
+  readinessValue !== masteryPct,
+  `maîtrise ${masteryPct} %, suffisance ${readinessValue} %`,
+);
+
+const prioritiesBefore = await page.locator('[data-progress-priorities] li').count();
+check('Des priorités sont proposées sans aucune échéance', prioritiesBefore > 0, `${prioritiesBefore} ligne(s)`);
+const prioritiesText = await page.locator('[data-progress-priorities]').innerText();
+check(
+  'Aucune échéance n’est mentionnée alors qu’aucune n’existe',
+  !/dans \d+ jours|aujourd’hui|demain/i.test(prioritiesText),
+);
+
+await page.getByRole('button', { name: 'Voir le détail du calcul' }).click();
+await page.waitForTimeout(500);
+const detail = await page.locator('[data-progress-readiness-detail]').innerText();
+for (const signal of ['Maîtrise moyenne', 'Fiabilité', 'Couverture du programme', 'Fraîcheur des révisions']) {
+  check(`Le calcul expose son signal « ${signal} »`, detail.includes(signal));
+}
+check(
+  'Le calcul dit franchement que les quiz n’y entrent pas encore',
+  /Quiz n’existe pas/.test(detail),
+);
+
+// ────────────────── 3 ter. Ajout d'une date réelle au calendrier ──────────────────
+await page.getByRole('button', { name: 'Ajouter une évaluation' }).first().click();
+await page.waitForTimeout(400);
+await page.getByLabel('Intitulé').fill('Contrôle d’anatomie — tête et cou');
+await page.getByLabel('Nature').selectOption('midterm');
+const examDay = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10);
+await page.getByLabel('Date').fill(examDay);
+await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
+await page.waitForTimeout(1200);
+
+check(
+  'L’évaluation ajoutée apparaît dans les prochaines évaluations',
+  (await page.locator('[data-progress-evaluations] li').count()) === 1,
+);
+check(
+  'Le compte à rebours est calculé depuis la date réelle',
+  (await page.locator('[data-progress-evaluations]').innerText()).includes('Dans 4 jours'),
+);
+check(
+  'La section devient « Préparation à l’examen » dès qu’une date existe',
+  await page.getByRole('heading', { name: 'Préparation à l’examen' }).isVisible(),
+);
+const prioritiesAfter = await page.locator('[data-progress-priorities]').innerText();
+check(
+  'La priorité mentionne désormais l’échéance réelle',
+  /Contrôle dans 4 jours/.test(prioritiesAfter),
+  prioritiesAfter.split('\n').slice(0, 3).join(' | '),
+);
+check(
+  'La recommandation principale s’adapte à l’échéance',
+  /dans 4 jours/.test(await page.locator('[data-progress-reco]').innerText()),
+);
+const readinessAfter = ((await page.locator('[data-progress-readiness-pct]').textContent()) ?? '').trim();
+check(
+  'La suffisance examen ne change pas : c’est une mesure de niveau, pas de délai',
+  readinessAfter === readinessPct,
+  `${readinessPct} → ${readinessAfter}`,
+);
+
+// Retirer la date : la page doit revenir au fonctionnement sans échéance.
+await page.getByRole('button', { name: /^Supprimer / }).first().click();
+await page.waitForTimeout(900);
+check(
+  'Supprimer l’évaluation ramène la page à son fonctionnement sans date',
+  await page.getByText('Aucune évaluation connue').isVisible(),
+);
+check(
+  'Aucune échéance ne subsiste dans les priorités',
+  !/dans \d+ jours/i.test(await page.locator('[data-progress-priorities]').innerText()),
+);
 
 // Activité récente.
 const activityRows = await page.locator('[data-progress-activity] li').count();

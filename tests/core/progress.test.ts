@@ -11,7 +11,6 @@ import {
   MIN_REVIEWED_CARDS,
   overallMastery,
   recentActivity,
-  recommendation,
   startOfWeek,
   studyTime,
   subjectProgress,
@@ -285,34 +284,6 @@ describe('points faibles', () => {
   });
 });
 
-describe('recommandation', () => {
-  const subjects = [subject('s1', 'Anatomie')];
-  const chapters = [chapter('ch1', 's1', 'Crâne'), chapter('ch2', 's1', 'Nerfs')];
-
-  it('ne recommande rien sans aucune donnée', () => {
-    expect(recommendation(subjects, chapters, [], [], NOW)).toBeNull();
-  });
-
-  it('choisit le chapitre le plus échoué et explique pourquoi', () => {
-    const cards = [
-      card({ id: 'c1', subjectId: 's1', chapterId: 'ch1', reps: 4, interval: 40 }),
-      card({ id: 'c2', subjectId: 's1', chapterId: 'ch2', reps: 4, interval: 40 }),
-    ];
-    const logs = [
-      ...Array.from({ length: 4 }, (_, i) =>
-        log({ id: `a${i}`, itemId: 'c1', subjectId: 's1', chapterId: 'ch1', correct: true }),
-      ),
-      ...Array.from({ length: 4 }, (_, i) =>
-        log({ id: `b${i}`, itemId: 'c2', subjectId: 's1', chapterId: 'ch2', correct: false }),
-      ),
-    ];
-    const reco = recommendation(subjects, chapters, cards, logs, NOW)!;
-    expect(reco.title).toBe('Nerfs');
-    expect(reco.reason).toContain('0 %');
-    expect(reco.cardIds).toContain('c2');
-  });
-});
-
 describe('activité récente', () => {
   it('regroupe par jour et par matière sans rien inventer', () => {
     const subjects = [subject('s1', 'Anatomie')];
@@ -414,6 +385,7 @@ describe('formatage des durées', () => {
 
 describe('vue complète', () => {
   const tables = {
+    events: [],
     subjects: [subject('s1', 'Anatomie'), subject('s2', 'Histologie', 1)],
     chapters: [chapter('ch1', 's1', 'Crâne')],
     cards: [
@@ -428,7 +400,7 @@ describe('vue complète', () => {
   const goals = { weeklyStudyMinutes: 60, weeklyReviews: 10 };
 
   it('reste cohérente sans aucune donnée', () => {
-    const view = progressView({ subjects: [], chapters: [], cards: [], logs: [] }, { goals, now: NOW });
+    const view = progressView({ subjects: [], chapters: [], cards: [], logs: [], events: [] }, { goals, now: NOW });
     expect(view.hasAnySubject).toBe(false);
     expect(view.mastery.pct).toBeNull();
     expect(view.answers.successRate).toBeNull();
@@ -470,7 +442,13 @@ describe('vue complète', () => {
       ),
     );
     const view = progressView(
-      { subjects: [subject('s1', 'Anatomie')], chapters: [chapter('ch1', 's1', 'Crâne')], cards: many, logs: manyLogs },
+      {
+        subjects: [subject('s1', 'Anatomie')],
+        chapters: [chapter('ch1', 's1', 'Crâne')],
+        cards: many,
+        logs: manyLogs,
+        events: [],
+      },
       { goals, now: NOW },
     );
     expect(view.answers.total).toBe(2000);

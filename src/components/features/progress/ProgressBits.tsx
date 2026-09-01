@@ -82,7 +82,7 @@ export function StatTile({
           ? 'text-[var(--warning)]'
           : 'text-[var(--ink-faint)]';
   return (
-    <div className="surface-card flex min-h-[7.5rem] flex-col justify-between p-4">
+    <div className="surface-card flex h-full min-h-[7.5rem] flex-col justify-between p-4">
       <div className="flex items-center gap-2 text-[0.8rem] font-medium uppercase tracking-wide text-[var(--ink-faint)]">
         {icon && <span className="text-[var(--ink-soft)]">{icon}</span>}
         {label}
