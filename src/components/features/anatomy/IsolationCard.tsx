@@ -24,26 +24,39 @@ export const IsolationCard = memo(function IsolationCard({
   onResetView: () => void;
 }) {
   return (
-    <section className="surface-card flex flex-col gap-3 p-4">
-      <h2 className="text-[0.95rem] font-semibold text-[var(--ink)]">Mode isolation</h2>
+    <section className="anatomy-card">
+      <h2 className="anatomy-card-title">Mode isolation</h2>
 
-      <div className="flex items-start gap-3">
-        <StructureThumbnail structure={structure} size={64} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[0.88rem] font-medium leading-snug text-[var(--ink)]">
-            {structure ? structure.name : 'Aucune structure sélectionnée'}
-          </p>
-          <p className="mt-1 text-[0.78rem] leading-snug text-[var(--ink-faint)]">
-            {isolated && structure
-              ? 'Isolée — tout le reste du modèle est masqué.'
-              : structure
-                ? 'Sélectionnée. Isole-la pour masquer tout le reste.'
-                : 'Touche un point du modèle, un résultat de recherche ou une structure de la liste.'}
+      {structure ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+          {/* Vue anatomique réelle de la structure isolée, rendue depuis son
+              maillage — on voit ce qu'on isole avant de regarder le modèle. */}
+          <div
+            className={
+              'flex items-center justify-center rounded-[var(--radius-card)] border p-3 transition-colors ' +
+              (isolated ? 'border-[var(--accent)] bg-[var(--accent-tint)]' : 'border-[var(--line)] bg-[var(--surface-2)]')
+            }
+          >
+            <StructureThumbnail structure={structure} size={104} />
+          </div>
+          <div className="text-center">
+            <p className="text-[0.9rem] font-medium leading-snug text-[var(--ink)]">{structure.name}</p>
+            <p className="mt-1 text-[0.78rem] leading-snug text-[var(--ink-faint)]">
+              {isolated ? 'Isolée — tout le reste du modèle est masqué.' : 'Sélectionnée. Isole-la pour masquer le reste.'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+          <StructureThumbnail structure={null} size={72} />
+          <p className="text-[0.88rem] font-medium text-[var(--ink-soft)]">Aucune structure sélectionnée</p>
+          <p className="max-w-[22rem] text-[0.78rem] leading-snug text-[var(--ink-faint)]">
+            Touche un point du modèle, un résultat de recherche ou une structure de la liste pour l’isoler.
           </p>
         </div>
-      </div>
+      )}
 
-      <div className="mt-auto grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Button size="sm" disabled={!structure || isolated} onClick={onIsolate}>
           Isoler la sélection
         </Button>

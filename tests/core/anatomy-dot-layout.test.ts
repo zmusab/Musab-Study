@@ -53,7 +53,7 @@ describe('layoutDots — points interactifs sur le modèle', () => {
     const dots = layoutDots([anchor('grand', 200, 200, 99), anchor('choisi', 202, 201, 1)], {
       ...view,
       minDistance: 40,
-      pinnedId: 'choisi',
+      pinnedIds: ['choisi'],
     });
     expect(dots.map((d) => d.id)).toEqual(['choisi']);
     expect(dots[0]!.merged).toEqual(['grand']);
@@ -63,9 +63,19 @@ describe('layoutDots — points interactifs sur le modèle', () => {
     const dots = layoutDots([anchor('grand', 200, 200, 99), anchor('choisi', 400, 400, 1)], {
       ...view,
       minDistance: 40,
-      pinnedId: 'choisi',
+      pinnedIds: ['choisi'],
     });
     expect(dots.map((d) => d.id).sort()).toEqual(['choisi', 'grand']);
+  });
+
+  it('protège PLUSIEURS points à la fois — la correction montre la bonne réponse et l’erreur', () => {
+    const dots = layoutDots(
+      [anchor('grand', 200, 200, 99), anchor('bonne', 202, 201, 1), anchor('erreur', 204, 203, 1)],
+      { ...view, minDistance: 40, pinnedIds: ['bonne', 'erreur'] },
+    );
+    expect(dots.map((d) => d.id).sort()).toEqual(['bonne', 'erreur']);
+    // La grosse structure voisine est fondue, pas perdue.
+    expect(dots.flatMap((d) => d.merged)).toContain('grand');
   });
 
   it('respecte le plafond de points en fusionnant le surplus, jamais en le supprimant', () => {

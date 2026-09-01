@@ -33,11 +33,14 @@ export function LearningModeCard({
   answered,
   result,
   streak,
+  candidateCount,
   onStart,
   onStop,
   onNext,
 }: {
   active: boolean;
+  /** Nombre de structures réellement chargées et interrogeables. */
+  candidateCount: number;
   target: AnatomyStructure | null;
   /** Structure réellement cliquée — non nulle seulement après une réponse. */
   answered: AnatomyStructure | null;
@@ -50,17 +53,30 @@ export function LearningModeCard({
   const place = subregionMeta(target?.subregion ?? null);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       {!active ? (
         <>
-          <p className="min-h-0 flex-1 overflow-y-auto text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
-            Trouve la structure demandée en cliquant directement dans le modèle 3D — parmi les systèmes actuellement
-            actifs. La correction s’affiche sur le modèle : la bonne structure passe au vert.
+          <p className="anatomy-card-hint">
+            Trouve la structure demandée en cliquant directement dans le modèle 3D, parmi les systèmes actifs. La
+            correction s’affiche sur le modèle : la bonne structure passe au vert, une erreur au rouge.
           </p>
-          <Button size="sm" onClick={onStart}>
-            Commencer
-          </Button>
+          {/* Information RÉELLE plutôt qu'un vide : le nombre de structures
+              actuellement chargées est exactement le vivier de questions. */}
+          <div className="mt-auto flex flex-col gap-3">
+            <div className="rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5">
+              <p className="text-[0.78rem] text-[var(--ink-soft)]">
+                <span className="font-semibold text-[var(--ink)]">{candidateCount}</span> structure
+                {candidateCount > 1 ? 's' : ''} chargée{candidateCount > 1 ? 's' : ''} peuvent être demandées.
+              </p>
+              <p className="mt-0.5 text-[0.72rem] text-[var(--ink-faint)]">
+                Ouvre une autre région ou active un système pour élargir le tirage.
+              </p>
+            </div>
+            <Button onClick={onStart} disabled={candidateCount === 0}>
+              Commencer
+            </Button>
+          </div>
         </>
       ) : (
         <>

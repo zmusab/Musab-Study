@@ -24,25 +24,25 @@ export const CourseIntegrationCard = memo(function CourseIntegrationCard({
   const count = citations?.length ?? 0;
 
   return (
-    <section className="surface-card flex flex-col gap-3 p-4">
-      <h2 className="text-[0.95rem] font-semibold text-[var(--ink)]">Intégration cours</h2>
+    <section className="anatomy-card">
+      <h2 className="anatomy-card-title">Intégration cours</h2>
 
       {!structure ? (
-        <p className="text-[0.82rem] leading-relaxed text-[var(--ink-soft)]">
+        <p className="anatomy-card-hint">
           Sélectionne une structure pour voir si elle apparaît dans tes cours importés. Toutes les informations
           affichées viennent de tes PDF, avec la page source cliquable — jamais inventées.
         </p>
       ) : loading ? (
-        <p className="text-[0.82rem] text-[var(--ink-faint)]">Lecture de tes cours…</p>
+        <p className="anatomy-card-hint">Lecture de tes cours…</p>
       ) : count === 0 ? (
-        <p className="text-[0.82rem] leading-relaxed text-[var(--ink-soft)]">
+        <p className="anatomy-card-hint">
           Aucune fiche générée depuis tes cours pour{' '}
           <span className="font-medium text-[var(--ink)]">{structure.name}</span>. Ouvre l’onglet « Informations » du
           panneau pour en générer une : les passages utilisés seront listés ici, avec leur page.
         </p>
       ) : (
         <>
-          <p className="text-[0.82rem] text-[var(--ink-soft)]">
+          <p className="anatomy-card-hint">
             <span className="font-medium text-[var(--ink)]">{structure.name}</span> — {count} passage
             {count > 1 ? 's' : ''} de tes cours.
           </p>

@@ -66,11 +66,15 @@ const FEEDBACK_EMISSIVE: Record<string, string> = {
 };
 
 /**
- * Distance minimale entre deux points à l'écran. Doit rester au moins égale
- * au diamètre de la cible tactile (28 px) : en dessous, deux points voisins
- * deviennent impossibles à viser au doigt sur iPad.
+ * Distance minimale entre deux points à l'écran.
+ *
+ * Réglée à 36 px pour deux raisons : la cible tactile fait 44 px (viser au
+ * doigt doit rester sans ambiguïté), et un modèle criblé de points devient
+ * illisible. C'est aussi ce qui rend les points CONTEXTUELS : de loin, les
+ * structures voisines se fondent en un seul point ; en zoomant, elles
+ * s'écartent à l'écran et réapparaissent une à une, sans réglage manuel.
  */
-const DOT_MIN_DISTANCE = 30;
+const DOT_MIN_DISTANCE = 36;
 
 /**
  * Direction caméra → cible pour chaque vue anatomique, dans le repère
@@ -329,6 +333,7 @@ function DotProjector({
   labelRef,
   lineRef,
   activeId,
+  pinnedIds,
 }: {
   anchors: MarkerAnchorWorld[];
   dotRefs: RefObject<Map<ID, HTMLButtonElement>>;
@@ -337,6 +342,8 @@ function DotProjector({
   lineRef: RefObject<SVGPathElement | null>;
   /** Point dont le nom est affiché : la sélection, ou le survol à défaut. */
   activeId: ID | null;
+  /** Points qui ne doivent jamais être fondus dans un groupe. */
+  pinnedIds: readonly (ID | null)[];
 }) {
   const { camera, size } = useThree();
   const scratch = useRef(new THREE.Vector3());
@@ -363,7 +370,7 @@ function DotProjector({
       width: size.width,
       height: size.height,
       minDistance: DOT_MIN_DISTANCE,
-      pinnedId: activeId,
+      pinnedIds,
     });
 
     const placedIds = new Set(dots.map((d) => d.id));
@@ -376,13 +383,13 @@ function DotProjector({
         el.style.display = '';
         el.style.transform = `translate(${dot.x}px, ${dot.y}px) translate(-50%, -50%)`;
       }
-      const badge = badgeRefs.current.get(dot.id);
-      if (badge) {
-        // « +N » : le nombre de structures RÉELLES fondues dans ce point.
-        // Zoomer les sépare, rien n'est perdu.
-        badge.textContent = dot.merged.length > 0 ? `+${dot.merged.length}` : '';
-        badge.style.display = dot.merged.length > 0 ? '' : 'none';
-      }
+      // Point de REGROUPEMENT : un anneau discret, jamais un compteur. Des
+      // dizaines de « +3 » au-dessus du modèle le transformaient en tableau
+      // de bord technique. Le nombre exact reste annoncé aux lecteurs
+      // d'écran via `aria-label`, et zoomer sépare réellement le groupe.
+      const ring = badgeRefs.current.get(dot.id);
+      if (ring) ring.style.display = dot.merged.length > 0 ? '' : 'none';
+      if (el) el.setAttribute('data-anatomy-cluster', dot.merged.length > 0 ? String(dot.merged.length + 1) : '');
       if (dot.id === activeId) activeDot = dot;
     }
 
@@ -505,31 +512,45 @@ function DotOverlay({
             }
             data-anatomy-dot
             data-anatomy-feedback={feedback ?? undefined}
-            style={{ position: 'absolute', top: 0, left: 0, display: 'none', pointerEvents: 'auto' }}
-            // 28 px de cible tactile pour un disque visible de 12 px : assez
-            // grand pour le doigt sur iPad sans encombrer le modèle.
-            className="flex h-7 w-7 items-center justify-center rounded-full"
+            // Cible tactile CARRÉE de 44 px (recommandation Apple), imposée
+            // explicitement : la règle globale `min-height: 44px` sur tout
+            // bouton ne fixait que la hauteur, et le point devenait un ovale.
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              display: 'none',
+              pointerEvents: 'auto',
+              width: 44,
+              height: 44,
+              minWidth: 44,
+              minHeight: 44,
+            }}
+            className="flex items-center justify-center rounded-full"
           >
-            <span
-              className={
-                'block h-3 w-3 rounded-full border shadow transition-transform duration-150 ' +
-                (feedback === 'correct'
-                  ? 'scale-125 border-white bg-[#2f9e44]'
-                  : feedback === 'incorrect'
-                    ? 'scale-125 border-white bg-[#d64545]'
-                    : isSelected
-                      ? 'scale-125 border-white bg-[var(--accent)]'
-                      : 'border-white/70 bg-white/35 hover:scale-150 hover:border-white hover:bg-[var(--accent)]')
-              }
-            />
+            {/* Anneau de regroupement — discret, sans chiffre. */}
             <span
               ref={(el) => {
                 if (el) badgeRefs.current.set(id, el);
                 else badgeRefs.current.delete(id);
               }}
               aria-hidden
-              style={{ display: 'none' }}
-              className="pointer-events-none absolute right-0 top-0 rounded-full bg-black/55 px-[3px] text-[0.5rem] font-medium leading-[1.25] text-white/80"
+              style={{ display: 'none', width: 20, height: 20 }}
+              className="pointer-events-none absolute rounded-full border border-white/30"
+            />
+            {/* Pastille visible : petite au repos, franche à la sélection. */}
+            <span
+              aria-hidden
+              className={
+                'block rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.35)] transition-all duration-150 ' +
+                (feedback === 'correct'
+                  ? 'h-3.5 w-3.5 bg-[#3ec46d] ring-2 ring-white'
+                  : feedback === 'incorrect'
+                    ? 'h-3.5 w-3.5 bg-[#e05a5a] ring-2 ring-white'
+                    : isSelected
+                      ? 'h-3.5 w-3.5 bg-[var(--accent)] ring-2 ring-white'
+                      : 'h-2 w-2 bg-white/70 hover:h-3 hover:w-3 hover:bg-[var(--accent)]')
+              }
             />
           </button>
         );
@@ -555,6 +576,47 @@ function DotOverlay({
   );
 }
 
+/**
+ * Choisit entre l'union des deux côtés et un seul côté.
+ *
+ * Critère GÉOMÉTRIQUE : les deux demi-boîtes ne se recouvrent pas en X, et
+ * l'espace vide qui les sépare représente une part notable de la largeur
+ * totale. C'est exactement la signature d'une paire écartée — deux mains,
+ * deux pieds, deux orbites — dont l'union laisserait un grand trou au
+ * milieu de l'image. On cadre alors le côté le mieux fourni.
+ *
+ * Une première version comparait largeur et hauteur : elle ratait les pieds,
+ * dont les tendons remontent et rendent la boîte aussi haute que large.
+ * Une région d'un seul tenant (thorax, crâne) n'a pas d'écart central et
+ * garde son cadrage d'ensemble.
+ */
+function sidedFramingBox({
+  framingBox,
+  leftBox,
+  rightBox,
+  leftCount,
+  rightCount,
+}: {
+  framingBox: THREE.Box3;
+  leftBox: THREE.Box3;
+  rightBox: THREE.Box3;
+  leftCount: number;
+  rightCount: number;
+}): THREE.Box3 {
+  const total = leftCount + rightCount;
+  if (total === 0 || leftBox.isEmpty() || rightBox.isEmpty()) return framingBox;
+
+  // Chaque côté doit porter une part réelle des structures : sinon il s'agit
+  // d'une région d'un seul tenant qui déborde un peu de la ligne médiane.
+  if (Math.min(leftCount, rightCount) / total < 0.25) return framingBox;
+
+  const width = framingBox.getSize(new THREE.Vector3()).x;
+  const gap = rightBox.min.x - leftBox.max.x;
+  if (width <= 0 || gap <= 0 || gap / width < 0.15) return framingBox;
+
+  return leftCount >= rightCount ? leftBox : rightBox;
+}
+
 function CameraRig({
   controlsRef,
   meshRegistry,
@@ -565,6 +627,7 @@ function CameraRig({
   setHasFramed,
   framingIds,
   framingRequired,
+  framingPending,
   framingTransition,
 }: {
   controlsRef: RefObject<CameraControls | null>;
@@ -581,10 +644,11 @@ function CameraRig({
    * réellement chargés au lieu de cadrer la scène entière par défaut.
    */
   framingRequired: boolean;
+  /** Vrai tant qu'un groupe d'assets de la sous-région visée n'est pas arrivé. */
+  framingPending: boolean;
   framingTransition: boolean;
 }) {
   const { scene, invalidate } = useThree();
-  const framingDeadline = useRef(0);
 
   // En mode `demand`, aucune image n'est produite spontanément : tant que le
   // cadrage initial n'a pas pu se faire (les .glb arrivent de façon
@@ -604,11 +668,6 @@ function CameraRig({
   // sous-arbre — sa résolution ne relance pas le rendu de CE composant
   // (sibling hors du Suspense), alors que la boucle de rendu r3f, elle,
   // continue de tourner et voit la scène se remplir dès qu'elle a du contenu.
-  // Redémarre l'attente à chaque changement de cible de cadrage.
-  useEffect(() => {
-    framingDeadline.current = performance.now() + 15000;
-  }, [framingIds, framingRequired]);
-
   useFrame(() => {
     if (hasFramed || !controlsRef.current) return;
 
@@ -617,31 +676,69 @@ function CameraRig({
     // trachée et l'œsophage descendent bien plus bas que la tête et
     // rétréciraient la zone réellement intéressante. On retombe sur la
     // scène entière tant qu'aucune structure de référence n'est chargée.
+    /*
+      Cadrage d'une sous-région BILATÉRALE.
+
+      Beaucoup de sous-régions existent en double (mains, pieds, avant-bras,
+      orbites…). Cadrer l'union des deux côtés donne une image large avec un
+      grand vide au milieu et deux structures minuscules aux bords. On mesure
+      donc chaque côté par rapport à la ligne médiane RÉELLE du corps (centre
+      de la scène), et si la région est nettement bilatérale on cadre un seul
+      côté — celui qui porte le plus de structures.
+    */
+    const midlineX = new THREE.Box3().setFromObject(scene).getCenter(new THREE.Vector3()).x;
     const framingBox = new THREE.Box3();
+    const leftBox = new THREE.Box3();
+    const rightBox = new THREE.Box3();
     let framingCount = 0;
+    let leftCount = 0;
+    let rightCount = 0;
+    const objectCenter = new THREE.Vector3();
+    const objectBox = new THREE.Box3();
     for (const id of framingIds) {
       const object = meshRegistry.current.get(id);
       if (!object || !object.visible) continue;
-      framingBox.expandByObject(object);
+      objectBox.setFromObject(object);
+      if (objectBox.isEmpty()) continue;
+      framingBox.union(objectBox);
       framingCount++;
+      objectBox.getCenter(objectCenter);
+      if (objectCenter.x < midlineX) {
+        leftBox.union(objectBox);
+        leftCount++;
+      } else {
+        rightBox.union(objectBox);
+        rightCount++;
+      }
     }
-    // Cadrage exigé sur une sous-région : tant que ses maillages ne sont pas
-    // arrivés, on ATTEND plutôt que de cadrer la scène entière — sinon la
-    // caméra resterait figée sur la tête après l'ouverture d'une cuisse. Un
-    // délai de garde évite d'attendre indéfiniment si la région n'arrive
-    // jamais.
-    if (framingRequired && framingCount === 0 && performance.now() < framingDeadline.current) return;
+    /*
+      Cadrage exigé sur une sous-région : tant que ses fichiers ne sont pas
+      arrivés, on ATTEND plutôt que de cadrer la scène entière — sinon la
+      caméra reste figée sur la région précédente.
+
+      L'attente est conditionnée à l'état RÉEL du chargement, pas à un délai.
+      Une version antérieure abandonnait au bout de 15 s : sur une région
+      lourde analysée pendant que le fil principal est occupé, le délai
+      expirait, la caméra cadrait la tête et ne revenait jamais sur le pied
+      ou la main demandés. `framingPending` retombe à faux dès que tous les
+      groupes de la sous-région sont chargés — ou tout de suite si elle n'en
+      a aucun, auquel cas on cadre ce qui existe plutôt que d'attendre.
+    */
+    if (framingRequired && framingCount === 0 && framingPending) return;
 
     const box = framingCount > 0 && !framingBox.isEmpty()
-      ? framingBox
+      ? sidedFramingBox({ framingBox, leftBox, rightBox, leftCount, rightCount })
       : new THREE.Box3().setFromObject(scene);
     if (!Number.isFinite(box.min.x) || box.isEmpty()) return;
 
+    // Marge basse plus généreuse : la barre des vues et les contrôles de
+    // caméra occupent le bas du viewport ; sans elle, le sujet cadré passe
+    // dessous et se retrouve coupé.
     void controlsRef.current.fitToBox(box, framingTransition, {
       paddingLeft: 0.08,
       paddingRight: 0.08,
       paddingTop: 0.08,
-      paddingBottom: 0.08,
+      paddingBottom: 0.18,
     });
     setHasFramed(true);
   });
@@ -724,6 +821,8 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   const meshRegistry = useRef<Map<ID, THREE.Object3D>>(new Map());
   const [hasFramed, setHasFramed] = useState(false);
   const [everLoaded, setEverLoaded] = useState<Set<string>>(new Set());
+  /** Groupes montés au rendu précédent — sert à repérer ceux à purger. */
+  const mountedGroupsRef = useRef<Set<string>>(new Set());
   const [registryVersion, setRegistryVersion] = useState(0);
 
   /**
@@ -741,6 +840,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
   /** Point survolé — sert à afficher son nom sans avoir à le sélectionner. */
   const [hoveredDotId, setHoveredDotId] = useState<ID | null>(null);
   const dotRefs = useRef<Map<ID, HTMLButtonElement>>(new Map());
+  /** Anneaux de regroupement (un par point) — voir `DotProjector`. */
   const badgeRefs = useRef<Map<ID, HTMLSpanElement>>(new Map());
   const labelRef = useRef<HTMLDivElement | null>(null);
   const lineRef = useRef<SVGPathElement | null>(null);
@@ -818,15 +918,44 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
         next.add(group.key);
       }
       if (next.size === prev.size && [...next].every((k) => prev.has(k))) return prev;
-
-      // Libère la géométrie des groupes évincés : sans cette purge, le cache
-      // de `useGLTF` garderait les maillages vivants malgré le démontage.
-      for (const key of prev) if (!next.has(key)) useGLTF.clear(assetUrl(key));
       return next;
     });
   }, [activeSystems, loadedSubregions]);
 
+  /**
+   * Purge du cache des groupes évincés — dans un effet DÉDIÉ, jamais dans
+   * l'updater de `setEverLoaded`.
+   *
+   * React peut rejouer un updater d'état (rebasing) : y placer un effet de
+   * bord comme `useGLTF.clear` pouvait vider le cache d'un groupe encore
+   * monté, qui ne réenregistrait alors plus jamais ses maillages — la caméra
+   * ne trouvait plus rien à cadrer et restait bloquée sur la région
+   * précédente. Ici la comparaison se fait sur une ref, une seule fois par
+   * changement réel.
+   */
+  useEffect(() => {
+    const previous = mountedGroupsRef.current;
+    for (const key of previous) {
+      if (!everLoaded.has(key)) useGLTF.clear(assetUrl(key));
+    }
+    mountedGroupsRef.current = new Set(everLoaded);
+  }, [everLoaded]);
+
   const groupsToLoad = useMemo(() => ASSET_GROUPS.filter((g) => everLoaded.has(g.key)), [everLoaded]);
+
+  /**
+   * Reste-t-il un fichier à charger pour la sous-région ouverte ? C'est la
+   * condition d'attente du cadrage : tant qu'elle est vraie, la caméra ne
+   * cadre pas la région précédente par défaut.
+   */
+  const framingPending = useMemo(() => {
+    if (!focusedSubregion) return false;
+    const groups = ASSET_GROUPS.filter(
+      (g) => g.subregion === focusedSubregion && activeSystems[g.category] === true,
+    );
+    return groups.length > 0 && groups.some((g) => !readyGroups.has(g.key));
+  }, [focusedSubregion, activeSystems, readyGroups]);
+
 
   // Un groupe évincé n'est plus « prêt » : sans cette purge, l'indicateur de
   // progression compterait des groupes qui ne sont plus montés.
@@ -929,6 +1058,17 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
    */
   const activeDotId = selectedId ?? hoveredDotId;
 
+  /**
+   * Points protégés du regroupement : la sélection, et — pendant la
+   * correction du mode apprentissage — la bonne structure ET la réponse
+   * cliquée. Sans cela, le point rouge de l'erreur pouvait être absorbé par
+   * un voisin et la correction devenait incomplète.
+   */
+  const pinnedDotIds = useMemo(
+    () => [activeDotId, ...feedbackById.keys()],
+    [activeDotId, feedbackById],
+  );
+
   return (
     <div
       ref={wrapperRef}
@@ -994,6 +1134,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
             labelRef={labelRef}
             lineRef={lineRef}
             activeId={activeDotId}
+            pinnedIds={pinnedDotIds}
           />
         )}
         <CameraRig
@@ -1004,6 +1145,7 @@ export const Anatomy3DViewer = forwardRef<Anatomy3DViewerHandle, Anatomy3DViewer
           reducedMotion={reducedMotion}
           hasFramed={hasFramed}
           framingRequired={focusedSubregion !== null}
+          framingPending={framingPending}
           framingTransition={focusedSubregion !== null && !reducedMotion}
           setHasFramed={setHasFramed}
           framingIds={framingIds}

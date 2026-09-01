@@ -71,8 +71,8 @@ export function RegionExplorerCard({
   const offSchema = subregions.filter((s) => s.meshCount > 0 && !schemaHasZone('sub', s.id));
 
   return (
-    <div className="surface-card flex h-full min-h-0 flex-col overflow-hidden p-3">
-      <div className="mb-1.5 flex items-center gap-1.5">
+    <section className="anatomy-card min-h-[26rem] overflow-hidden">
+      <div className="flex items-center gap-1.5">
         {level !== 'regions' && (
           <button
             type="button"
@@ -83,7 +83,7 @@ export function RegionExplorerCard({
             <Icon name="chevronLeft" size={13} />
           </button>
         )}
-        <p className="min-w-0 flex-1 truncate text-[0.85rem] font-semibold text-[var(--ink)]">{title}</p>
+        <h2 className="anatomy-card-title min-w-0 flex-1 truncate">{title}</h2>
         {/* Le rail est étroit par nature ; l'agrandissement donne au schéma
             une taille réellement confortable au doigt sur iPad (§8/§18). */}
         <button
@@ -232,6 +232,6 @@ export function RegionExplorerCard({
           )}
         </div>
       </Modal>
-    </div>
+    </section>
   );
 }

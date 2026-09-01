@@ -33,7 +33,8 @@ function CitationList({ citations }: { citations: Citation[] }) {
           to={c.page !== null ? `/document/${c.documentId}?page=${c.page}` : `/document/${c.documentId}`}
           className="rounded-full border border-[var(--accent)]/40 bg-[var(--accent-tint)] px-2.5 py-1 text-[0.72rem] font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-tint)]/70"
         >
-          📚 {c.documentName}
+          <Icon name="notes" size={12} className="mr-1 inline-block align-[-2px]" />
+          {c.documentName}
           {c.page !== null ? ` — page ${c.page}` : ''}
         </Link>
       ))}
@@ -263,7 +264,7 @@ export function StructureInfoPanel({
       <div className="flex-1 overflow-y-auto p-4">
         {tab === 'informations' ? (
           <>
-            <StructureFacts structureId={structure.id} />
+            <ToothFacts structureId={structure.id} />
             {courseSheet === undefined ? (
               <Spinner size={16} />
             ) : courseSheet && courseSheet.content.length > 0 ? (
@@ -274,21 +275,25 @@ export function StructureInfoPanel({
                   {courseSheet === null ? 'Aucune fiche générée pour l’instant.' : '⚠️ Information insuffisante dans tes cours.'}
                 </p>
                 <Button size="sm" loading={generating === 'course'} onClick={() => void runGenerate('course')}>
-                  ✨ Générer depuis mes cours
+                  <Icon name="sparkles" size={15} className="mr-1.5" />
+                  Générer depuis mes cours
                 </Button>
               </div>
             )}
+
+            <ProvenanceNote structureId={structure.id} />
 
             {hasInsufficientCourse && (
               <div className="mt-3 border-t border-[var(--line)] pt-3">
                 {internetSheet ? (
                   <div className="rounded-[var(--radius-control)] border border-[var(--nav-blue)]/30 bg-[var(--nav-blue)]/5 p-3">
-                    <p className="mb-1.5 text-[0.72rem] font-semibold text-[var(--nav-blue)]">🌐 Depuis Internet — à vérifier</p>
+                    <p className="mb-1.5 text-[0.72rem] font-semibold text-[var(--nav-blue)]">Depuis Internet — à vérifier</p>
                     <SheetContent text={internetSheet.content} />
                   </div>
                 ) : (
                   <Button size="sm" variant="secondary" loading={generating === 'internet'} onClick={() => void runGenerate('internet')}>
-                    🌐 Compléter avec Internet
+                    <Icon name="search" size={15} className="mr-1.5" />
+                    Compléter avec Internet
                   </Button>
                 )}
               </div>
@@ -330,7 +335,8 @@ export function StructureInfoPanel({
                 <CitationList citations={answer.citations} />
                 {answer.provenance === 'insufficient' && (
                   <Button size="sm" variant="secondary" className="mt-2" loading={asking} onClick={() => void askInternetFallback()}>
-                    🌐 Rechercher sur Internet
+                    <Icon name="search" size={15} className="mr-1.5" />
+                    Rechercher sur Internet
                   </Button>
                 )}
               </div>
@@ -345,10 +351,10 @@ export function StructureInfoPanel({
             <p className="mt-1 text-[0.84rem] text-[var(--ink-soft)]">{currentDraft.answer}</p>
             <div className="mt-2 flex gap-2">
               <Button size="sm" onClick={() => void acceptDraft()}>
-                ✅ Accepter
+                Accepter
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setDraftIndex((i) => i + 1)}>
-                ❌ Supprimer
+                Supprimer
               </Button>
             </div>
           </section>
@@ -363,11 +369,13 @@ export function StructureInfoPanel({
           <Icon name="sparkles" size={14} /> Demander à l’IA
         </Button>
         <Button size="sm" variant="ghost" loading={generatingCards} onClick={() => void runGenerateCards()}>
-          🃏 Créer une flashcard
+          <Icon name="cards" size={15} className="mr-1.5" />
+          Créer une flashcard
         </Button>
         <Link to="/quiz">
           <Button size="sm" variant="ghost">
-            ❓ Me tester
+            <Icon name="quiz" size={15} className="mr-1.5" />
+            Me tester
           </Button>
         </Link>
       </div>
@@ -376,50 +384,57 @@ export function StructureInfoPanel({
 }
 
 /**
- * Faits vérifiables sur la structure, lus dans le catalogue généré — pas une
- * fiche rédigée. Pour une dent, la norme FDI définit à elle seule l'arcade,
- * le côté et le type : ces lignes sont donc dérivées du numéro, jamais
- * inventées. La provenance rappelle le libellé anglais d'origine, ce qui
- * rend chaque entrée traçable jusqu'à BodyParts3D.
+ * Fiche DENTAIRE (§24) — en tête de l'onglet Informations, car c'est
+ * l'information anatomique la plus utile pour une dent. La norme FDI
+ * (ISO 3950) définit à elle seule l'arcade, le côté et le type : ces lignes
+ * sont dérivées du numéro, jamais inventées.
  */
-function StructureFacts({ structureId }: { structureId: ID }) {
+function ToothFacts({ structureId }: { structureId: ID }) {
   const tooth = toothInfo(structureId);
-  const provenance = structureProvenance(structureId);
-  if (!tooth && !provenance) return null;
+  if (!tooth) return null;
 
   return (
-    <dl className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-[var(--radius-control)] bg-[var(--surface-2)] p-3 text-[0.78rem]">
-      {tooth && (
-        <>
-          <dt className="text-[var(--ink-faint)]">Numéro FDI</dt>
-          <dd className="font-medium text-[var(--ink)]">{tooth.fdi}</dd>
-          <dt className="text-[var(--ink-faint)]">Type</dt>
-          <dd className="text-[var(--ink)]">{tooth.type}</dd>
-          <dt className="text-[var(--ink-faint)]">Arcade</dt>
-          <dd className="text-[var(--ink)]">{tooth.arcade}</dd>
-          <dt className="text-[var(--ink-faint)]">Côté</dt>
-          <dd className="text-[var(--ink)]">{tooth.side}</dd>
-        </>
-      )}
-      {provenance && (
-        <>
-          <dt className="text-[var(--ink-faint)]">Géométrie 3D</dt>
-          <dd className="text-[var(--ink)]">
-            {provenance.hasMesh
-              ? `${provenance.triangles.toLocaleString('fr-FR')} triangles`
-              : 'non disponible dans les données ouvertes'}
-          </dd>
-          {provenance.sourceLabel && (
-            <>
-              <dt className="text-[var(--ink-faint)]">Source</dt>
-              <dd className="text-[var(--ink-soft)]">
-                BodyParts3D · <span className="italic">{provenance.sourceLabel}</span>
-                {provenance.fmaId ? ` · ${provenance.fmaId}` : ''}
-              </dd>
-            </>
-          )}
-        </>
-      )}
+    <dl className="mb-4 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 rounded-[var(--radius-control)] bg-[var(--surface-2)] p-3 text-[0.82rem]">
+      <dt className="text-[var(--ink-faint)]">Numéro FDI</dt>
+      <dd className="font-semibold text-[var(--ink)]">{tooth.fdi}</dd>
+      <dt className="text-[var(--ink-faint)]">Type</dt>
+      <dd className="text-[var(--ink)]">{tooth.type}</dd>
+      <dt className="text-[var(--ink-faint)]">Arcade</dt>
+      <dd className="text-[var(--ink)]">{tooth.arcade}</dd>
+      <dt className="text-[var(--ink-faint)]">Côté</dt>
+      <dd className="text-[var(--ink)]">{tooth.side}</dd>
     </dl>
+  );
+}
+
+/**
+ * Provenance vérifiable — en NOTE DE BAS de fiche, pas en tête.
+ *
+ * Le libellé source anglais et l'identifiant FMA sont indispensables pour
+ * remonter à l'original, mais ce sont des métadonnées : les placer au-dessus
+ * du contenu faisait passer la fiche pour un écran de débogage.
+ */
+function ProvenanceNote({ structureId }: { structureId: ID }) {
+  const provenance = structureProvenance(structureId);
+  if (!provenance) return null;
+
+  return (
+    <div
+      data-anatomy-provenance
+      className="mt-4 border-t border-[var(--line)] pt-3 text-[0.74rem] leading-relaxed text-[var(--ink-faint)]"
+    >
+      <p className="mb-1 font-semibold uppercase tracking-[0.05em]">Provenance</p>
+      <p>
+        {provenance.hasMesh
+          ? `Maillage réel — ${provenance.triangles.toLocaleString('fr-FR')} triangles.`
+          : 'Aucune géométrie 3D dans les données ouvertes : structure disponible en recherche et en fiche uniquement.'}
+      </p>
+      {provenance.sourceLabel && (
+        <p className="mt-0.5">
+          BodyParts3D · <span className="italic">{provenance.sourceLabel}</span>
+          {provenance.fmaId ? ` · ${provenance.fmaId}` : ''}
+        </p>
+      )}
+    </div>
   );
 }

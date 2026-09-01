@@ -71,7 +71,7 @@ export function SystemToggleBar({
             aria-pressed={isActive}
             data-touch-target
             onClick={() => onToggle(system.category)}
-            className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
+            className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1.5 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
           >
             <StructureThumbnail structure={sample.get(system.category) ?? null} size={24} />
             <span className="flex-1 text-[0.84rem] font-medium leading-tight text-[var(--ink)]" title={system.note}>
@@ -87,14 +87,14 @@ export function SystemToggleBar({
             </span>
             <span
               className={cn(
-                'relative h-5 w-9 shrink-0 rounded-full transition-colors duration-150',
+                'relative h-5 w-8 shrink-0 rounded-full transition-colors duration-150',
                 isActive ? 'bg-[var(--accent)]' : 'bg-[var(--surface-2)] ring-1 ring-inset ring-[var(--line-strong)]',
               )}
             >
               <span
                 className={cn(
                   'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-150',
-                  isActive ? 'translate-x-[18px]' : 'translate-x-0.5',
+                  isActive ? 'translate-x-[14px]' : 'translate-x-0.5',
                 )}
               />
             </span>

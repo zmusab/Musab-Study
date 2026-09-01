@@ -102,6 +102,29 @@ function ViewportControls({ viewerRef, isFullscreen }: { viewerRef: React.RefObj
   const btn =
     'flex h-10 w-10 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition-colors hover:bg-black/65';
   return (
+    <>
+      {/*
+        Vues anatomiques (§13) regroupées AVEC les contrôles de caméra plutôt
+        que dans le rail : elles agissent sur la caméra, leur place est ici.
+        Cela libère aussi de la largeur pour le modèle, qui doit rester la
+        partie dominante de l'écran.
+      */}
+      <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-wrap gap-1.5 rounded-full bg-black/45 p-1.5 backdrop-blur">
+        {ANATOMICAL_VIEWS.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            onClick={() => viewerRef.current?.setView(view.id)}
+            title={view.title}
+            aria-label={view.title}
+            data-touch-target
+            className="rounded-full px-2.5 text-[0.74rem] font-medium text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+
     <div className="pointer-events-auto absolute bottom-3 right-3 flex flex-col gap-2">
       <button type="button" onClick={() => viewerRef.current?.zoomIn()} aria-label="Zoomer" data-touch-target className={btn}>
         <span aria-hidden className="text-lg leading-none">+</span>
@@ -122,6 +145,7 @@ function ViewportControls({ viewerRef, isFullscreen }: { viewerRef: React.RefObj
         <span aria-hidden>{isFullscreen ? '⤡' : '⤢'}</span>
       </button>
     </div>
+    </>
   );
 }
 
@@ -460,7 +484,7 @@ export function AnatomyPage() {
         et chaque colonne défile pour son compte. Sous `lg`, les colonnes
         s'empilent et la page continue simplement vers le bas.
       */}
-      <div className="grid shrink-0 grid-cols-2 lg:h-[min(76vh,46rem)] lg:min-h-[34rem] lg:grid-cols-[12.5rem_minmax(0,1fr)_15rem_15rem] xl:grid-cols-[14rem_minmax(0,1fr)_19rem_17rem]">
+      <div className="grid shrink-0 grid-cols-2 lg:h-[min(76vh,46rem)] lg:min-h-[34rem] lg:grid-cols-[11rem_minmax(0,1fr)_15rem_14rem] xl:grid-cols-[12rem_minmax(0,1fr)_19rem_17rem]">
         {/* Rail gauche : systèmes et vues. L'exploration par région n'y est
             plus — elle est redevenue une vraie carte, en bas, où elle a la
             place d'afficher un grand schéma. */}
@@ -470,32 +494,11 @@ export function AnatomyPage() {
             <SystemToggleBar structures={structures ?? []} active={activeSystems} onToggle={toggleSystem} />
           </div>
 
-          {/* Vues anatomiques standard (§13) — orientation seule : la
-              distance et le point visé ne changent pas, on ne perd donc pas
-              ce qu'on était en train de regarder. */}
-          <div className="shrink-0">
-            <p className="mb-1.5 text-[0.72rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">Vues</p>
-            <div className="grid grid-cols-3 gap-1">
-              {ANATOMICAL_VIEWS.map((view) => (
-                <button
-                  key={view.id}
-                  type="button"
-                  onClick={() => viewerRef.current?.setView(view.id)}
-                  title={view.title}
-                  data-touch-target
-                  className="rounded-[var(--radius-control)] border border-[var(--line)] px-1 py-1.5 text-[0.72rem] font-medium text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                >
-                  {view.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <p
             className="mt-auto shrink-0 text-[0.68rem] leading-snug text-[var(--ink-faint)]"
             title="Les données BodyParts3D proviennent d'un spécimen unique : aucune variante homme/femme distincte n'existe dans la source, elle n'est donc pas proposée."
           >
-            BodyParts3D/DBCLS (CC BY-SA) — spécimen unique.
+            BodyParts3D/DBCLS — CC BY-SA
           </p>
         </aside>
 
@@ -547,15 +550,53 @@ export function AnatomyPage() {
           {showInfoPanel ? (
             <StructureDetailWrapper structureId={selectedStructure!.id} onClose={() => selectStructure(null)} />
           ) : (
-            <div className="flex h-full flex-col p-4">
-              <p className="mb-2 text-[0.78rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
+            /*
+              État vide SOIGNÉ (§6/§19) : la colonne ne doit jamais donner
+              l'impression qu'une fonctionnalité manque. Elle explique les
+              trois façons d'ouvrir une fiche, avec la même hiérarchie
+              typographique que la fiche elle-même.
+            */
+            <div className="flex h-full flex-col p-5">
+              <p className="mb-3 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[var(--ink-faint)]">
                 Informations
               </p>
-              <p className="text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
-                {learningActive
-                  ? 'Masqué pendant le mode apprentissage — il révélerait la réponse.'
-                  : 'Sélectionne une structure dans le modèle, un marqueur, la recherche ou l’exploration par région pour afficher sa fiche.'}
-              </p>
+              {learningActive ? (
+                <p className="text-[0.84rem] leading-relaxed text-[var(--ink-soft)]">
+                  Masqué pendant le mode apprentissage — il révélerait la réponse.
+                </p>
+              ) : (
+                <div className="flex flex-1 flex-col justify-center">
+                  <svg
+                    aria-hidden
+                    viewBox="0 0 48 48"
+                    className="mb-4 h-11 w-11 text-[var(--ink-faint)] opacity-50"
+                    fill="none"
+                  >
+                    <circle cx="19" cy="19" r="12.5" stroke="currentColor" strokeWidth="2" />
+                    <path d="M28.5 28.5 41 41" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <circle cx="19" cy="19" r="3.2" fill="currentColor" />
+                  </svg>
+                  <p className="text-[1.02rem] font-semibold leading-tight text-[var(--ink)]">Explore l’anatomie</p>
+                  <p className="mt-2 text-[0.84rem] leading-relaxed text-[var(--ink-soft)]">
+                    Choisis une structure pour lire sa fiche : nom latin, provenance, passages de tes cours et
+                    actions.
+                  </p>
+                  <ul className="mt-4 flex flex-col gap-2 text-[0.8rem] leading-snug text-[var(--ink-faint)]">
+                    <li className="flex gap-2">
+                      <span aria-hidden className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
+                      Touche un point sur le modèle
+                    </li>
+                    <li className="flex gap-2">
+                      <span aria-hidden className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
+                      Cherche un nom, un latin ou « dent 36 »
+                    </li>
+                    <li className="flex gap-2">
+                      <span aria-hidden className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
+                      Ouvre une région dans le schéma anatomique
+                    </li>
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -579,7 +620,7 @@ export function AnatomyPage() {
         assumé, et préférable à des cartes écrasées.
       */}
       <div
-        className="grid grid-cols-1 items-start gap-3 border-t border-[var(--line)] p-3 sm:grid-cols-2 xl:grid-cols-3"
+        className="grid grid-cols-1 gap-4 border-t border-[var(--line)] p-4 sm:grid-cols-2 xl:grid-cols-3"
         // `content-visibility` : le navigateur saute la mise en page et le
         // rendu des cartes encore hors écran, sans rien retirer du DOM ni de
         // l'accessibilité. `contain-intrinsic-size` réserve leur place pour
@@ -603,14 +644,15 @@ export function AnatomyPage() {
           onResetView={resetView}
         />
 
-        <section className="surface-card flex flex-col p-4">
-          <h2 className="mb-3 text-[0.95rem] font-semibold text-[var(--ink)]">Mode apprentissage</h2>
+        <section className="anatomy-card">
+          <h2 className="anatomy-card-title">Mode apprentissage</h2>
           <LearningModeCard
             active={learningActive}
             target={learningTarget}
             answered={learningAnswered}
             result={learningResult}
             streak={learningStreak}
+            candidateCount={learningCandidates.length}
             onStart={startLearning}
             onStop={stopLearning}
             onNext={nextLearningQuestion}

@@ -31,8 +31,8 @@ export const CombinationsCard = memo(function CombinationsCard({
   onHideAll: () => void;
 }) {
   return (
-    <section className="surface-card flex flex-col gap-3 p-4">
-      <h2 className="text-[0.95rem] font-semibold text-[var(--ink)]">Combinaisons</h2>
+    <section className="anatomy-card">
+      <h2 className="anatomy-card-title">Combinaisons</h2>
 
       <div className="grid flex-1 grid-cols-2 gap-2">
         {combinations.map((combo) => {

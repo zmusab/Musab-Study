@@ -51,8 +51,12 @@ export interface DotLayoutOptions {
   minDistance?: number;
   /** Plafond de points affichés — garde-fou de lisibilité et de coût DOM. */
   maxDots?: number;
-  /** Toujours conservé comme point à part entière, jamais fondu dans un groupe. */
-  pinnedId?: string | null;
+  /**
+   * Toujours conservés comme points à part entière, jamais fondus dans un
+   * groupe. Plusieurs sont nécessaires : la correction du mode apprentissage
+   * doit montrer EN MÊME TEMPS la bonne structure et la réponse cliquée.
+   */
+  pinnedIds?: readonly (string | null | undefined)[];
 }
 
 export const DEFAULT_MIN_DISTANCE = 30;
@@ -65,7 +69,7 @@ export const DEFAULT_MAX_DOTS = 60;
 export function layoutDots(anchors: readonly DotAnchor[], options: DotLayoutOptions): PlacedDot[] {
   const minDistance = options.minDistance ?? DEFAULT_MIN_DISTANCE;
   const maxDots = options.maxDots ?? DEFAULT_MAX_DOTS;
-  const pinnedId = options.pinnedId ?? null;
+  const pinned = new Set((options.pinnedIds ?? []).filter((id): id is string => Boolean(id)));
   const minSquared = minDistance * minDistance;
 
   const visible = anchors.filter((a) => a.onScreen);
@@ -75,15 +79,16 @@ export function layoutDots(anchors: readonly DotAnchor[], options: DotLayoutOpti
   // structures de même taille ne changent jamais de place d'une image à
   // l'autre.
   const ranked = [...visible].sort((a, b) => {
-    if (a.id === pinnedId) return -1;
-    if (b.id === pinnedId) return 1;
+    const pa = pinned.has(a.id) ? 1 : 0;
+    const pb = pinned.has(b.id) ? 1 : 0;
+    if (pa !== pb) return pb - pa;
     if (b.priority !== a.priority) return b.priority - a.priority;
     return a.id.localeCompare(b.id);
   });
 
   const dots: PlacedDot[] = [];
   for (const anchor of ranked) {
-    if (anchor.id === pinnedId) {
+    if (pinned.has(anchor.id)) {
       dots.push({ id: anchor.id, x: anchor.x, y: anchor.y, merged: [] });
       continue;
     }

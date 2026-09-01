@@ -205,6 +205,46 @@
     border-radius: var(--radius-card);
   }
 
+  /*
+   * Chrome commun des cartes de la section Anatomie.
+   *
+   * Défini UNE fois plutôt que répété dans chaque carte : c'est ce qui
+   * garantit que les cinq outils (exploration, isolation, apprentissage,
+   * combinaisons, cours) partagent exactement le même rayon, la même
+   * bordure, la même ombre, le même rembourrage et le même titre. Sans
+   * cela, chaque carte dérivait et l'ensemble donnait une impression de
+   * bricolage.
+   */
+  .anatomy-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1.125rem;
+    /* Plancher confortable sans creuser de vide : les cartes courtes
+       poussent leur action en bas (`mt-auto`), les cartes hautes (le schéma
+       anatomique) fixent leur propre plancher. */
+    min-height: 15rem;
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .anatomy-card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--ink);
+    letter-spacing: -0.006em;
+  }
+
+  /* Texte explicatif d'une carte — même ton partout. */
+  .anatomy-card-hint {
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
   /* Zones sûres iPhone/iPad en mode application installée. */
   .pt-safe { padding-top: env(safe-area-inset-top); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }

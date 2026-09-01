@@ -367,7 +367,7 @@ await page.waitForTimeout(300);
 check('Restaurer réactive le bouton Isoler la sélection', await page.getByRole('button', { name: 'Isoler la sélection' }).isEnabled());
 
 // ---------- Information insuffisante / IA sans clé — honnête ----------
-await page.getByRole('button', { name: '✨ Générer depuis mes cours' }).click();
+await page.getByRole('button', { name: 'Générer depuis mes cours' }).click();
 await page.waitForTimeout(400);
 check('Sans clé API, générer une fiche échoue clairement plutôt que d’inventer du contenu',
   await page.getByText(/clé API dans Paramètres/).last().isVisible());
@@ -379,11 +379,11 @@ await page.getByRole('button', { name: 'Envoyer' }).click();
 await page.waitForTimeout(400);
 check('Sans clé API, la question à l’IA échoue clairement', await page.getByText(/clé API dans Paramètres/).last().isVisible());
 
-await page.getByRole('button', { name: '🃏 Créer une flashcard' }).click();
+await page.getByRole('button', { name: 'Créer une flashcard' }).click();
 await page.waitForTimeout(400);
 check('Sans clé API, la génération de flashcard échoue clairement', await page.getByText(/clé API dans Paramètres/).last().isVisible());
 
-check('« Me tester » mène honnêtement vers /quiz (encore un placeholder)', await page.getByRole('link', { name: '❓ Me tester' }).isVisible());
+check('« Me tester » mène honnêtement vers /quiz (encore un placeholder)', await page.getByRole('link', { name: 'Me tester' }).isVisible());
 
 // ---------- Fermeture du panneau, breadcrumb, retour à la recherche ----------
 await closePanelButton(page).click();
@@ -548,7 +548,9 @@ if ((await up.count()) > 0) {
 // on compare la matrice de la caméra, exposée par le canevas via son état.
 await focusModel(page);
 const beforeView = await page.locator('canvas').first().screenshot();
-await page.getByRole('button', { name: 'Post.', exact: true }).click();
+// Les vues ont rejoint les contrôles de caméra : leur nom accessible est
+// désormais le libellé complet ("Vue postérieure (de dos)"), pas l'abrégé.
+await page.getByRole('button', { name: 'Vue postérieure (de dos)' }).click();
 await page.waitForTimeout(2200);
 const afterView = await page.locator('canvas').first().screenshot();
 check(
@@ -556,10 +558,16 @@ check(
   !beforeView.equals(afterView),
   `${beforeView.length} vs ${afterView.length} octets`,
 );
-for (const label of ['Ant.', 'Droite', 'Gauche', 'Sup.', 'Inf.']) {
-  check(`La vue « ${label} » est proposée`, (await page.getByRole('button', { name: label, exact: true }).count()) === 1);
+for (const label of [
+  'Vue antérieure (de face)',
+  'Vue latérale droite',
+  'Vue latérale gauche',
+  'Vue supérieure (de dessus)',
+  'Vue inférieure (de dessous)',
+]) {
+  check(`La vue « ${label} » est proposée`, (await page.getByRole('button', { name: label }).count()) === 1);
 }
-await page.getByRole('button', { name: 'Ant.', exact: true }).click();
+await page.getByRole('button', { name: 'Vue antérieure (de face)' }).click();
 await page.waitForTimeout(1500);
 
 // ---------- Schéma agrandi (§8/§18) : cibles réellement touchables ----------
@@ -597,9 +605,13 @@ if (toothPanel) {
   const facts = await page.locator('dl').first().innerText().catch(() => '');
   check('La fiche dentaire donne le numéro FDI', /FDI/.test(facts), facts.replace(/\n/g, ' | ').slice(0, 120));
   check('Elle donne l’arcade et le côté', /Arcade/.test(facts) && /Côté/.test(facts));
+  // La provenance est désormais une NOTE DE BAS de fiche, plus un bloc en
+  // tête : c'est une métadonnée, pas le contenu principal.
+  const provenance = await page.locator('[data-anatomy-provenance]').first().innerText().catch(() => '');
   check(
-    'Elle rappelle la provenance BodyParts3D vérifiable',
-    /BodyParts3D/.test(facts) && /triangles/.test(facts),
+    'La fiche rappelle en note la provenance BodyParts3D vérifiable',
+    /BodyParts3D/.test(provenance) && /triangles/.test(provenance),
+    provenance.replace(/\n/g, ' | ').slice(0, 120),
   );
   await closePanelButton(page).click();
   await page.waitForTimeout(300);
