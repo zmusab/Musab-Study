@@ -366,7 +366,7 @@ export function AnatomyPage() {
           Le rail de navigation de l'app passe en mode icônes sur cette route,
           ce qui rend ~176 px au contenu et permet de tenir les 4 colonnes sur
           un iPad en paysage sans écraser le modèle. */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[12.5rem_minmax(0,1fr)_16rem_13.5rem] xl:grid-cols-[14rem_minmax(0,1fr)_20rem_16rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-2 lg:grid-cols-[12.5rem_minmax(0,1fr)_15rem_15rem] xl:grid-cols-[14rem_minmax(0,1fr)_19rem_17rem]">
         {/* Rail gauche pleine hauteur : les systèmes, puis le schéma
             anatomique interactif — c'est la colonne qui a la hauteur
             nécessaire pour afficher un corps entier lisible. */}

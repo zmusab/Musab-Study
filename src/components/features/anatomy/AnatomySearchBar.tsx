@@ -64,7 +64,7 @@ export function AnatomySearchBar({
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Rechercher une structure anatomique…"
+          placeholder="Rechercher une structure…"
           className="pl-9"
           aria-label="Rechercher une structure anatomique"
         />
