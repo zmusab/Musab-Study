@@ -47,6 +47,9 @@ const PdfViewerPage = lazy(() =>
 );
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
 const AnatomyPage = lazy(() => import('@/pages/AnatomyPage').then((m) => ({ default: m.AnatomyPage })));
+const ProgressionPage = lazy(() =>
+  import('@/pages/ProgressionPage').then((m) => ({ default: m.ProgressionPage })),
+);
 
 function RouteFallback() {
   return (
@@ -85,17 +88,7 @@ function AnimatedRoutes() {
           />
           <Route path="/podcast" element={<PodcastPage />} />
           <Route path="/podcast/:episodeId" element={<PodcastEpisodePage />} />
-          <Route
-            path="/progression"
-            element={
-              <PlaceholderPage
-                title="Progression"
-                icon="📊"
-                phase="Phase 11"
-                description="Maîtrise par matière et par chapitre, taux de réussite, temps étudié et points faibles."
-              />
-            }
-          />
+          <Route path="/progression" element={<ProgressionPage />} />
           <Route path="/anatomie" element={<AnatomyPage />} />
           <Route
             path="/calendrier"

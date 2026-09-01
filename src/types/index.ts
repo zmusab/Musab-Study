@@ -29,6 +29,14 @@ export interface Profile {
   theme: ThemePreference;
   /** Objectif quotidien de cartes révisées, utilisé par le Dashboard. */
   dailyCardGoal: number;
+  /**
+   * Objectifs HEBDOMADAIRES affichés et modifiables depuis « Progression ».
+   * Champs additifs non indexés : aucune migration Dexie nécessaire (voir
+   * `db.ts`), les profils enregistrés avant leur ajout retombent sur
+   * `DEFAULT_PROFILE`.
+   */
+  weeklyStudyMinutesGoal: number;
+  weeklyReviewGoal: number;
 }
 
 // ────────────────────────── Cours & documents ──────────────────────────

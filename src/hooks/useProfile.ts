@@ -9,5 +9,14 @@ import type { Profile } from '@/types';
  * prénom dans Paramètres met à jour l'en-tête sans rechargement.
  */
 export function useProfile(): Profile {
-  return useLiveQuery(async () => (await db.profile.get('me')) ?? DEFAULT_PROFILE, [], DEFAULT_PROFILE);
+  return useLiveQuery(
+    // Même fusion que `getProfile` : un profil enregistré avant l'ajout d'un
+    // champ ne doit pas renvoyer `undefined` à l'interface.
+    async () => {
+      const stored = await db.profile.get('me');
+      return stored ? { ...DEFAULT_PROFILE, ...stored } : DEFAULT_PROFILE;
+    },
+    [],
+    DEFAULT_PROFILE,
+  );
 }

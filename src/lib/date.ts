@@ -51,7 +51,7 @@ export function lastNDays(count: number, today: Date = new Date()): DayKey[] {
 export function formatRelativePast(iso: ISODateTime | null, now: Date = new Date()): string {
   if (!iso) return 'jamais';
   const days = daysBetweenDayKeys(dayKeyFromISO(iso), dayKey(now));
-  if (days <= 0) return "aujourd'hui";
+  if (days <= 0) return 'aujourd\u2019hui';
   if (days === 1) return 'hier';
   if (days < 30) return `il y a ${days} jours`;
   const months = Math.round(days / 30);
@@ -60,7 +60,7 @@ export function formatRelativePast(iso: ISODateTime | null, now: Date = new Date
 
 export function formatRelativeFuture(iso: ISODateTime, now: Date = new Date()): string {
   const days = daysBetweenDayKeys(dayKey(now), dayKeyFromISO(iso));
-  if (days <= 0) return "aujourd'hui";
+  if (days <= 0) return 'aujourd\u2019hui';
   if (days === 1) return 'demain';
   if (days < 30) return `dans ${days} jours`;
   const months = Math.round(days / 30);

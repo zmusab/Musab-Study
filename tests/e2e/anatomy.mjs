@@ -317,15 +317,15 @@ check(
 // L'apparition est ANIMÉE, et uniquement via opacity/transform (§2) : aucune
 // animation de hauteur, de marge ou de filtre qui ferait ramer le modèle 3D.
 const animation = await page.evaluate(() => {
-  const el = document.querySelector('[data-anatomy-catalogue] .anatomy-reveal');
+  const el = document.querySelector('[data-anatomy-catalogue] .reveal');
   if (!el) return null;
   const style = getComputedStyle(el);
   return { name: style.animationName, duration: style.animationDuration, delay: style.animationDelay };
 });
-check('Les nouveaux éléments apparaissent en fondu, pas brutalement', animation?.name === 'anatomy-reveal-in', JSON.stringify(animation));
+check('Les nouveaux éléments apparaissent en fondu, pas brutalement', animation?.name === 'reveal-in', JSON.stringify(animation));
 const staggered = await page.evaluate(() =>
   new Set(
-    [...document.querySelectorAll('[data-anatomy-catalogue] .anatomy-reveal')].map(
+    [...document.querySelectorAll('[data-anatomy-catalogue] .reveal')].map(
       (e) => getComputedStyle(e).animationDelay,
     ),
   ).size,
@@ -336,7 +336,7 @@ const onlyCompositedProps = await page.evaluate(() => {
   // il faut descendre récursivement, une seule passe ne les voit pas.
   const collect = (rules, out = []) => {
     for (const rule of rules) {
-      if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name.startsWith('anatomy-reveal')) out.push(rule);
+      if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name.startsWith('reveal')) out.push(rule);
       else if (rule.cssRules) collect(rule.cssRules, out);
     }
     return out;
@@ -385,7 +385,7 @@ await page.waitForTimeout(500);
 await page.emulateMedia({ reducedMotion: 'reduce' });
 await page.waitForTimeout(200);
 const reducedTiming = await page.evaluate(() => {
-  const el = document.querySelector('[data-anatomy-catalogue] .anatomy-reveal');
+  const el = document.querySelector('[data-anatomy-catalogue] .reveal');
   if (!el) return null;
   const style = getComputedStyle(el);
   return { duration: style.animationDuration, delay: style.animationDelay };
@@ -397,7 +397,7 @@ check(
     parseFloat(reducedTiming.delay) === 0,
   JSON.stringify(reducedTiming),
 );
-const stillVisible = await page.locator('[data-anatomy-catalogue] .anatomy-reveal').first().isVisible();
+const stillVisible = await page.locator('[data-anatomy-catalogue] .reveal').first().isVisible();
 check('Les éléments restent visibles : l’animation est retirée, pas le contenu', stillVisible);
 await page.emulateMedia({ reducedMotion: 'no-preference' });
 await page.waitForTimeout(200);

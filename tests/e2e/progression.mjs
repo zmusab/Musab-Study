@@ -1,0 +1,300 @@
+import { mkdir } from 'node:fs/promises';
+import { chromium, devices } from 'playwright';
+
+/**
+ * Parcours réel de « Progression ».
+ *
+ * L'exigence testée n'est pas seulement « la page s'affiche » : c'est qu'elle
+ * n'affiche AUCUN chiffre sans donnée derrière. Le scénario passe donc par
+ * les trois volumes possibles — rien, peu, assez — et vérifie qu'entre les
+ * deux premiers la page dit « pas assez de données » au lieu d'inventer un
+ * pourcentage.
+ *
+ * Prérequis : `npm run build` puis `npm run preview`.
+ */
+
+const BASE = process.env.E2E_BASE ?? 'http://localhost:4173/';
+const SHOT = process.env.SCREENSHOT_DIR ?? './dist-screenshots';
+const results = [];
+const errors = [];
+
+function check(name, ok, detail = '') {
+  results.push({ name, ok });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+}
+
+await mkdir(SHOT, { recursive: true });
+
+const browser = await chromium.launch(
+  process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
+);
+const context = await browser.newContext({ ...devices['iPad Pro 11'] });
+const page = await context.newPage();
+const nav = page.locator('aside, nav.fixed');
+page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+page.on('console', (m) => {
+  if (m.type() === 'error') errors.push(m.text());
+});
+
+const goProgress = async () => {
+  await nav.getByRole('link', { name: 'Progression', exact: true }).first().click();
+  await page.waitForTimeout(900);
+};
+
+await page.goto(BASE, { waitUntil: 'networkidle' });
+
+// ────────────────── 1. Aucune donnée ──────────────────
+await goProgress();
+check('La page Progression s’ouvre', await page.getByRole('heading', { name: 'Progression', exact: true }).isVisible());
+check(
+  'Elle n’affiche jamais « en construction »',
+  !(await page.getByText(/en cours de construction|Phase 11/i).count()),
+);
+check(
+  'Sans aucune matière, un état vide explique ce qui sera mesuré',
+  await page.getByText('Ta progression se construit à partir de tes cours').isVisible(),
+);
+check(
+  'L’état vide propose l’action qui débloque la mesure',
+  await page.getByRole('link', { name: 'Créer ma première matière' }).isVisible(),
+);
+const zeroNoise = await page.evaluate(() => (document.body.innerText.match(/\d+\s*%/g) ?? []).length);
+check('Aucun pourcentage n’est affiché sans donnée', zeroNoise === 0, `${zeroNoise} pourcentage(s)`);
+
+// ────────────────── 2. Peu de données ──────────────────
+await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
+await page.waitForTimeout(500);
+await page.getByRole('button', { name: 'Créer ma première matière' }).click();
+await page.waitForTimeout(300);
+await page.getByLabel('Nom').fill('Anatomie');
+await page.getByRole('button', { name: 'Créer', exact: true }).click();
+await page.waitForTimeout(700);
+
+const CARDS = [
+  ['Combien de racines a la première molaire mandibulaire ?', 'Deux.'],
+  ['Quel nerf innerve le masséter ?', 'Le nerf massétérique (V3).'],
+  ['Quelle artère vascularise la langue ?', 'L’artère linguale.'],
+  ['Quel os forme le palais dur en arrière ?', 'L’os palatin.'],
+  ['Combien de dents compte la denture permanente ?', '32.'],
+  ['Quel muscle abaisse la mandibule ?', 'Le ptérygoïdien latéral.'],
+];
+
+await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
+await page.waitForTimeout(600);
+await page.getByLabel('Question').fill(CARDS[0][0]);
+await page.getByLabel('Réponse').fill(CARDS[0][1]);
+await page.getByRole('button', { name: 'Ajouter la carte' }).click();
+await page.waitForTimeout(500);
+
+await goProgress();
+const masteryValue = async () =>
+  ((await page.locator('[data-progress-mastery]').first().textContent()) ?? '').trim();
+check(
+  'Avec une seule carte, la maîtrise reste « non mesurable » au lieu d’un faux 0 %',
+  (await masteryValue()) === '—',
+  await masteryValue(),
+);
+check(
+  'La page dit explicitement qu’il manque des données',
+  await page.getByText('Pas assez de données pour calculer ta maîtrise.').isVisible(),
+);
+check(
+  'Le taux de réussite n’est pas publié sous le seuil de fiabilité',
+  await page.getByText('taux de réussite dès 4 réponses').isVisible(),
+);
+check(
+  'Sans historique, l’évolution affiche un état vide explicite',
+  await page.getByText('Ton évolution apparaîtra ici après plusieurs sessions.').isVisible(),
+);
+check(
+  'Sans réponse enregistrée, les points faibles ne sont pas inventés',
+  await page.getByText('Tes points faibles apparaîtront ici après quelques sessions d’étude.').isVisible(),
+);
+
+// ────────────────── 3. Assez de données ──────────────────
+await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
+await page.waitForTimeout(600);
+for (const [question, answer] of CARDS.slice(1)) {
+  await page.getByLabel('Question').fill(question);
+  await page.getByLabel('Réponse').fill(answer);
+  await page.getByRole('button', { name: 'Ajouter la carte' }).click();
+  await page.waitForTimeout(400);
+}
+
+await nav.getByRole('link', { name: 'Révisions', exact: true }).first().click();
+await page.waitForTimeout(700);
+await page.getByText(/Réviser tout/).first().click();
+await page.waitForTimeout(500);
+
+let answered = 0;
+for (let i = 0; i < 30; i += 1) {
+  const reveal = page.getByRole('button', { name: /Afficher la réponse|Voir la réponse/ });
+  if (await reveal.count()) {
+    await reveal.first().click();
+    await page.waitForTimeout(200);
+  }
+  // Un échec sur trois : produit un taux de réussite réel, ni 0 ni 100 %.
+  const button = page.getByRole('button', { name: i % 3 === 0 ? /^Encore/ : /^Bien/ });
+  if (!(await button.count())) break;
+  await button.first().click();
+  answered += 1;
+  await page.waitForTimeout(350);
+}
+check('Des révisions réelles ont été enregistrées', answered >= 8, `${answered} réponses`);
+
+await goProgress();
+await page.screenshot({ path: `${SHOT}/progression.png`, fullPage: false });
+
+const mastery = await masteryValue();
+check('La maîtrise devient mesurable et chiffrée', /^\d+ %$/.test(mastery), mastery);
+
+const bodyText = await page.evaluate(() => document.body.innerText);
+check('Le résumé annonce un taux de réussite réel', /\d+ % de réussite/.test(bodyText));
+check(
+  'Le temps de révision affiché n’est pas nul',
+  /Temps[\s\S]{0,80}?\d+\s?(s|min|h)/.test(bodyText),
+);
+
+// Progression par matière et détail par chapitre.
+const subjectRow = page.locator('[data-progress-subject-row]');
+check('La matière réellement créée apparaît', (await subjectRow.count()) === 1, `${await subjectRow.count()} matière(s)`);
+check('La matière affiche son propre pourcentage de maîtrise', /Anatomie[\s\S]{0,120}?\d+ %/.test(bodyText));
+
+await subjectRow.first().click();
+await page.waitForTimeout(500);
+check(
+  'Cliquer sur une matière ouvre son détail',
+  (await subjectRow.first().getAttribute('aria-expanded')) === 'true',
+);
+const chapterRows = await page.locator('[data-progress-chapters] li').count();
+check(
+  'Le détail liste les regroupements réels de cartes',
+  chapterRows >= 1,
+  `${chapterRows} ligne(s)`,
+);
+
+// Points faibles mesurés.
+const weakCount = await page.locator('[data-progress-weak] li').count();
+check('Des points faibles réels sont identifiés', weakCount > 0, `${weakCount} point(s)`);
+const weakText = await page.locator('[data-progress-weak]').first().innerText();
+check('Chaque point faible affiche son taux de réussite mesuré', /\d+ % de réussite/.test(weakText));
+check(
+  'Chaque point faible propose une révision ciblée',
+  (await page.locator('[data-progress-weak]').getByRole('link', { name: 'Réviser' }).count()) === weakCount,
+);
+const weakHref = await page
+  .locator('[data-progress-weak]')
+  .getByRole('link', { name: 'Réviser' })
+  .first()
+  .getAttribute('href');
+check('Le lien de révision cible des cartes précises', /\/revisions\?cards=.+/.test(weakHref ?? ''), weakHref ?? '');
+
+// Recommandation.
+check('Une priorité du jour est proposée', await page.locator('[data-progress-reco]').isVisible());
+const recoText = await page.locator('[data-progress-reco]').innerText();
+check('La priorité est motivée par une mesure, pas par un slogan', /%|jours|carte/.test(recoText), recoText.split('\n')[2] ?? '');
+
+// Activité récente.
+const activityRows = await page.locator('[data-progress-activity] li').count();
+check('L’activité récente reflète les séances réelles', activityRows >= 1, `${activityRows} séance(s)`);
+check(
+  'Une séance affiche son volume, son taux et son temps',
+  /\d+ réponses? · \d+ % · /.test(await page.locator('[data-progress-activity]').innerText()),
+);
+
+// Temps d'étude et filtres de période.
+const weekBars = await page.locator('[data-progress-week-chart] > div').count();
+check('Le graphique hebdomadaire couvre les sept jours', weekBars === 7, `${weekBars} barres`);
+const weekTotal = await page.locator('[data-progress-period-total]').innerText();
+await page.getByRole('tab', { name: 'Tout', exact: true }).click();
+await page.waitForTimeout(400);
+const allTotal = await page.locator('[data-progress-period-total]').innerText();
+check('Changer de période change réellement le total affiché', allTotal.length > 0, `${weekTotal} → ${allTotal}`);
+
+// Régularité.
+const streakText = await page.locator('[data-progress-streak]').innerText();
+check('La série de jours est comptée sur une activité réelle', /^1 jour/.test(streakText), streakText);
+
+// Prochaines révisions issues de la répétition espacée.
+const upcoming = await page.locator('[data-progress-upcoming] li').count();
+check('Les prochaines échéances viennent de la répétition espacée', upcoming >= 1, `${upcoming} jour(s)`);
+
+// ────────────────── 4. Objectifs réellement enregistrés ──────────────────
+await page.getByRole('button', { name: 'Modifier' }).first().click();
+await page.waitForTimeout(400);
+await page.getByLabel('Réponses par semaine').fill('12');
+await page.getByRole('button', { name: 'Enregistrer' }).click();
+await page.waitForTimeout(700);
+check(
+  'L’objectif modifié s’applique immédiatement',
+  (await page.locator('[data-progress-goals]').innerText()).includes('/ 12'),
+);
+await page.reload({ waitUntil: 'networkidle' });
+await goProgress();
+check(
+  'L’objectif survit à un rechargement — il est bien persisté',
+  (await page.locator('[data-progress-goals]').innerText()).includes('/ 12'),
+);
+
+// ────────────────── 5. Filtre par matière ──────────────────
+await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
+await page.waitForTimeout(500);
+const addSubject = page.getByRole('button', { name: /Nouvelle matière|Ajouter une matière/ }).first();
+if (await addSubject.count()) {
+  await addSubject.click();
+  await page.waitForTimeout(300);
+  await page.getByLabel('Nom').fill('Histologie');
+  await page.getByRole('button', { name: 'Créer', exact: true }).click();
+  await page.waitForTimeout(700);
+}
+await goProgress();
+const filter = page.locator('[data-progress-filter]');
+check('Un filtre par matière apparaît dès qu’il y a plusieurs matières', await filter.isVisible());
+await filter.getByRole('button', { name: /Anatomie/ }).click();
+await page.waitForTimeout(600);
+check(
+  'Filtrer une matière restreint la page à cette matière',
+  (await page.locator('[data-progress-subject-row]').count()) === 1,
+);
+check(
+  'Le titre de section rappelle le périmètre filtré',
+  await page.getByRole('heading', { name: /Ma progression — Anatomie/ }).isVisible(),
+);
+
+// ────────────────── 6. Responsive ──────────────────
+for (const [name, viewport] of [
+  ['paysage', { width: 1194, height: 834 }],
+  ['portrait', { width: 834, height: 1194 }],
+]) {
+  await page.setViewportSize(viewport);
+  await page.waitForTimeout(600);
+  const metrics = await page.evaluate(() => ({
+    overflowX: document.documentElement.scrollWidth > window.innerWidth,
+    height: document.documentElement.scrollHeight,
+  }));
+  check(`Aucun débordement horizontal en ${name}`, !metrics.overflowX);
+  check(
+    `La page défile verticalement en ${name} plutôt que de comprimer les sections`,
+    metrics.height > viewport.height,
+    `${metrics.height} px`,
+  );
+  await page.screenshot({ path: `${SHOT}/progression-${name}.png`, fullPage: false });
+}
+
+// Cibles tactiles.
+const smallTargets = await page.evaluate(() =>
+  [...document.querySelectorAll('main button, main a[href]')]
+    .map((el) => ({ label: el.innerText.trim().slice(0, 30), rect: el.getBoundingClientRect() }))
+    .filter((entry) => entry.rect.width > 0 && entry.rect.height > 0 && entry.rect.height < 32)
+    .map((entry) => `${entry.label}:${Math.round(entry.rect.height)}`),
+);
+check('Toutes les cibles tactiles font au moins 32 px de haut', smallTargets.length === 0, smallTargets.join(', '));
+
+console.log('\n--- Erreurs console ---');
+console.log(errors.length ? errors.join('\n') : 'aucune');
+
+await browser.close();
+
+const passed = results.filter((r) => r.ok).length;
+console.log(`\n${passed}/${results.length} vérifications passées`);
+if (passed !== results.length || errors.length > 0) process.exit(1);

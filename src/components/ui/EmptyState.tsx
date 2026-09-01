@@ -18,7 +18,10 @@ export function EmptyState({
 }) {
   return (
     <FadeUp className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] px-6 py-12 text-center">
-      {icon && <div className="mb-3 text-3xl opacity-70">{icon}</div>}
+      {/* `flex justify-center` et pas seulement `text-center` : la preflight
+          Tailwind passe les <svg> en `display: block`, un simple
+          alignement de texte les laissait collés à gauche. */}
+      {icon && <div className="mb-3 flex justify-center text-3xl opacity-70">{icon}</div>}
       <h3 className="text-[1.02rem] mb-1.5">{title}</h3>
       {description && (
         <p className="mx-auto max-w-md text-[0.88rem] leading-relaxed text-[var(--ink-soft)]">

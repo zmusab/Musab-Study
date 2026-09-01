@@ -29,7 +29,7 @@ const COMPACT_GROUPS = 2;
 const COMPACT_PER_GROUP = 5;
 /** Plafond du décalage de cascade : au-delà, l'attente se verrait. */
 const MAX_STAGGER = 12;
-/** Durée totale de la cascade de sortie — alignée sur `.anatomy-reveal-out`. */
+/** Durée totale de la cascade de sortie — alignée sur `.reveal-out`. */
 const COLLAPSE_MS = 280;
 
 interface DisplayGroup {
@@ -150,7 +150,7 @@ export function StructureCatalogue({
               data-touch-target
               className={cls(
                 'flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--surface-2)]',
-                headerIsNew && (collapsing ? 'anatomy-reveal-out' : 'anatomy-reveal'),
+                headerIsNew && (collapsing ? 'reveal-out' : 'reveal'),
               )}
               style={revealStyle(headerIndex)}
             >
@@ -185,7 +185,7 @@ export function StructureCatalogue({
                   return (
                     <li
                       key={structure.id}
-                      className={cls(isNew && (collapsing ? 'anatomy-reveal-out' : 'anatomy-reveal'))}
+                      className={cls(isNew && (collapsing ? 'reveal-out' : 'reveal'))}
                       style={revealStyle(index)}
                     >
                       <button
@@ -240,7 +240,7 @@ export function StructureCatalogue({
         >
           {/* La clé fait rejouer le fondu au changement de libellé : le texte
               du bouton ne saute pas d'un mot à l'autre. */}
-          <span key={expanded ? 'less' : 'more'} className="anatomy-label-swap">
+          <span key={expanded ? 'less' : 'more'} className="label-swap">
             {expanded ? 'Voir moins' : `Voir plus — ${hidden} structure${hidden > 1 ? 's' : ''}`}
           </span>
           <span
