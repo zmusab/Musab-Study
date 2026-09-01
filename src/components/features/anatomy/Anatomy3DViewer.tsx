@@ -21,6 +21,7 @@ import {
 } from '@/services/anatomy/visibility';
 import assetManifest from '@/data/anatomy/assetManifest.json';
 import { layoutDots, placeDotLabel, type DotAnchor } from '@/services/anatomy/dotLayout';
+import { systemOf } from '@/services/anatomy/systemColors';
 import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
 
 /**
@@ -75,6 +76,13 @@ const FEEDBACK_EMISSIVE: Record<string, string> = {
  * s'écartent à l'écran et réapparaissent une à une, sans réglage manuel.
  */
 const DOT_MIN_DISTANCE = 36;
+
+/**
+ * Nombre de structures ABSORBÉES à partir duquel un point porte l'anneau de
+ * regroupement. À 2, l'anneau signale « au moins trois structures ici » ;
+ * une simple paire reste un point ordinaire (voir `DotProjector`).
+ */
+const CLUSTER_MIN_MERGED = 2;
 
 /**
  * Direction caméra → cible pour chaque vue anatomique, dans le repère
@@ -225,13 +233,24 @@ function SystemModel({
       material.opacity = visual.opacity;
       material.depthWrite = visual.opacity > 0.6;
       // La correction du mode apprentissage se lit SUR LE MODÈLE : la bonne
-      // structure vire au vert, la mauvaise réponse au rouge. Hors
-      // apprentissage, on garde la mise en évidence ambrée de la sélection.
-      material.emissive = new THREE.Color(FEEDBACK_EMISSIVE[visual.feedback ?? 'none'] ?? '#000000');
-      if (visual.feedback) material.emissiveIntensity = 0.85;
-      else {
-        material.emissive = new THREE.Color(visual.highlighted ? '#ffd166' : '#000000');
-        material.emissiveIntensity = visual.highlighted ? 0.35 : 0;
+      // structure vire au vert, la mauvaise réponse au rouge. Ces deux-là
+      // DOIVENT écraser la couleur du système — c'est une correction, elle
+      // prime sur l'identité.
+      if (visual.feedback) {
+        material.emissive = new THREE.Color(FEEDBACK_EMISSIVE[visual.feedback] ?? '#000000');
+        material.emissiveIntensity = 0.85;
+      } else if (visual.highlighted) {
+        // La sélection, elle, fait briller la structure DANS SA PROPRE
+        // COULEUR plutôt que sous un vernis ambré. L'ancien `#ffd166`
+        // repeignait la veine jugulaire en crème au moment précis où on
+        // venait de la choisir pour sa couleur : le repère bleu/rouge de
+        // l'atlas disparaissait pile quand il servait. Le reste du modèle
+        // étant déjà estompé, la sélection reste évidente sans ce vernis.
+        material.emissive.copy(material.color);
+        material.emissiveIntensity = 0.42;
+      } else {
+        material.emissive = new THREE.Color('#000000');
+        material.emissiveIntensity = 0;
       }
     });
   }, [cloned, structuresById, activeSystems, selectedId, isolated, learning]);
@@ -387,9 +406,15 @@ function DotProjector({
       // dizaines de « +3 » au-dessus du modèle le transformaient en tableau
       // de bord technique. Le nombre exact reste annoncé aux lecteurs
       // d'écran via `aria-label`, et zoomer sépare réellement le groupe.
+      //
+      // L'anneau n'apparaît qu'à partir de TROIS structures confondues
+      // (`merged >= 2`). Un point qui n'en cache qu'une seule autre — le
+      // « +1 » — ne mérite pas de décoration : il ajoutait du bruit sans rien
+      // apprendre, et un zoom léger sépare de toute façon la paire.
+      const clustered = dot.merged.length >= CLUSTER_MIN_MERGED;
       const ring = badgeRefs.current.get(dot.id);
-      if (ring) ring.style.display = dot.merged.length > 0 ? '' : 'none';
-      if (el) el.setAttribute('data-anatomy-cluster', dot.merged.length > 0 ? String(dot.merged.length + 1) : '');
+      if (ring) ring.style.display = clustered ? '' : 'none';
+      if (el) el.setAttribute('data-anatomy-cluster', clustered ? String(dot.merged.length + 1) : '');
       if (dot.id === activeId) activeDot = dot;
     }
 
@@ -487,6 +512,7 @@ function DotOverlay({
         if (!structure) return null;
         const isSelected = selectedId === id;
         const feedback = feedbackById.get(id) ?? null;
+        const system = systemOf(structure);
         return (
           <button
             key={id}
@@ -508,7 +534,7 @@ function DotOverlay({
                 ? `Bonne réponse : ${structure.name}`
                 : feedback === 'incorrect'
                   ? `Réponse incorrecte : ${structure.name}`
-                  : structure.name
+                  : `${structure.name} — ${system.label}`
             }
             data-anatomy-dot
             data-anatomy-feedback={feedback ?? undefined}
@@ -538,19 +564,31 @@ function DotOverlay({
               style={{ display: 'none', width: 20, height: 20 }}
               className="pointer-events-none absolute rounded-full border border-white/30"
             />
-            {/* Pastille visible : petite au repos, franche à la sélection. */}
+            {/* Pastille visible : petite au repos, franche à la sélection.
+                Au repos elle porte la COULEUR DE SON SYSTÈME — la même que le
+                maillage qu'elle désigne (palette partagée). Un point ivoire
+                est un os, un point bleu une veine : la lecture du modèle
+                commence avant même de cliquer. La correction du mode
+                apprentissage et la sélection priment, elles doivent rester
+                reconnaissables au premier regard. */}
             <span
               aria-hidden
               className={
-                'block rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.35)] transition-all duration-150 ' +
+                'block rounded-full transition-all duration-150 ' +
                 (feedback === 'correct'
-                  ? 'h-3.5 w-3.5 bg-[#3ec46d] ring-2 ring-white'
+                  ? 'h-3.5 w-3.5 bg-[#3ec46d] ring-2 ring-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]'
                   : feedback === 'incorrect'
-                    ? 'h-3.5 w-3.5 bg-[#e05a5a] ring-2 ring-white'
+                    ? 'h-3.5 w-3.5 bg-[#e05a5a] ring-2 ring-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]'
                     : isSelected
-                      ? 'h-3.5 w-3.5 bg-[var(--accent)] ring-2 ring-white'
-                      : 'h-2 w-2 bg-white/70 hover:h-3 hover:w-3 hover:bg-[var(--accent)]')
+                      ? 'h-3.5 w-3.5 bg-[var(--accent)] ring-2 ring-white shadow-[0_0_0_1px_rgba(0,0,0,0.45)]'
+                      : // Halo clair PUIS liseré sombre : un point ivoire sur
+                        // l'os et un point rouge sur le muscle ont tous deux
+                        // besoin de se détacher de leur propre tissu, qui a
+                        // justement la même teinte qu'eux.
+                        'h-2 w-2 shadow-[0_0_0_1.5px_rgba(255,255,255,0.85),0_0_0_2.5px_rgba(0,0,0,0.5)] hover:h-3 hover:w-3')
               }
+              data-anatomy-dot-system={feedback || isSelected ? undefined : system.key}
+              style={feedback || isSelected ? undefined : { backgroundColor: system.hex }}
             />
           </button>
         );

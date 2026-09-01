@@ -2,15 +2,8 @@ import { useMemo, useState } from 'react';
 import { Icon, Input } from '@/components/ui';
 import { StructureThumbnail } from './StructureThumbnail';
 import { searchItems, type SearchableItem } from '@/services/search';
-import type { AnatomyCategory, AnatomyStructure, ID } from '@/types';
-
-const CATEGORY_LABEL: Record<AnatomyCategory, string> = {
-  squelette: 'Os',
-  muscles: 'Muscle',
-  nerfs: 'Nerf',
-  vaisseaux: 'Vaisseau',
-  organes: 'Organe',
-};
+import { systemOf } from '@/services/anatomy/systemColors';
+import type { AnatomyStructure, ID } from '@/types';
 
 /**
  * Recherche « très visible » (§7) — réutilise le moteur approximatif déjà
@@ -22,7 +15,9 @@ const CATEGORY_LABEL: Record<AnatomyCategory, string> = {
  *
  * Chaque résultat porte la VIGNETTE du maillage réel de la structure (voir
  * `StructureThumbnail`) : on voit à quoi ressemble l'os ou le muscle avant de
- * cliquer. Les structures sans géométrie affichent une pastille neutre.
+ * cliquer — jamais une icône ni un emoji. Les structures sans géométrie
+ * affichent une pastille neutre annoncée comme telle. Le système est rappelé
+ * par sa couleur de palette, la même que celle du maillage dans le modèle.
  */
 export function AnatomySearchBar({
   structures,
@@ -78,11 +73,12 @@ export function AnatomySearchBar({
         ) : results.length === 0 ? (
           <p className="px-1 py-3 text-[0.78rem] text-[var(--ink-faint)]">Aucun résultat.</p>
         ) : (
-          <ul className="flex flex-col gap-1">
+          <ul data-anatomy-search-results className="flex flex-col gap-1">
             {results.map((result) => {
               const isSelected = result.id === selectedId;
               const structure = byId.get(result.id);
               if (!structure) return null;
+              const system = systemOf(structure);
               return (
                 <li key={result.id}>
                   <button
@@ -101,9 +97,19 @@ export function AnatomySearchBar({
                       <span className="block text-[0.84rem] font-medium leading-tight text-[var(--ink)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
                         {result.title}
                       </span>
-                      <span className="mt-0.5 block truncate text-[0.72rem] text-[var(--ink-faint)]">
-                        {CATEGORY_LABEL[structure.category]}
-                        {result.subtitle ? ` · ${result.subtitle}` : ''}
+                      {/* Système d'appartenance, avec sa pastille de
+                          couleur : le même code que sur le modèle et dans
+                          l'exploration, donc reconnaissable sans le lire. */}
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[0.72rem] text-[var(--ink-faint)]">
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+                          style={{ backgroundColor: system.hex }}
+                        />
+                        <span className="truncate">
+                          {system.label}
+                          {result.subtitle ? ` · ${result.subtitle}` : ''}
+                        </span>
                       </span>
                     </span>
                   </button>

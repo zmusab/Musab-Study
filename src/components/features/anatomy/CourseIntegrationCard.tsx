@@ -27,19 +27,33 @@ export const CourseIntegrationCard = memo(function CourseIntegrationCard({
     <section className="anatomy-card">
       <h2 className="anatomy-card-title">Intégration cours</h2>
 
+      {/* États VIDES centrés plutôt qu'un paragraphe en haut suivi d'un grand
+          blanc : la carte partage sa ligne avec des cartes plus hautes, et un
+          vide de 300 px donnait une impression d'inachevé. */}
       {!structure ? (
-        <p className="anatomy-card-hint">
-          Sélectionne une structure pour voir si elle apparaît dans tes cours importés. Toutes les informations
-          affichées viennent de tes PDF, avec la page source cliquable — jamais inventées.
-        </p>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--ink-faint)]">
+            <Icon name="notes" size={20} />
+          </span>
+          <p className="text-[0.88rem] font-medium text-[var(--ink-soft)]">Relie l’anatomie à tes cours</p>
+          <p className="max-w-[24rem] text-[0.78rem] leading-snug text-[var(--ink-faint)]">
+            Sélectionne une structure pour voir si elle apparaît dans tes cours importés. Tout vient de tes PDF, avec
+            la page source cliquable — jamais inventé.
+          </p>
+        </div>
       ) : loading ? (
         <p className="anatomy-card-hint">Lecture de tes cours…</p>
       ) : count === 0 ? (
-        <p className="anatomy-card-hint">
-          Aucune fiche générée depuis tes cours pour{' '}
-          <span className="font-medium text-[var(--ink)]">{structure.name}</span>. Ouvre l’onglet « Informations » du
-          panneau pour en générer une : les passages utilisés seront listés ici, avec leur page.
-        </p>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--ink-faint)]">
+            <Icon name="notes" size={20} />
+          </span>
+          <p className="max-w-[24rem] text-[0.8rem] leading-snug text-[var(--ink-faint)]">
+            Aucune fiche générée depuis tes cours pour{' '}
+            <span className="font-medium text-[var(--ink-soft)]">{structure.name}</span>. Ouvre l’onglet
+            « Informations » du panneau pour en générer une : les passages utilisés seront listés ici, avec leur page.
+          </p>
+        </div>
       ) : (
         <>
           <p className="anatomy-card-hint">

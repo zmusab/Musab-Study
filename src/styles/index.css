@@ -251,6 +251,59 @@
   .pl-safe { padding-left: env(safe-area-inset-left); }
   .pr-safe { padding-right: env(safe-area-inset-right); }
 
+  /*
+   * RÉVÉLATION PROGRESSIVE (« Voir plus » / « Voir moins »).
+   *
+   * Uniquement `opacity` et `transform` : ce sont les deux seules propriétés
+   * que le compositeur anime sans recalculer la mise en page, donc sans
+   * disputer le fil principal au rendu 3D voisin. Aucune animation de
+   * hauteur, de marge ou de `filter` — c'est ce qui ferait saccader le
+   * modèle pendant que la carte s'agrandit.
+   *
+   * Le décalage (`--reveal-index`) crée la cascade : chaque élément entre
+   * légèrement après le précédent, plafonné pour que le dernier d'une longue
+   * liste n'attende pas une seconde.
+   */
+  @keyframes anatomy-reveal-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 7px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @keyframes anatomy-reveal-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      opacity: 0;
+      transform: translate3d(0, -5px, 0);
+    }
+  }
+
+  .anatomy-reveal {
+    animation: anatomy-reveal-in 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    animation-delay: calc(var(--reveal-index, 0) * 26ms);
+  }
+
+  /* Repli : la cascade s'inverse, plus courte — sortir doit être plus vif
+     qu'entrer, sinon l'interface paraît lente. */
+  .anatomy-reveal-out {
+    animation: anatomy-reveal-out 130ms ease-in both;
+    animation-delay: calc(var(--reveal-index, 0) * 14ms);
+    pointer-events: none;
+  }
+
+  /* Le libellé du bouton change de texte : un fondu court évite le saut. */
+  .anatomy-label-swap {
+    animation: anatomy-reveal-in 160ms ease-out both;
+  }
+
   /* Le défilement tactile ne doit pas entraîner la page derrière. */
   .scroll-contain {
     overscroll-behavior: contain;
@@ -269,6 +322,11 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    /* Le DÉCALAGE compte autant que la durée : sans cette ligne, une cascade
+       à 26 ms par élément ferait encore apparaître le dernier item une demi-
+       seconde plus tard, ce qui est exactement le mouvement dont on ne veut
+       pas ici. */
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;

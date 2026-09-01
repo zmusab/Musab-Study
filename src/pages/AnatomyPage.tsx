@@ -613,11 +613,19 @@ export function AnatomyPage() {
           viewport 3D doit rester la zone dominante de l'écran. Chaque carte
           défile en interne plutôt que de pousser le modèle vers le haut. */}
       {/*
-        CARTES ANATOMIQUES (§4/§19) — cinq cartes RÉELLES, visibles en même
-        temps, sur deux lignes. Volontairement PAS une barre d'onglets : on
-        doit comprendre d'un coup d'œil ce que la section propose. Si elles
-        ne tiennent pas dans la hauteur restante, la page défile — c'est
-        assumé, et préférable à des cartes écrasées.
+        CARTES ANATOMIQUES — cinq cartes RÉELLES, visibles en même temps.
+        Volontairement PAS une barre d'onglets : on doit comprendre d'un coup
+        d'œil ce que la section propose. Si elles ne tiennent pas dans la
+        hauteur restante, la page défile — c'est assumé, et préférable à des
+        cartes écrasées.
+
+        ORDRE = PRIORITÉ D'ÉTUDE, pas ordre d'écriture. Après le modèle 3D
+        lui-même viennent l'exploration par région (par où l'on entre dans
+        une zone), puis le MODE APPRENTISSAGE — c'est lui qui fait réviser,
+        il passe donc devant l'isolation, qui n'est qu'un réglage de vue.
+        L'INTÉGRATION COURS suit : relier une structure à ses propres
+        documents vaut mieux qu'une combinaison de calques. Aucune
+        fonctionnalité n'est retirée, seul le rang change.
       */}
       <div
         className="grid grid-cols-1 gap-4 border-t border-[var(--line)] p-4 sm:grid-cols-2 xl:grid-cols-3"
@@ -636,14 +644,6 @@ export function AnatomyPage() {
           onSelectStructure={selectStructure}
         />
 
-        <IsolationCard
-          structure={selectedStructure}
-          isolated={isolated}
-          onIsolate={() => setIsolated(true)}
-          onRestore={() => setIsolated(false)}
-          onResetView={resetView}
-        />
-
         <section className="anatomy-card">
           <h2 className="anatomy-card-title">Mode apprentissage</h2>
           <LearningModeCard
@@ -659,6 +659,19 @@ export function AnatomyPage() {
           />
         </section>
 
+        <IsolationCard
+          structure={selectedStructure}
+          isolated={isolated}
+          onIsolate={() => setIsolated(true)}
+          onRestore={() => setIsolated(false)}
+          onResetView={resetView}
+        />
+
+        <CourseIntegrationCard
+          structure={selectedStructure}
+          citations={selectedCitations ?? null}
+          loading={selectedCitations === undefined && selectedId !== null}
+        />
         <CombinationsCard
           combinations={COMBINATIONS}
           allCategories={ALL_CATEGORIES}
@@ -668,11 +681,6 @@ export function AnatomyPage() {
           onHideAll={hideAll}
         />
 
-        <CourseIntegrationCard
-          structure={selectedStructure}
-          citations={selectedCitations ?? null}
-          loading={selectedCitations === undefined && selectedId !== null}
-        />
       </div>
     </div>
   );

@@ -138,6 +138,21 @@ for (const title of ['Exploration par région', 'Mode isolation', 'Mode apprenti
   );
 }
 
+// ORDRE DES CARTES = priorité d'étude (§14). Ce n'est pas cosmétique : le
+// mode apprentissage doit précéder l'isolation, et l'intégration cours
+// précéder les combinaisons. On lit l'ordre RÉEL dans le document.
+const cardOrder = await page.evaluate(() => {
+  const wanted = ['Exploration par région', 'Mode apprentissage', 'Mode isolation', 'Intégration cours', 'Combinaisons'];
+  const titles = [...document.querySelectorAll('.anatomy-card-title')].map((e) => e.textContent.trim());
+  return titles.filter((t) => wanted.includes(t));
+});
+check(
+  'Les cartes suivent l’ordre de priorité demandé',
+  cardOrder.join(' > ') ===
+    'Exploration par région > Mode apprentissage > Mode isolation > Intégration cours > Combinaisons',
+  cardOrder.join(' > '),
+);
+
 // ---------- Corps entier / systèmes par défaut / thème sombre dédié ----------
 check('La page Anatomie 3D s’ouvre', await page.getByText('Anatomie 3D').isVisible());
 // « Tête et cou » apparaît aussi dans l'en-tête de la carte d'exploration :
@@ -216,11 +231,176 @@ check('Ouvrir une région révèle ses sous-régions sur le schéma', subHotspot
 await schema.getByRole('button', { name: /^Crâne/ }).click();
 await page.waitForTimeout(2500);
 check('Le fil d’Ariane descend jusqu’à la sous-région ouverte', await breadcrumbNav.getByText(/Crâne/).isVisible());
-const explorerListItem = page.locator('ul').getByText('Os temporal droit', { exact: true });
+// EXPLORATION COMPLÈTE MAIS PROGRESSIVE (§1/§2/§3).
+// L'état par défaut est COMPACT : quelques catégories, quelques structures.
+// Tout le reste doit rester ATTEIGNABLE — c'est le rôle de « Voir plus ».
+const catalogue = page.locator('[data-anatomy-catalogue]');
+const systemSections = catalogue.locator('[data-anatomy-system]');
+const structureRows = catalogue.locator('[data-anatomy-structure-row]');
+const seeMore = page.locator('[data-anatomy-see-more]');
+
+const compactSections = await systemSections.count();
+const compactRows = await structureRows.count();
+check(
+  'Les structures sont regroupées par catégories de système, pas en liste plate',
+  compactSections >= 2,
+  `${compactSections} catégorie(s)`,
+);
+check(
+  'Chaque catégorie est repliable (en-tête avec état ouvert/fermé)',
+  (await systemSections.first().getByRole('button').first().getAttribute('aria-expanded')) !== null,
+);
+check(
+  'L’état par défaut est compact — toutes les structures ne sont pas déversées d’un coup',
+  compactRows > 0 && compactRows <= 12,
+  `${compactRows} structures listées d’emblée`,
+);
+
+const seeMoreLabel = ((await seeMore.textContent()) ?? '').trim();
+check('Un bouton « Voir plus » annonce ce qui reste', /Voir plus/.test(seeMoreLabel), seeMoreLabel);
+// Le compte annoncé doit être le VRAI reste, pas un nombre décoratif.
+const announced = Number((seeMoreLabel.match(/(\d+)\s+structure/) ?? [])[1] ?? -1);
+const realTotal = await page.evaluate(() => {
+  const hint = [...document.querySelectorAll('p')].find((p) => /structures? dans cette zone/.test(p.textContent));
+  return Number((hint?.textContent.match(/(\d+)/) ?? [])[1] ?? -1);
+});
+check(
+  'Le compte annoncé par « Voir plus » correspond aux structures réellement restantes',
+  announced === realTotal - compactRows,
+  `annoncé ${announced}, réel ${realTotal} - ${compactRows}`,
+);
+
+const cardHeightBefore = await page.locator('[data-anatomy-catalogue]').evaluate((e) => e.getBoundingClientRect().height);
+const pageHeightBefore = await page.evaluate(() => document.documentElement.scrollHeight);
+
+await seeMore.click();
+await page.waitForTimeout(600);
+const expandedSections = await systemSections.count();
+const expandedRows = await structureRows.count();
+check('« Voir plus » révèle davantage de structures', expandedRows > compactRows, `${compactRows} → ${expandedRows}`);
+check(
+  '« Voir plus » révèle aussi les catégories restantes',
+  expandedSections >= compactSections,
+  `${compactSections} → ${expandedSections}`,
+);
+// Rien ne doit être PERDU : ce qui n'est pas listé est dans une catégorie
+// repliée, dont l'en-tête annonce son propre compte réel.
+const reachable = await systemSections.evaluateAll((sections) =>
+  sections.reduce((total, section) => {
+    const header = section.querySelector('button[aria-expanded]');
+    const declared = Number(section.querySelector('[data-anatomy-system-count]')?.textContent ?? 0);
+    const listed = section.querySelectorAll('[data-anatomy-structure-row]').length;
+    // Une catégorie ouverte doit lister tout ce qu'elle annonce ; une
+    // catégorie repliée reste atteignable d'un clic sur son en-tête.
+    return total + (header?.getAttribute('aria-expanded') === 'true' ? listed : declared);
+  }, 0),
+);
+check(
+  'Toutes les structures de la sous-région restent atteignables, aucune n’est perdue',
+  reachable === realTotal,
+  `${reachable} atteignables pour ${realTotal} annoncées`,
+);
+
+const cardHeightAfter = await page.locator('[data-anatomy-catalogue]').evaluate((e) => e.getBoundingClientRect().height);
+const pageHeightAfter = await page.evaluate(() => document.documentElement.scrollHeight);
+check(
+  'La carte grandit réellement au lieu de faire défiler une liste enfermée',
+  cardHeightAfter > cardHeightBefore,
+  `${Math.round(cardHeightBefore)} → ${Math.round(cardHeightAfter)} px`,
+);
+check(
+  'La page s’allonge en conséquence — un défilement vertical est assumé',
+  pageHeightAfter > pageHeightBefore,
+  `${pageHeightBefore} → ${pageHeightAfter} px`,
+);
+
+// L'apparition est ANIMÉE, et uniquement via opacity/transform (§2) : aucune
+// animation de hauteur, de marge ou de filtre qui ferait ramer le modèle 3D.
+const animation = await page.evaluate(() => {
+  const el = document.querySelector('[data-anatomy-catalogue] .anatomy-reveal');
+  if (!el) return null;
+  const style = getComputedStyle(el);
+  return { name: style.animationName, duration: style.animationDuration, delay: style.animationDelay };
+});
+check('Les nouveaux éléments apparaissent en fondu, pas brutalement', animation?.name === 'anatomy-reveal-in', JSON.stringify(animation));
+const staggered = await page.evaluate(() =>
+  new Set(
+    [...document.querySelectorAll('[data-anatomy-catalogue] .anatomy-reveal')].map(
+      (e) => getComputedStyle(e).animationDelay,
+    ),
+  ).size,
+);
+check('L’apparition est en cascade — les délais ne sont pas tous identiques', staggered > 1, `${staggered} délais distincts`);
+const onlyCompositedProps = await page.evaluate(() => {
+  // Les @keyframes sont imbriqués dans les @layer produits par Tailwind :
+  // il faut descendre récursivement, une seule passe ne les voit pas.
+  const collect = (rules, out = []) => {
+    for (const rule of rules) {
+      if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name.startsWith('anatomy-reveal')) out.push(rule);
+      else if (rule.cssRules) collect(rule.cssRules, out);
+    }
+    return out;
+  };
+  const rules = [...document.styleSheets].flatMap((sheet) => {
+    try {
+      return collect(sheet.cssRules);
+    } catch {
+      return [];
+    }
+  });
+  const props = new Set();
+  for (const rule of rules) for (const frame of rule.cssRules) for (const prop of frame.style) props.add(prop);
+  return [...props];
+});
+check(
+  'L’animation n’emploie que des propriétés composées (opacity/transform)',
+  onlyCompositedProps.length > 0 && onlyCompositedProps.every((p) => p === 'opacity' || p === 'transform'),
+  onlyCompositedProps.join(', '),
+);
+
+const explorerListItem = page.locator('[data-anatomy-catalogue]').getByText('Os temporal droit', { exact: true });
 check(
   'Des structures réelles de la sous-région apparaissent dans la carte d’exploration',
   await explorerListItem.first().isVisible(),
 );
+
+// Repli : le bouton change de libellé et la liste revient à l'état compact.
+check('Le bouton devient « Voir moins »', /Voir moins/.test(((await seeMore.textContent()) ?? '').trim()));
+await seeMore.click();
+// La cascade de sortie garde les lignes montées le temps de s'animer : on
+// attend la CONDITION plutôt qu'une durée fixe, qui serait un pari.
+const collapsed = await waitFor(async () => (await structureRows.count()) === compactRows, 5000);
+check(
+  '« Voir moins » ramène réellement à l’état compact',
+  collapsed,
+  `${await structureRows.count()} vs ${compactRows}`,
+);
+await seeMore.click();
+await page.waitForTimeout(500);
+
+// §2 — `prefers-reduced-motion` : la cascade doit disparaître ENTIÈREMENT.
+// Le décalage compte autant que la durée : sans le neutraliser, le dernier
+// élément d'une longue liste apparaîtrait encore une demi-seconde plus tard,
+// c'est-à-dire exactement le mouvement dont on ne veut pas.
+await page.emulateMedia({ reducedMotion: 'reduce' });
+await page.waitForTimeout(200);
+const reducedTiming = await page.evaluate(() => {
+  const el = document.querySelector('[data-anatomy-catalogue] .anatomy-reveal');
+  if (!el) return null;
+  const style = getComputedStyle(el);
+  return { duration: style.animationDuration, delay: style.animationDelay };
+});
+check(
+  'Avec « animations réduites », ni durée ni décalage ne subsistent',
+  reducedTiming !== null &&
+    parseFloat(reducedTiming.duration) <= 0.001 &&
+    parseFloat(reducedTiming.delay) === 0,
+  JSON.stringify(reducedTiming),
+);
+const stillVisible = await page.locator('[data-anatomy-catalogue] .anatomy-reveal').first().isVisible();
+check('Les éléments restent visibles : l’animation est retirée, pas le contenu', stillVisible);
+await page.emulateMedia({ reducedMotion: 'no-preference' });
+await page.waitForTimeout(200);
 // POINTS interactifs (§4/§5) : le modèle ne porte AUCUNE étiquette texte au
 // repos, seulement de petits points. On interroge les points réellement
 // rendus — leur nombre dépend du regroupement, cibler un nom en dur serait
@@ -276,6 +456,60 @@ const tooClose = visibleDots.reduce((n, a, i) => {
   return n;
 }, 0);
 check('Aucun chevauchement entre points (§5)', tooClose === 0, `${tooClose} paire(s) trop proche(s)`);
+
+// §4 — REGROUPEMENT. Aucun compteur visible, et surtout aucun « +1 » : un
+// point qui n'en cache qu'un seul autre reste un point ordinaire.
+const clusterValues = await page.evaluate(() =>
+  [...document.querySelectorAll('[data-anatomy-dot]')]
+    .filter((e) => e.style.display !== 'none')
+    .map((e) => e.getAttribute('data-anatomy-cluster'))
+    .filter((v) => v),
+);
+check(
+  'Aucun point ne signale un regroupement de deux structures (le « +1 » inutile)',
+  clusterValues.every((v) => Number(v) >= 3),
+  clusterValues.join(', ') || 'aucun regroupement à cette échelle',
+);
+const dotDigits = await page.evaluate(() =>
+  [...document.querySelectorAll('[data-anatomy-dot]')]
+    .filter((e) => e.style.display !== 'none')
+    .map((e) => e.innerText.trim())
+    .filter((t) => t.length > 0),
+);
+check('Aucun chiffre n’est écrit à côté des points', dotDigits.length === 0, dotDigits.join(' '));
+
+// §5 — IDENTITÉ VISUELLE PAR SYSTÈME. La pastille d'un point porte la teinte
+// de son système, et cette teinte est celle de la palette partagée avec le
+// convertisseur 3D : la liste, la recherche et le modèle ne peuvent pas
+// diverger.
+const paletteHexes = await page.evaluate(() =>
+  [...document.querySelectorAll('[data-anatomy-dot-system]')].map((e) => ({
+    system: e.getAttribute('data-anatomy-dot-system'),
+    color: getComputedStyle(e).backgroundColor,
+  })),
+);
+const expectedRgb = {
+  os: 'rgb(239, 234, 221)',
+  dents: 'rgb(239, 234, 221)',
+  muscles: 'rgb(212, 134, 142)',
+  nerfs: 'rgb(249, 237, 179)',
+  arteres: 'rgb(225, 108, 108)',
+  veines: 'rgb(111, 160, 206)',
+  organes: 'rgb(234, 197, 206)',
+};
+check(
+  'Chaque point porte la couleur exacte de son système',
+  paletteHexes.length > 0 && paletteHexes.every((d) => expectedRgb[d.system] === d.color),
+  paletteHexes
+    .slice(0, 4)
+    .map((d) => `${d.system}=${d.color}`)
+    .join(' '),
+);
+check(
+  'Plusieurs systèmes sont distinguables d’un coup d’œil sur le modèle',
+  new Set(paletteHexes.map((d) => d.system)).size >= 2,
+  [...new Set(paletteHexes.map((d) => d.system))].join(', '),
+);
 
 await page.screenshot({ path: `${SHOT}/anatomy-subregion.png`, fullPage: false });
 
@@ -479,6 +713,14 @@ await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
 await page.waitForTimeout(600);
 const thumbs = await page.locator('img[src^="/anatomy/thumbs/"]').count();
 check('Les résultats de recherche portent la vignette du maillage réel', thumbs > 0, `${thumbs} vignettes`);
+// §6 — aucune icône ni emoji ne tient lieu de représentation : la vignette
+// est un rendu du maillage, et l'émoji ne doit apparaître nulle part dans la
+// liste de résultats.
+const emojiInResults = await page.evaluate(() => {
+  const list = document.querySelector('[data-anatomy-search-results]') ?? document.body;
+  return (list.innerText.match(/\p{Extended_Pictographic}/gu) ?? []).length;
+});
+check('Aucun emoji ne sert de représentation dans les résultats', emojiInResults === 0, `${emojiInResults} emoji(s)`);
 const thumbLoaded = await page
   .locator('img[src^="/anatomy/thumbs/"]')
   .first()
@@ -510,11 +752,29 @@ check(
   thighAsset,
   glbRequests.filter((f) => f.startsWith('cuisse')).join(', ') || 'aucune requête cuisse',
 );
+// La cuisse compte 34 structures réelles : l'état compact en montre une
+// sélection (fémurs + premiers muscles), « Voir plus » donne accès au reste.
+// Les deux moitiés sont vérifiées, pour que « progressif » ne devienne pas
+// « amputé ».
 const thighNamed = await page
-  .waitForFunction(() => document.body.innerText.includes('Sartorius') || document.body.innerText.includes('Gracile'), null, { timeout: 30000 })
+  .waitForFunction(() => document.body.innerText.includes('Fémur droit'), null, { timeout: 30000 })
   .then(() => true)
   .catch(() => false);
 check('La cuisse expose de vraies structures nommées du corps entier', thighNamed);
+
+const thighSeeMore = page.locator('[data-anatomy-see-more]');
+if (await thighSeeMore.count()) {
+  await thighSeeMore.click();
+  const thighDeep = await page
+    .waitForFunction(
+      () => document.body.innerText.includes('Sartorius') || document.body.innerText.includes('Gracile'),
+      null,
+      { timeout: 30000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('« Voir plus » donne accès aux structures profondes de la cuisse, rien n’est amputé', thighDeep);
+}
 await page.screenshot({ path: `${SHOT}/anatomy-cuisse.png`, fullPage: false });
 
 // Navigation corps entier : toutes les régions réellement modélisées sont
@@ -591,6 +851,50 @@ check(
 );
 await page.keyboard.press('Escape');
 await page.waitForTimeout(500);
+
+// ---------- Vaisseaux (§8) : artères et veines réellement distinguées ----------
+// Pas une convention d'affichage seulement : la couleur vient de la palette
+// partagée, et le maillage .glb porte le même facteur de couleur. On vérifie
+// donc que deux vaisseaux voisins du cou ne sont pas peints pareil.
+async function systemOfSearchHit(query) {
+  await page.getByPlaceholder(/Rechercher une structure/).fill(query);
+  await page.waitForTimeout(700);
+  const first = page.locator('[data-anatomy-search-results] li button').first();
+  if (!(await first.count())) return null;
+  await first.dispatchEvent('click');
+  const opened = await closePanelButton(page)
+    .waitFor({ state: 'attached', timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!opened) return null;
+  const chip = page.locator('[data-anatomy-panel-system]').first();
+  const result = {
+    key: await chip.getAttribute('data-anatomy-panel-system'),
+    label: ((await chip.textContent()) ?? '').trim(),
+    color: await chip.locator('span').first().evaluate((e) => getComputedStyle(e).backgroundColor),
+    title: ((await page.locator('[data-anatomy-panel-title]').first().textContent()) ?? '').trim(),
+  };
+  await closePanelButton(page).click();
+  await page.waitForTimeout(400);
+  return result;
+}
+
+const arteryHit = await systemOfSearchHit('artère carotide interne droite');
+const veinHit = await systemOfSearchHit('veine jugulaire interne droite');
+check(
+  'Une artère est présentée comme telle, en rouge',
+  arteryHit?.key === 'arteres' && arteryHit?.color === 'rgb(225, 108, 108)',
+  `${arteryHit?.title} → ${arteryHit?.label} ${arteryHit?.color}`,
+);
+check(
+  'Une veine est présentée comme telle, en bleu',
+  veinHit?.key === 'veines' && veinHit?.color === 'rgb(111, 160, 206)',
+  `${veinHit?.title} → ${veinHit?.label} ${veinHit?.color}`,
+);
+check(
+  'Artères et veines ne partagent pas la même couleur',
+  Boolean(arteryHit && veinHit) && arteryHit.color !== veinHit.color,
+);
 
 // ---------- Dentisterie (§14) : fiche dentaire dérivée du numéro FDI ----------
 await page.getByPlaceholder(/Rechercher une structure/).fill('dent 36');

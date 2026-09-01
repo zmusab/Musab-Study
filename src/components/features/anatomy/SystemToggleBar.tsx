@@ -3,8 +3,24 @@ import { cn } from '@/lib/cn';
 import assetManifest from '@/data/anatomy/assetManifest.json';
 import { StructureThumbnail } from './StructureThumbnail';
 import { pickRepresentative } from '@/services/anatomy/representative';
+import { systemIdentity } from '@/services/anatomy/systemColors';
 import type { AnatomyCategory, AnatomyStructure } from '@/types';
 import type { SystemVisibility } from '@/services/anatomy/visibility';
+
+/**
+ * Bandeau de couleur de chaque système — repris de la palette partagée avec
+ * le modèle 3D, donc de la teinte réelle des maillages. « Vaisseaux » en
+ * porte DEUX, rouge et bleu : la catégorie contient artères et veines, et un
+ * seul rouge laisserait croire qu'elles ne sont pas distinguées (elles le
+ * sont, jusque dans la géométrie).
+ */
+const SWATCH: Record<AnatomyCategory, string> = {
+  squelette: systemIdentity('os').hex,
+  muscles: systemIdentity('muscles').hex,
+  nerfs: systemIdentity('nerfs').hex,
+  vaisseaux: `linear-gradient(180deg, ${systemIdentity('arteres').hex} 0 50%, ${systemIdentity('veines').hex} 50% 100%)`,
+  organes: systemIdentity('organes').hex,
+};
 
 const SYSTEMS: { category: AnatomyCategory; label: string; note?: string }[] = [
   { category: 'squelette', label: 'Squelette' },
@@ -19,7 +35,11 @@ const SYSTEMS: { category: AnatomyCategory; label: string; note?: string }[] = [
     label: 'Système nerveux',
     note: 'Encéphale, tronc cérébral, cervelet et nerfs optiques. Les autres nerfs crâniens et périphériques ne sont pas modélisés dans les données ouvertes : ils restent recherchables comme structures « cours ».',
   },
-  { category: 'vaisseaux', label: 'Vaisseaux' },
+  {
+    category: 'vaisseaux',
+    label: 'Vaisseaux',
+    note: 'Artères en rouge, veines en bleu — la distinction est portée par la géométrie elle-même, pas seulement par le libellé.',
+  },
   { category: 'organes', label: 'Organes' },
 ];
 
@@ -73,6 +93,11 @@ export function SystemToggleBar({
             onClick={() => onToggle(system.category)}
             className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1.5 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-2)]"
           >
+            <span
+              aria-hidden
+              className="h-6 w-1 shrink-0 rounded-full"
+              style={{ background: SWATCH[system.category] }}
+            />
             <StructureThumbnail structure={sample.get(system.category) ?? null} size={24} />
             <span className="flex-1 text-[0.84rem] font-medium leading-tight text-[var(--ink)]" title={system.note}>
               {system.label}

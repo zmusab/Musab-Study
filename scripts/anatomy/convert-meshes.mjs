@@ -49,17 +49,35 @@ const STL_DIR = path.resolve(REPO_ROOT, '..', 'kevin-mattheus-moerman', 'bodypar
 const CATALOG_PATH = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'bodyCatalog.json');
 const OUT_DIR = path.join(REPO_ROOT, 'public', 'anatomy');
 
+/**
+ * Les couleurs ne sont PAS écrites ici : elles viennent de
+ * `src/data/anatomy/systemPalette.json`, que lit également l'interface
+ * (`src/services/anatomy/systemColors.ts`). Une pastille de l'interface et
+ * le maillage correspondant ne peuvent donc pas afficher deux teintes
+ * différentes. `linear` est l'espace du `baseColorFactor` glTF ; le champ
+ * `hex` du même fichier en est l'encodage sRGB, pour le DOM.
+ */
+const PALETTE = JSON.parse(
+  readFileSync(path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'systemPalette.json'), 'utf8'),
+);
+const colorOf = (key) => PALETTE.systems[key].linear;
 const CATEGORY_COLOR = {
-  squelette: [0.86, 0.82, 0.72], // ivoire
-  muscles: [0.66, 0.24, 0.27], // rouge muscle
-  organes: [0.82, 0.56, 0.62], // rose tissu mou
-  nerfs: [0.95, 0.85, 0.45], // jaune nerf
-  vaisseaux: [0.75, 0.15, 0.15],
+  squelette: colorOf('os'),
+  muscles: colorOf('muscles'),
+  organes: colorOf('organes'),
+  nerfs: colorOf('nerfs'),
+  vaisseaux: colorOf('vaisseaux'),
 };
-const VESSEL_COLOR = { artery: [0.75, 0.15, 0.15], vein: [0.16, 0.35, 0.62] };
-/** Artère ou veine : déduit du nom français généré, pas d'un champ saisi à la main. */
+const VESSEL_COLOR = { artery: colorOf('arteres'), vein: colorOf('veines') };
+const VEIN_RE = new RegExp(PALETTE.vesselPatterns.vein, 'i');
+const ARTERY_RE = new RegExp(PALETTE.vesselPatterns.artery, 'i');
+/**
+ * Artère ou veine : déduit du nom français généré, pas d'un champ saisi à la
+ * main. La veine est testée en premier — « sinus coronaire » est un
+ * collecteur veineux et doit rester bleu malgré le mot « coronaire ».
+ */
 const vesselTypeOf = (structure) =>
-  /veine|jugulaire/i.test(structure.name) ? 'vein' : /artère|carotide/i.test(structure.name) ? 'artery' : null;
+  VEIN_RE.test(structure.name) ? 'vein' : ARTERY_RE.test(structure.name) ? 'artery' : null;
 
 /**
  * Parse un fichier STL binaire : 80 octets d'en-tête + uint32 nb triangles +
@@ -277,9 +295,21 @@ function main() {
     byGroup.get(key).push(structure);
   }
 
+  // `--only=<motif>` régénère UNIQUEMENT les groupes dont la clé contient le
+  // motif (ex. `--only=vaisseaux`), en fusionnant le résultat dans le
+  // manifeste existant au lieu de l'écraser. Sert quand seule une couleur ou
+  // une classification change : inutile de reconvertir 26 M de triangles
+  // pour repeindre quatre fichiers.
+  const onlyArg = process.argv.find((a) => a.startsWith('--only='));
+  const only = onlyArg ? onlyArg.slice('--only='.length) : null;
+  const MANIFEST_PATH = path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'assetManifest.json');
+  const previousManifest =
+    only && existsSync(MANIFEST_PATH) ? JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) : [];
+
   let totalTriangles = 0;
-  const manifest = [];
+  const manifest = previousManifest.filter((g) => !g.key.includes(only ?? ''));
   for (const [groupKey, structures] of [...byGroup].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (only && !groupKey.includes(only)) continue;
     const category = structures[0].category;
     const materials = [];
     const materialIndexFor = (structure) => {
@@ -344,10 +374,7 @@ function main() {
   // existent réellement : aucun groupe n'est deviné côté client, donc aucune
   // requête vers un asset inexistant.
   manifest.sort((a, b) => a.key.localeCompare(b.key));
-  writeFileSync(
-    path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'assetManifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
 
   console.log(
     `\nTotal : ${totalTriangles.toLocaleString('fr-FR')} triangles convertis depuis des données réelles ` +

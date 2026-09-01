@@ -13,6 +13,7 @@ import { createFlashcard } from '@/data/repositories/cards';
 import type { AnatomyStructure, Citation, DocumentChunk, ID } from '@/types';
 import type { CardDraft } from '@/services/flashcards/validate';
 import { toothInfo, structureProvenance } from '@/services/anatomy/toothInfo';
+import { systemOf } from '@/services/anatomy/systemColors';
 
 const RETRIEVAL_LIMIT = 8;
 
@@ -208,6 +209,7 @@ export function StructureInfoPanel({
   };
 
   const hasInsufficientCourse = courseSheet === null || (courseSheet && courseSheet.content.startsWith('⚠️'));
+  const system = systemOf(structure);
 
   return (
     <div className="flex h-full flex-col">
@@ -230,6 +232,21 @@ export function StructureInfoPanel({
               {structure.latinName}
             </p>
           )}
+          {/* Système d'appartenance, avec la teinte exacte du maillage : la
+              même pastille que sur le point du modèle et dans l'exploration.
+              Un coup d'œil suffit à savoir si l'on regarde un os, un muscle,
+              une artère ou une veine. */}
+          <p
+            data-anatomy-panel-system={system.key}
+            className="mt-1.5 flex items-center gap-1.5 text-[0.72rem] text-[var(--ink-faint)]"
+          >
+            <span
+              aria-hidden
+              className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+              style={{ backgroundColor: system.hex }}
+            />
+            {system.label}
+          </p>
         </div>
         <button
           type="button"

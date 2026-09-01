@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Icon, Modal } from '@/components/ui';
 import { StructureThumbnail } from './StructureThumbnail';
 import { BodySchema, schemaHasZone, schemaRegionBox } from './BodySchema';
+import { StructureCatalogue } from './StructureCatalogue';
 import { pickRepresentative } from '@/services/anatomy/representative';
 import { summarizeRegions, summarizeSubregions, structuresInSubregion } from '@/services/anatomy/regions';
 import type { AnatomyStructure, ID } from '@/types';
@@ -49,7 +50,13 @@ export function RegionExplorerCard({
     onOpenSubregionProp(id);
   };
 
-  const focusedStructures = focusedSubregion ? structuresInSubregion(structures, focusedSubregion) : [];
+  // Référence STABLE : `StructureCatalogue` réinitialise son état déroulé
+  // quand la liste change d'identité, il ne faut donc pas en recréer une à
+  // chaque rendu (sélection, survol…).
+  const focusedStructures = useMemo(
+    () => (focusedSubregion ? structuresInSubregion(structures, focusedSubregion) : []),
+    [structures, focusedSubregion],
+  );
   const level = focusedSubregion ? 'structures' : regionId ? 'subregions' : 'regions';
 
   const representative = (ids: string[]) =>
@@ -71,7 +78,7 @@ export function RegionExplorerCard({
   const offSchema = subregions.filter((s) => s.meshCount > 0 && !schemaHasZone('sub', s.id));
 
   return (
-    <section className="anatomy-card min-h-[26rem] overflow-hidden">
+    <section className="anatomy-card min-h-[26rem]">
       <div className="flex items-center gap-1.5">
         {level !== 'regions' && (
           <button
@@ -98,7 +105,16 @@ export function RegionExplorerCard({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      {/* Aux niveaux schéma, la zone défile en interne pour que le schéma
+          garde une taille utile. Au niveau STRUCTURES, au contraire, la carte
+          GRANDIT avec la liste et allonge la page : c'est ce que « Voir plus »
+          est censé produire — une liste enfermée dans un cadre qui défile
+          n'aurait aucun intérêt. */}
+      <div
+        className={
+          'flex min-h-0 flex-1 flex-col gap-2 ' + (level === 'structures' ? '' : 'overflow-y-auto')
+        }
+      >
         {level === 'regions' && (
           <BodySchema
             kind="region"
@@ -150,35 +166,20 @@ export function RegionExplorerCard({
         )}
 
         {level === 'structures' && (
-          <ul className="flex shrink-0 flex-col gap-0.5">
-            {focusedStructures.map((structure) => (
-              <li key={structure.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelectStructure(structure.id)}
-                  title={structure.name}
-                  className={
-                    'flex w-full items-center gap-2 rounded-[var(--radius-control)] p-1 text-left text-[0.8rem] transition-colors ' +
-                    (structure.id === selectedId
-                      ? 'bg-[var(--accent-tint)] text-[var(--accent-ink)]'
-                      : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
-                  }
-                >
-                  <StructureThumbnail structure={structure} size={26} />
-                  <span className="truncate">{structure.name}</span>
-                  {!structure.model3dRef && (
-                    <span className="ml-auto shrink-0 text-[0.62rem] text-[var(--ink-faint)]">cours</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="shrink-0">
+            <StructureCatalogue
+              structures={focusedStructures}
+              selectedId={selectedId}
+              onSelectStructure={onSelectStructure}
+            />
+          </div>
         )}
       </div>
 
       {level === 'structures' && (
         <p className="mt-1.5 shrink-0 text-[0.68rem] leading-snug text-[var(--ink-faint)]">
-          Clique sur une structure pour l’explorer.
+          {focusedStructures.length} structure{focusedStructures.length > 1 ? 's' : ''} dans cette zone — clique pour
+          l’explorer.
         </p>
       )}
 

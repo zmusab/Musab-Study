@@ -203,6 +203,34 @@ nerf crânien hormis les nerfs et tractus optiques. Les dents de sagesse
 L'absence de maillage est un état honnête et affiché comme tel, jamais
 comblé par une géométrie inventée.
 
+## Couleurs : une seule source pour la 3D et l'interface
+
+`systemPalette.json` (à côté de ce fichier) est la **source unique** des
+couleurs par système. Trois consommateurs le lisent :
+
+| Consommateur | Champ utilisé | Pourquoi |
+|---|---|---|
+| `scripts/anatomy/convert-meshes.mjs` | `linear` | `baseColorFactor` glTF, espace linéaire |
+| `scripts/anatomy/build-thumbnails.mjs` | `hex` | pixels PNG, interprétés en sRGB |
+| `src/services/anatomy/systemColors.ts` | `hex` | pastilles, liserés et points du DOM |
+
+`hex` est **exactement** l'encodage sRGB de `linear` — un test
+(`tests/core/anatomy-system-colors.test.ts`) le vérifie, de sorte qu'une
+pastille de l'interface et le maillage qu'elle désigne ne peuvent pas
+afficher deux teintes différentes. Convention retenue : os et dents ivoire,
+muscle rouge, système nerveux jaune, artère rouge, veine bleue, organes rose
+tissu.
+
+### Artères et veines
+
+La distinction n'est pas décorative : elle est écrite **dans la géométrie**.
+`vesselPatterns` classe chaque vaisseau d'après son nom français réel, la
+veine étant testée avant l'artère (« sinus coronaire » est un collecteur
+veineux malgré le mot « coronaire »). Les **62 vaisseaux** du catalogue sont
+tous classés — 38 artères, 24 veines, aucun reste — et les quatre fichiers
+`*-vaisseaux.glb` portent deux matériaux distincts. Un test échoue si une
+structure `vaisseaux` cesse d'être classée.
+
 ## Ce qui n'est PAS dans ce jeu de données
 
 La totalité des maillages disponibles est intégrée : il n'y a plus de région

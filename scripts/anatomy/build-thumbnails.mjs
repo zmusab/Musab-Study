@@ -38,14 +38,35 @@ const OUT_DIR = path.join(REPO_ROOT, 'public', 'anatomy', 'thumbs');
 
 const SIZE = 64;
 
-/** Mêmes teintes que les matériaux du visualiseur, pour que la vignette corresponde au modèle. */
-const CATEGORY_RGB = {
-  squelette: [219, 209, 184],
-  muscles: [168, 61, 69],
-  organes: [209, 143, 158],
-  nerfs: [242, 217, 115],
-  vaisseaux: [191, 38, 38],
+/**
+ * Teintes lues dans `src/data/anatomy/systemPalette.json` — le même fichier
+ * que le convertisseur GLB et l'interface. Le PNG écrit ici est interprété
+ * en sRGB par le navigateur : on utilise donc le champ `hex` (sRGB) et non
+ * le `linear` du glTF, pour que la vignette et le maillage affichent
+ * réellement la même couleur à l'écran.
+ */
+const PALETTE = JSON.parse(
+  readFileSync(path.join(REPO_ROOT, 'src', 'data', 'anatomy', 'systemPalette.json'), 'utf8'),
+);
+const rgbOf = (key) => {
+  const hex = PALETTE.systems[key].hex.replace('#', '');
+  return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
 };
+const VEIN_RE = new RegExp(PALETTE.vesselPatterns.vein, 'i');
+const ARTERY_RE = new RegExp(PALETTE.vesselPatterns.artery, 'i');
+
+/**
+ * Clé de système d'une structure — identique à `systemKeyOf` côté interface :
+ * les dents sortent du squelette, les vaisseaux se scindent en artères
+ * (rouge) et veines (bleu) d'après le nom réel de la structure.
+ */
+function systemKeyOf(entry) {
+  if (entry.category === 'squelette') return entry.subregion === 'dents' ? 'dents' : 'os';
+  if (entry.category !== 'vaisseaux') return entry.category;
+  if (VEIN_RE.test(entry.name)) return 'veines';
+  if (ARTERY_RE.test(entry.name)) return 'arteres';
+  return 'vaisseaux';
+}
 
 function parseBinaryStl(buffer) {
   const triCount = buffer.readUInt32LE(80);
@@ -205,7 +226,7 @@ function main() {
     const stl = path.join(STL_DIR, `${entry.fmaId}.stl`);
     if (!existsSync(stl)) continue;
     const tris = parseBinaryStl(readFileSync(stl));
-    const rgb = CATEGORY_RGB[entry.category] ?? [170, 170, 170];
+    const rgb = rgbOf(systemKeyOf(entry));
     const png = renderThumbnail(tris, rgb);
     writeFileSync(path.join(OUT_DIR, `${entry.id}.png`), png);
     written++;

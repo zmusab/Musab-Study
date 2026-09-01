@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Button } from '@/components/ui';
 import { StructureThumbnail } from './StructureThumbnail';
+import { systemOf } from '@/services/anatomy/systemColors';
 import type { AnatomyStructure } from '@/types';
 
 /**
@@ -41,6 +42,15 @@ export const IsolationCard = memo(function IsolationCard({
           </div>
           <div className="text-center">
             <p className="text-[0.9rem] font-medium leading-snug text-[var(--ink)]">{structure.name}</p>
+            {/* Même pastille de système que sur le point du modèle. */}
+            <p className="mt-1 flex items-center justify-center gap-1.5 text-[0.72rem] text-[var(--ink-faint)]">
+              <span
+                aria-hidden
+                className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+                style={{ backgroundColor: systemOf(structure).hex }}
+              />
+              {systemOf(structure).label}
+            </p>
             <p className="mt-1 text-[0.78rem] leading-snug text-[var(--ink-faint)]">
               {isolated ? 'Isolée — tout le reste du modèle est masqué.' : 'Sélectionnée. Isole-la pour masquer le reste.'}
             </p>
