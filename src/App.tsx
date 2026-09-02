@@ -51,6 +51,7 @@ const ProgressionPage = lazy(() =>
   import('@/pages/ProgressionPage').then((m) => ({ default: m.ProgressionPage })),
 );
 const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+const QuizPage = lazy(() => import('@/pages/QuizPage').then((m) => ({ default: m.QuizPage })));
 
 function RouteFallback() {
   return (
@@ -76,17 +77,7 @@ function AnimatedRoutes() {
           <Route path="/ia" element={<ChatPage />} />
           <Route path="/revisions" element={<RevisionsPage />} />
           <Route path="/flashcards" element={<FlashcardsPage />} />
-          <Route
-            path="/quiz"
-            element={
-              <PlaceholderPage
-                title="Quiz"
-                icon="❓"
-                phase="Phase 7"
-                description="Quiz paramétrable par matière, chapitre, nombre de questions, type et difficulté."
-              />
-            }
-          />
+          <Route path="/quiz" element={<QuizPage />} />
           <Route path="/podcast" element={<PodcastPage />} />
           <Route path="/podcast/:episodeId" element={<PodcastEpisodePage />} />
           <Route path="/progression" element={<ProgressionPage />} />
