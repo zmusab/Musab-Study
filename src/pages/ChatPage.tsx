@@ -14,6 +14,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { ChatMessageView } from '@/components/features/chat/ChatMessageView';
+import { AssistantHub, type AssistantExchangeResult } from '@/components/features/assistant/AssistantHub';
 import { useChapters, useSubjects } from '@/hooks/useSubjects';
 import { useProfile } from '@/hooks/useProfile';
 import { db } from '@/data/db';
@@ -93,8 +94,8 @@ export function ChatPage() {
     return chapters?.find((chapter) => chapter.id === chapterId)?.name ?? 'ce chapitre';
   }, [chapterId, chapters]);
 
-  const handleSend = async () => {
-    const trimmed = question.trim();
+  const handleSend = async (overrideText?: string) => {
+    const trimmed = (overrideText ?? question).trim();
     if (trimmed.length === 0 || !subjectId || pending) return;
 
     if (!hasApiKey()) {
@@ -102,7 +103,9 @@ export function ChatPage() {
       return;
     }
 
-    setQuestion('');
+    // Une action rapide de l'Assistant IA (catégorie « Comprendre ») ne
+    // touche pas au champ de saisie : l'étudiant garde son brouillon en cours.
+    if (!overrideText) setQuestion('');
     setStreamed('');
     setPending(trimmed);
     await appendChatMessage({ subjectId, role: 'user', text: trimmed });
@@ -187,6 +190,26 @@ export function ChatPage() {
     }
   };
 
+  /**
+   * Utilisé par les actions « Étudier » de l'Assistant IA (résumer un
+   * chapitre, une fiche de révision, une note, les notions importantes) :
+   * l'appelant a déjà calculé et vérifié sa réponse (`studyChapter`,
+   * `analyzeChapter`, `summarizeNote`) — cette fonction ne fait qu'écrire les
+   * deux messages dans la MÊME conversation que le chat normal, avec
+   * `appendChatMessage`, pour que tout reste visible au même endroit.
+   */
+  const postExchange = async (userText: string, assistant: AssistantExchangeResult) => {
+    if (!subjectId) return;
+    await appendChatMessage({ subjectId, role: 'user', text: userText });
+    await appendChatMessage({
+      subjectId,
+      role: 'assistant',
+      text: assistant.text,
+      provenance: assistant.provenance,
+      citations: assistant.citations ?? [],
+    });
+  };
+
   if (subjects && subjects.length === 0) {
     return (
       <PageTransition>
@@ -237,6 +260,19 @@ export function ChatPage() {
           ))}
         </Select>
       </div>
+
+      {subjectId && (
+        <div className="mb-5">
+          <AssistantHub
+            subjectId={subjectId}
+            chapterId={chapterId}
+            chapters={chapters ?? []}
+            program={profile.program || 'dentisterie'}
+            onAskChat={(promptText) => void handleSend(promptText)}
+            onPostExchange={postExchange}
+          />
+        </div>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl segments={MODES} value={mode} onChange={setMode} size="sm" />
@@ -306,7 +342,7 @@ export function ChatPage() {
         <Button
           loading={pending !== null}
           disabled={question.trim().length === 0}
-          onClick={handleSend}
+          onClick={() => void handleSend()}
         >
           Envoyer
         </Button>

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
@@ -12,6 +12,7 @@ import { db } from '@/data/db';
 import { recordQuizResults } from '@/data/repositories/quiz';
 import { weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
+import { parseQuizDeepLink } from '@/core/quiz/deepLink';
 import {
   buildQuiz,
   summarizeQuiz,
@@ -49,6 +50,8 @@ export function QuizPage() {
   const [answers, setAnswers] = useState<QuizAnswerRecord[]>([]);
   const [result, setResult] = useState<QuizResult | null>(null);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [autoStarted, setAutoStarted] = useState(false);
 
   const quizTables: QuizTables | null = useMemo(
     () => (source ? { ...source.tables, chapterAnalyses } : null),
@@ -90,6 +93,33 @@ export function QuizPage() {
       evaluation,
     }));
   }, [source]);
+
+  // Lien direct depuis l'Assistant IA (« Proposer des QCM », « Vrai/Faux »,
+  // « Examen probable ») — construit le MÊME quiz que le formulaire manuel,
+  // via `buildQuiz`, puis efface les paramètres pour ne pas relancer un quiz
+  // au moindre rechargement de la page.
+  useEffect(() => {
+    if (autoStarted || built || !quizTables) return;
+    const deepLink = parseQuizDeepLink(Object.fromEntries(searchParams));
+    if (!deepLink) return;
+    setAutoStarted(true);
+    const generated = buildQuiz(deepLink.scope, quizTables, {
+      count: deepLink.count,
+      difficulty: deepLink.difficulty,
+      format: deepLink.format,
+      now: new Date(source?.loadedAt ?? Date.now()),
+    });
+    setSearchParams({}, { replace: true });
+    if (generated.blocked) {
+      setBlockedMessage(generated.blocked);
+      return;
+    }
+    setBlockedMessage(null);
+    setBuilt(generated);
+    setAnswers([]);
+    setResult(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quizTables, autoStarted, built, searchParams]);
 
   if (!source) return null;
 

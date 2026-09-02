@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { Button, Card, Icon, SegmentedControl, useConfirm, useToast } from '@/components/ui';
@@ -96,6 +96,17 @@ export function CalendarPage() {
   const [editScope, setEditScope] = useState<SeriesScope>('occurrence');
   const [weekPlanOpen, setWeekPlanOpen] = useState(false);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Lien direct depuis l'Assistant IA (« Préparer une session de révision »)
+  // — ouvre EXACTEMENT le même plan que le bouton « Planifier ma semaine ».
+  useEffect(() => {
+    if (searchParams.get('plan') === 'week') {
+      setWeekPlanOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const availability = useMemo<WeeklyAvailability>(
     () => normalizeAvailability(profile.availability),

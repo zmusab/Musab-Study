@@ -23,3 +23,22 @@ export function extractJsonArray<T>(raw: string): T[] {
     throw new AiRequestError("La réponse de l'IA n'a pas pu être interprétée.", cause);
   }
 }
+
+/** Même principe qu'`extractJsonArray`, pour une réponse attendue comme un unique objet JSON. */
+export function extractJsonObject<T>(raw: string): T {
+  const withoutFences = raw.replace(/```(?:json)?/gi, '').trim();
+  const start = withoutFences.indexOf('{');
+  const end = withoutFences.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) {
+    throw new AiRequestError("La réponse de l'IA n'était pas au format attendu.");
+  }
+  try {
+    const parsed: unknown = JSON.parse(withoutFences.slice(start, end + 1));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('pas un objet');
+    }
+    return parsed as T;
+  } catch (cause) {
+    throw new AiRequestError("La réponse de l'IA n'a pas pu être interprétée.", cause);
+  }
+}
