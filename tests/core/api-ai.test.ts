@@ -222,13 +222,13 @@ describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
     const response = await statusHandler();
     const body = await response.json();
 
-    expect(body).toEqual({ openai: true, gemini: false });
+    expect(body).toMatchObject({ openai: true, gemini: false, openaiConfigured: true, geminiConfigured: false });
     expect(JSON.stringify(body)).not.toContain('sk-should-not-appear');
   });
 
   it('les deux à false quand aucune clé n’est configurée', async () => {
     const response = await statusHandler();
-    expect(await response.json()).toEqual({ openai: false, gemini: false });
+    expect(await response.json()).toMatchObject({ openai: false, gemini: false });
   });
 
   /**
@@ -241,7 +241,28 @@ describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
     process.env.OPENAI_API_KEY = '   ';
     process.env.GEMINI_API_KEY = '\n';
     const response = await statusHandler();
-    expect(await response.json()).toEqual({ openai: false, gemini: false });
+    expect(await response.json()).toMatchObject({ openai: false, gemini: false });
+  });
+
+  /**
+   * Diagnostic ajouté à la demande explicite de l'utilisateur : distinguer,
+   * depuis la réponse elle-même, QUEL déploiement (runtime, environnement,
+   * branche, commit) a traité la requête — jamais une valeur de clé, jamais
+   * un secret : ces champs proviennent des variables SYSTÈME que Vercel
+   * injecte lui-même (VERCEL_ENV, VERCEL_GIT_COMMIT_REF/SHA), documentées
+   * comme non sensibles.
+   */
+  it('expose un bloc diagnostic non sensible (runtime, environnement, commit) sans jamais y mêler une clé', async () => {
+    process.env.OPENAI_API_KEY = 'sk-should-not-appear-either';
+    const response = await statusHandler();
+    const body = await response.json();
+
+    expect(body.diagnostic).toMatchObject({ runtime: 'node' });
+    expect(body.diagnostic).toHaveProperty('vercelEnv');
+    expect(body.diagnostic).toHaveProperty('gitCommitRef');
+    expect(body.diagnostic).toHaveProperty('gitCommitSha');
+    expect(body.diagnostic).toHaveProperty('checkedAt');
+    expect(JSON.stringify(body)).not.toContain('sk-should-not-appear-either');
   });
 
   /**
