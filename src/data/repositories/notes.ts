@@ -30,7 +30,16 @@ export async function createNote(input: NewNote): Promise<Note> {
   return note;
 }
 
-export async function updateNote(id: ID, patch: Partial<Pick<Note, 'title' | 'text'>>): Promise<void> {
+/**
+ * `subjectId`/`chapterId` sont modifiables ici en plus de `title`/`text` —
+ * nécessaire à l'éditeur complet de la page Notes (reclasser une note dans
+ * un autre chapitre, par exemple). Les appelants existants, qui ne passent
+ * que `title`/`text`, ne sont pas affectés.
+ */
+export async function updateNote(
+  id: ID,
+  patch: Partial<Pick<Note, 'title' | 'text' | 'subjectId' | 'chapterId'>>,
+): Promise<void> {
   await db.notes.update(id, { ...patch, updatedAt: nowISO() });
 }
 
@@ -56,4 +65,9 @@ export async function countNotesForDocument(documentId: ID): Promise<number> {
 export async function listNotesForSubject(subjectId: ID): Promise<Note[]> {
   const notes = await db.notes.where('subjectId').equals(subjectId).toArray();
   return notes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Nombre de notes d'un chapitre — pour un compteur, sans charger leur texte. */
+export async function countNotesForChapter(chapterId: ID): Promise<number> {
+  return db.notes.where('chapterId').equals(chapterId).count();
 }

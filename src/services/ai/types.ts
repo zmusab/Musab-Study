@@ -5,10 +5,16 @@
  * détail propre à un fournisseur particulier ; tout passe par ces types.
  */
 
-/** Une tâche par appel réel de l'application. `quiz-generate` et
- * `anatomy-explain` sont réservées pour des phases pas encore construites
- * (Quiz, Anatomie) — présentes dans la table de routage, appelées par
- * aucun code aujourd'hui. */
+/**
+ * Une tâche par appel réel de l'application. `quiz-generate` reste réservée
+ * — le Quiz construit est entièrement déterministe (il recombine les
+ * flashcards existantes, jamais d'appel IA) et n'en a donc pas eu besoin.
+ * `note-summarize` et `note-explain` sont réservées de la même façon, pour
+ * le module Notes : l'architecture (type de tâche, entrée dans la table de
+ * routage) est prête à les recevoir, mais aucun code ne les appelle encore
+ * — seule « Créer des flashcards avec l'IA » depuis une note est construite,
+ * et réutilise `flashcards-generate`.
+ */
 export type AITask =
   | 'chat-course'
   | 'chat-internet'
@@ -19,7 +25,9 @@ export type AITask =
   | 'pdf-summarize-chapter'
   | 'course-notions'
   | 'quiz-generate'
-  | 'anatomy-explain';
+  | 'anatomy-explain'
+  | 'note-summarize'
+  | 'note-explain';
 
 /**
  * Niveau de qualité demandé — l'équivalent générique du paramètre `effort`

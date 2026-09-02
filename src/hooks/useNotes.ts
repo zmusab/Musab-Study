@@ -19,3 +19,8 @@ export function useSubjectNotes(subjectId: ID | undefined): Note[] | undefined {
     return notes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [subjectId]);
 }
+
+/** Toutes les notes de l'application — pour la page Notes elle-même, qui filtre/trie côté client. */
+export function useAllNotes(): Note[] | undefined {
+  return useLiveQuery(() => db.notes.toArray(), []);
+}

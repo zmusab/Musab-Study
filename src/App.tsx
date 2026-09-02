@@ -5,7 +5,6 @@ import { AppShell } from '@/components/layout/AppShell';
 import { ConfirmProvider, ToastProvider, Spinner } from '@/components/ui';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { MorePage } from '@/pages/MorePage';
-import { PlaceholderPage } from '@/pages/PlaceholderPage';
 
 /**
  * Routage en HashRouter.
@@ -52,6 +51,7 @@ const ProgressionPage = lazy(() =>
 );
 const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 const QuizPage = lazy(() => import('@/pages/QuizPage').then((m) => ({ default: m.QuizPage })));
+const NotesPage = lazy(() => import('@/pages/NotesPage').then((m) => ({ default: m.NotesPage })));
 
 function RouteFallback() {
   return (
@@ -83,17 +83,7 @@ function AnimatedRoutes() {
           <Route path="/progression" element={<ProgressionPage />} />
           <Route path="/anatomie" element={<AnatomyPage />} />
           <Route path="/calendrier" element={<CalendarPage />} />
-          <Route
-            path="/notes"
-            element={
-              <PlaceholderPage
-                title="Notes"
-                icon="📝"
-                phase="Phase 10"
-                description="Notes liées à une matière et à un chapitre, avec recherche."
-              />
-            }
-          />
+          <Route path="/notes" element={<NotesPage />} />
           <Route path="/recherche" element={<RecherchePage />} />
           <Route path="/plus" element={<MorePage />} />
           <Route path="/parametres" element={<SettingsPage />} />

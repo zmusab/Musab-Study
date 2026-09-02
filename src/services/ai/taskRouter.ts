@@ -54,6 +54,9 @@ export const TASK_ROUTES: Record<AITask, TaskRoute> = {
   'course-notions': { tier: 'balanced', requires: { structuredOutput: true } },
   'quiz-generate': { tier: 'balanced', requires: { structuredOutput: true } },
   'anatomy-explain': { tier: 'balanced' },
+  // Réservées pour le module Notes — voir le commentaire sur `AITask`.
+  'note-summarize': { tier: 'balanced' },
+  'note-explain': { tier: 'balanced' },
 };
 
 function satisfiesRequirements(capabilities: AIProviderCapabilities, requires: TaskRoute['requires']): boolean {

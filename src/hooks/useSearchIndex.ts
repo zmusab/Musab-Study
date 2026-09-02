@@ -78,7 +78,7 @@ export function useSearchIndex(): SearchableItem[] | undefined {
         title: note.title,
         subtitle: breadcrumb(note.subjectId, note.chapterId) || 'Note',
         body: note.text,
-        to: '/notes',
+        to: `/notes?open=${note.id}`,
       });
     }
 

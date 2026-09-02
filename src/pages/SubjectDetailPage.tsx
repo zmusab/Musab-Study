@@ -23,6 +23,7 @@ import { DocumentImporter } from '@/components/features/courses/DocumentImporter
 import { DocumentThumbnail } from '@/components/features/courses/DocumentThumbnail';
 import { DocumentFileSize } from '@/components/features/courses/DocumentFileSize';
 import { NotionsTab } from '@/components/features/courses/NotionsTab';
+import { NoteEditorModal } from '@/components/features/notes/NoteEditorModal';
 import {
   useChapters,
   useSubject,
@@ -89,6 +90,7 @@ export function SubjectDetailPage() {
   const [subjectNameDraft, setSubjectNameDraft] = useState('');
   const [renamingChapter, setRenamingChapter] = useState<Chapter | null>(null);
   const [chapterNameDraft, setChapterNameDraft] = useState('');
+  const [creatingNote, setCreatingNote] = useState(false);
 
   if (subject === null) {
     return (
@@ -250,6 +252,7 @@ export function SubjectDetailPage() {
             <Stagger className="flex flex-col gap-3">
               {chapters.map((chapter) => {
                 const documents = documentsByChapter?.[chapter.id] ?? [];
+                const chapterNoteCount = notes?.filter((note) => note.chapterId === chapter.id).length ?? 0;
                 const isOpen = openChapter === chapter.id;
 
                 return (
@@ -362,6 +365,15 @@ export function SubjectDetailPage() {
                                 <Button size="sm" onClick={() => setImportingInto(chapter.id)}>
                                   Ajouter un document
                                 </Button>
+                                <Link
+                                  to={`/notes?subject=${subjectId}&chapter=${chapter.id}`}
+                                  data-chapter-notes-link
+                                >
+                                  <Button size="sm" variant="secondary">
+                                    <Icon name="notes" size={14} />
+                                    {chapterNoteCount > 0 ? `Notes (${chapterNoteCount})` : 'Notes de ce chapitre'}
+                                  </Button>
+                                </Link>
                                 <Button
                                   size="sm"
                                   variant="danger"
@@ -396,11 +408,21 @@ export function SubjectDetailPage() {
 
       {tab === 'notes' && (
         <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <Link to={`/notes?subject=${subjectId}`} className="text-[0.82rem] text-[var(--ink-soft)] hover:text-[var(--accent)]">
+              Voir dans Notes →
+            </Link>
+            <Button size="sm" onClick={() => setCreatingNote(true)} data-subject-create-note>
+              <Icon name="plus" size={15} /> Nouvelle note
+            </Button>
+          </div>
+
           {!notes || notes.length === 0 ? (
             <EmptyState
               icon={<Icon name="notes" size={30} />}
               title="Aucune note pour l'instant"
-              description="Ouvre un document et ajoute une note depuis le lecteur — elle apparaîtra ici, liée à sa page d'origine."
+              description="Crée une note, ou ouvre un document et ajoute-en une depuis le lecteur — elle apparaîtra ici, liée à sa page d'origine."
+              action={<Button onClick={() => setCreatingNote(true)}>Créer ma première note</Button>}
             />
           ) : (
             <ul className="flex flex-col gap-2">
@@ -597,6 +619,18 @@ export function SubjectDetailPage() {
           />
         )}
       </Modal>
+
+      {subject && (
+        <NoteEditorModal
+          open={creatingNote}
+          onClose={() => setCreatingNote(false)}
+          note={null}
+          subjects={[subject]}
+          chapters={chapters ?? []}
+          defaultSubjectId={subject.id}
+          defaultChapterId={openChapter}
+        />
+      )}
     </PageTransition>
   );
 }
