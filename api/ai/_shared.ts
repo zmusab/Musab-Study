@@ -18,6 +18,25 @@
  * sortant vers le fournisseur.
  */
 
+/**
+ * Vrai seulement si la variable d'environnement existe ET contient autre
+ * chose que des espaces — `Boolean(process.env.X)` seul accepterait une
+ * valeur collée par erreur (espace, retour à la ligne isolé) comme
+ * « configurée », un faux positif qui ferait ensuite échouer l'appel
+ * sortant avec une clé vide. Utilisée IDENTIQUEMENT par `status.ts` (pour
+ * annoncer présence/absence) et par `openai.ts`/`gemini.ts` (pour décider
+ * d'appeler ou non le fournisseur) — les deux doivent toujours s'accorder.
+ *
+ * Ne décide jamais qu'une valeur non vide est une clé VALIDE : seule une
+ * tentative d'appel réelle peut le dire (voir `upstream_auth` en cas de
+ * 401/403 renvoyé par le fournisseur) — cette fonction ne vérifie que la
+ * présence, jamais la validité, pour ne jamais fabriquer un diagnostic
+ * optimiste ni consommer de quota inutilement.
+ */
+export function hasEnvValue(value: string | undefined): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 export interface ProxyAskBody {
   system: string;
   prompt: string;
@@ -29,10 +48,21 @@ export interface ProxyAskBody {
 /** Délai avant abandon de l'appel sortant vers le fournisseur — distingue un timeout d'une vraie erreur réseau. */
 export const UPSTREAM_TIMEOUT_MS = 60_000;
 
+/**
+ * `no-store` sur les trois routes de ce dossier (status/openai/gemini) :
+ * aucune n'a de sens mise en cache — `status` doit toujours refléter l'état
+ * RÉEL du déploiement courant (une clé tout juste ajoutée doit apparaître
+ * dès la requête suivante, jamais après l'expiration d'un cache), et
+ * openai/gemini renvoient une réponse à usage unique. Sans cet en-tête
+ * explicite, un intermédiaire (CDN, proxy, extension navigateur) pourrait
+ * légitimement choisir de mettre en cache une réponse 200 sans en-tête de
+ * cache — ce n'est pas la cause la plus probable d'un statut resté périmé,
+ * mais rien ici ne doit pouvoir en dépendre.
+ */
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
 }
 

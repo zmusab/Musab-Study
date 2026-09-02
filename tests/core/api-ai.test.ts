@@ -167,6 +167,51 @@ describe.each([
     const body = await response.json();
     expect(body.error).toBe('invalid_response');
   });
+
+  /**
+   * Diagnostic « Hub IA affiche clé absente malgré une variable Vercel
+   * enregistrée » — une valeur collée par erreur avec uniquement des espaces
+   * ou un retour à la ligne (copier-coller depuis un fichier .env, par
+   * exemple) ne doit jamais être traitée comme une clé exploitable : ni ici
+   * (503 honnête plutôt qu'un appel voué à l'échec), ni dans `status.ts`
+   * (voir plus bas) — les deux doivent s'accorder, exactement.
+   */
+  it('une valeur ne contenant que des espaces est traitée comme absente, jamais envoyée au fournisseur', async () => {
+    process.env[envVar] = '   \n  ';
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await handler(askRequest({ system: 's', prompt: 'p' }));
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toBe('not_configured');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('les espaces superflus autour d’une clé par ailleurs valide sont retirés avant l’appel sortant', async () => {
+    process.env[envVar] = '  test-key-never-real  \n';
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      const headers = init.headers as Record<string, string>;
+      const sentKey = headers.Authorization ?? headers['x-goog-api-key'];
+      expect(sentKey).not.toMatch(/^\s|\s$/);
+      expect(sentKey).toContain('test-key-never-real');
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'ok' } }], candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+      } as Response);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await handler(askRequest({ system: 's', prompt: 'p' }));
+    expect(response.status).toBe(200);
+  });
+
+  it('la réponse n’est jamais mise en cache (en-tête Cache-Control: no-store)', async () => {
+    delete process.env[envVar];
+    const response = await handler(askRequest({ system: 's', prompt: 'p' }));
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
 });
 
 describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
@@ -184,5 +229,30 @@ describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
   it('les deux à false quand aucune clé n’est configurée', async () => {
     const response = await statusHandler();
     expect(await response.json()).toEqual({ openai: false, gemini: false });
+  });
+
+  /**
+   * Même garde-fou que les relais eux-mêmes (voir ci-dessus) : une variable
+   * D'ENVIRONNEMENT réellement définie mais réduite à des espaces reste
+   * annoncée absente — jamais un faux « configuré » qui masquerait le vrai
+   * problème (ex. une valeur collée par erreur avec un retour à la ligne).
+   */
+  it('une clé ne contenant que des espaces est annoncée absente, pas configurée', async () => {
+    process.env.OPENAI_API_KEY = '   ';
+    process.env.GEMINI_API_KEY = '\n';
+    const response = await statusHandler();
+    expect(await response.json()).toEqual({ openai: false, gemini: false });
+  });
+
+  /**
+   * Diagnostic « /api/ai/status répond 200 mais reste périmé » : la réponse
+   * ne doit jamais pouvoir être mise en cache par un intermédiaire
+   * (navigateur, CDN, extension) — sans quoi une clé tout juste ajoutée sur
+   * un nouveau déploiement pourrait continuer d'apparaître absente le temps
+   * qu'un cache expire.
+   */
+  it('la réponse n’est jamais mise en cache (en-tête Cache-Control: no-store)', async () => {
+    const response = await statusHandler();
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 });

@@ -1,4 +1,4 @@
-import { errorResponse, fetchWithTimeout, isAbortError, jsonResponse, parseAskBody, type ProxyAskBody } from './_shared';
+import { errorResponse, fetchWithTimeout, hasEnvValue, isAbortError, jsonResponse, parseAskBody, type ProxyAskBody } from './_shared';
 
 export const config = { runtime: 'edge' };
 
@@ -43,7 +43,7 @@ export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return errorResponse('invalid_request', 'Méthode non autorisée.', 405);
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!hasEnvValue(apiKey)) {
     return errorResponse('not_configured', "La clé Gemini n'est pas configurée côté serveur.", 503);
   }
 
@@ -52,7 +52,7 @@ export default async function handler(request: Request): Promise<Response> {
 
   let upstream: Response;
   try {
-    upstream = await callGemini(apiKey, body.preferredModel ?? DEFAULT_MODEL, body);
+    upstream = await callGemini(apiKey.trim(), body.preferredModel ?? DEFAULT_MODEL, body);
   } catch (cause) {
     if (isAbortError(cause)) {
       return errorResponse('upstream_timeout', "Gemini n'a pas répondu à temps.", 504);

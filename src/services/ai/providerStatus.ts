@@ -37,7 +37,10 @@ export async function refreshProviderStatus(): Promise<void> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
-      const response = await fetch('/api/ai/status');
+      // `no-store` des deux côtés (voir aussi `api/ai/_shared.ts`) : ce
+      // statut doit toujours refléter le déploiement RÉEL au moment de la
+      // vérification, jamais une réponse mise en cache par le navigateur.
+      const response = await fetch('/api/ai/status', { cache: 'no-store' });
       if (!response.ok) throw new Error(`status ${response.status}`);
       const data: unknown = await response.json();
       const record = data as { openai?: unknown; gemini?: unknown };
