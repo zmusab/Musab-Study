@@ -1,9 +1,11 @@
 import { useState, type CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Card, Icon, Input, Modal, Select, useToast } from '@/components/ui';
 import { createEvent, deleteEvent } from '@/data/repositories/calendar';
 import { dayKey, parseDayKey } from '@/lib/date';
 import type { CalendarEventKind, Subject } from '@/types';
-import { EVALUATION_KIND_LABELS, type Evaluation } from '@/core/progress/exam';
+import { EVALUATION_KIND_LABELS, readinessLevel, type Evaluation } from '@/core/progress/exam';
+import type { ID } from '@/types';
 
 /**
  * PROCHAINES ÉVALUATIONS — lues dans la table `calendarEvents`, celle-là même
@@ -24,11 +26,19 @@ const DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'l
 export function EvaluationsCard({
   evaluations,
   subjects,
+  readinessBySubject,
   onChanged,
   limit = 3,
 }: {
   evaluations: Evaluation[];
   subjects: Subject[];
+  /**
+   * Suffisance mesurée par matière — affichée en regard de chaque échéance.
+   * C'est la même valeur que partout ailleurs sur la page, simplement remise
+   * à côté de la date qu'elle concerne : « dans 4 jours » ne veut rien dire
+   * sans « et j'en suis là ».
+   */
+  readinessBySubject?: Map<ID, number | null>;
   onChanged?: () => void;
   /** Évaluations montrées d'emblée ; le reste passe derrière « Voir toutes ». */
   limit?: number;
@@ -77,6 +87,18 @@ export function EvaluationsCard({
                     {DATE_FORMAT.format(parseDayKey(evaluation.day))}
                   </span>
                 </span>
+
+                {/* NIVEAU DE PRÉPARATION — la mesure qui donne son sens au
+                    compte à rebours. Absente quand elle n'est pas encore
+                    calculable, jamais remplacée par un zéro. */}
+                <PreparationBadge
+                  pct={
+                    evaluation.subjectId === null
+                      ? undefined
+                      : readinessBySubject?.get(evaluation.subjectId)
+                  }
+                />
+
                 <span
                   className="shrink-0 text-[0.85rem] font-medium tabular-nums"
                   style={{ color: urgencyColor(evaluation.daysUntil) }}
@@ -87,6 +109,17 @@ export function EvaluationsCard({
                       ? 'Demain'
                       : `Dans ${evaluation.daysUntil} jours`}
                 </span>
+
+                {/* Planifier ouvre le vrai calendrier, où le plan de révision
+                    se construit à partir des mêmes données. */}
+                <Link
+                  to="/calendrier"
+                  data-progress-evaluation-plan
+                  aria-label={`Planifier les révisions pour ${evaluation.event.title}`}
+                  className="hidden shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-[0.8rem] font-medium text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)] sm:inline-block"
+                >
+                  Planifier
+                </Link>
                 <button
                   type="button"
                   aria-label={`Supprimer ${evaluation.event.title}`}
@@ -133,6 +166,26 @@ export function EvaluationsCard({
         }}
       />
     </>
+  );
+}
+
+/**
+ * Pastille de préparation. `undefined` = matière sans suffisance calculable
+ * (ou évaluation sans matière) : on n'affiche alors rien plutôt qu'un tiret
+ * de plus dans une ligne déjà dense.
+ */
+function PreparationBadge({ pct }: { pct?: number | null }) {
+  if (pct === undefined || pct === null) return null;
+  const level = readinessLevel(pct);
+  return (
+    <span
+      data-progress-evaluation-readiness
+      title={`Préparation estimée : ${level.label}`}
+      className="hidden shrink-0 rounded-full px-2 py-0.5 text-[0.78rem] font-medium tabular-nums sm:inline-block"
+      style={{ color: level.colorVar, backgroundColor: `color-mix(in srgb, ${level.colorVar} 14%, transparent)` }}
+    >
+      {pct} % prêt
+    </span>
   );
 }
 

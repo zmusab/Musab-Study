@@ -74,7 +74,7 @@ export function PriorityList({ items, limit = 3 }: { items: PriorityItem[]; limi
               {item.cardIds.length > 0 && (
                 <Link to={`/revisions?cards=${item.cardIds.join(',')}`} className="shrink-0">
                   <Button size="sm" variant="secondary">
-                    Travailler
+                    Réviser
                   </Button>
                 </Link>
               )}

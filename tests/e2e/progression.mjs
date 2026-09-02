@@ -31,6 +31,8 @@ const browser = await chromium.launch(
 const context = await browser.newContext({ ...devices['iPad Pro 11'] });
 const page = await context.newPage();
 const nav = page.locator('aside, nav.fixed');
+const dialog = page.locator('[role="dialog"]');
+const isoDay = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => {
   if (m.type() === 'error') errors.push(m.text());
@@ -323,24 +325,53 @@ const upcoming = await page.locator('[data-progress-upcoming] li').count();
 check('Les prochaines échéances viennent de la répétition espacée', upcoming >= 1, `${upcoming} jour(s)`);
 
 // ────────────────── 3 quater. Hiérarchie et compacité ──────────────────
-// Le premier écran doit répondre aux quatre questions du quotidien, et les
-// listes longues doivent rester courtes par défaut.
+// L'ordre de lecture doit être évident : où j'en suis → ce que je dois faire
+// → quel examen arrive → où je suis bon ou faible → comment j'évolue.
 const hero = page.locator('[data-progress-hero]');
-check('Le premier écran regroupe le résumé utile', await hero.isVisible());
+check('La vue d’ensemble ouvre la page', await hero.isVisible());
 const heroText = await hero.innerText();
-for (const block of ['PROGRESSION GLOBALE', 'SUFFISANCE EXAMEN', 'À TRAVAILLER MAINTENANT', 'PROCHAINE ÉVALUATION']) {
-  check(`Le premier écran répond à « ${block.toLowerCase()} »`, heroText.includes(block));
+for (const block of ['PROGRESSION GLOBALE', 'SUFFISANCE EXAMEN', 'TEMPS ÉTUDIÉ', 'RÉVISIONS', 'RÉGULARITÉ']) {
+  check(`La vue d’ensemble montre « ${block.toLowerCase()} »`, heroText.includes(block));
 }
-const heroPriorities = await page.locator('[data-progress-hero-priorities] li').count();
 check(
-  'Le premier écran ne montre jamais plus de trois priorités',
-  heroPriorities <= 3 && heroPriorities > 0,
-  `${heroPriorities} ligne(s)`,
+  'La vue d’ensemble ne contient aucune action : elle dit où j’en suis, pas quoi faire',
+  (await hero.locator('button, a').count()) === 0,
 );
 check(
-  'Le premier écran reprend la même suffisance que le détail',
+  'La vue d’ensemble reprend la même suffisance que le détail',
   ((await page.locator('[data-progress-hero-readiness]').textContent()) ?? '').trim() ===
     ((await page.locator('[data-progress-readiness-pct]').textContent()) ?? '').trim(),
+);
+
+// L'ordre RÉEL des sections dans le document, pas seulement leur présence.
+const sectionOrder = await page.evaluate(() =>
+  [...document.querySelectorAll('main h2')].map((el) => el.textContent.trim()),
+);
+const expectedOrder = [
+  'À faire maintenant',
+  'Prochaines évaluations',
+  'Progression par matière',
+  'Points faibles et points forts',
+  'Activité et évolution',
+];
+const positions = expectedOrder.map((title) => sectionOrder.indexOf(title));
+check(
+  'Les cinq sections existent, dans l’ordre attendu',
+  positions.every((index) => index >= 0) &&
+    positions.every((index, i) => i === 0 || index > positions[i - 1]),
+  sectionOrder.join(' → '),
+);
+
+const priorityRevise = page.locator('[data-progress-priorities] li a').first();
+check(
+  'Chaque priorité offre un bouton « Réviser »',
+  (await priorityRevise.count()) > 0 && /Réviser/.test(await priorityRevise.innerText()),
+  await priorityRevise.innerText(),
+);
+check(
+  'Ce bouton ouvre une vraie séance, sur des cartes précises',
+  /\/revisions\?cards=.+/.test((await priorityRevise.getAttribute('href')) ?? ''),
+  (await priorityRevise.getAttribute('href')) ?? '',
 );
 
 const listedPriorities = await page.locator('[data-progress-priorities] li').count();
@@ -464,6 +495,97 @@ check(
   'Le périmètre filtré est rappelé explicitement',
   await page.getByText('Toute la page est restreinte à Anatomie.').isVisible(),
 );
+
+// ────────────────── 5 bis. Plusieurs examens, plusieurs chapitres ──────────────────
+// Le filtre est resté sur une matière : on le relâche avant de mesurer
+// l'ensemble.
+await page.locator('[data-progress-filter] button').first().click();
+await page.waitForTimeout(700);
+
+// Deux évaluations de plus, saisies dans le désordre : la section doit les
+// rendre dans l'ordre chronologique, pas dans l'ordre de saisie.
+// Saisies volontairement dans le désordre : la section doit les remettre en
+// ordre, et l'étape de nettoyage précédente a vidé la liste.
+for (const [title, offset] of [
+  ['Examen blanc', 21],
+  ['Colle d’histologie', 9],
+  ['Contrôle d’embryologie', 3],
+]) {
+  await page.getByRole('button', { name: 'Ajouter une évaluation' }).first().click();
+  await page.waitForTimeout(500);
+  await page.getByLabel('Intitulé').fill(title);
+  await page.getByLabel('Date').fill(isoDay(offset));
+  await dialog.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  await page.waitForTimeout(900);
+}
+// Le bouton est un interrupteur : une section précédente a pu le laisser
+// ouvert. On ne le presse que s'il est effectivement replié.
+const moreEvals = page.locator('[data-progress-evaluations-more]');
+if ((await moreEvals.count()) && (await moreEvals.getAttribute('aria-expanded')) === 'false') {
+  await moreEvals.click();
+  await page.waitForTimeout(600);
+}
+const evalDays = await page
+  .locator('[data-progress-evaluations] li')
+  .evaluateAll((items) =>
+    items.map((item) => {
+      const match = item.innerText.match(/Dans (\d+) jours|Demain|Aujourd’hui/);
+      if (!match) return 0;
+      return match[1] ? Number(match[1]) : match[0] === 'Aujourd’hui' ? 0 : 1;
+    }),
+  );
+check(
+  'Plusieurs évaluations sont listées dans l’ordre chronologique',
+  evalDays.length >= 3 && evalDays.every((days, i) => i === 0 || days >= evalDays[i - 1]),
+  evalDays.join(' · '),
+);
+check(
+  'Chaque évaluation propose de planifier ses révisions',
+  (await page.locator('[data-progress-evaluation-plan]').count()) === evalDays.length,
+);
+
+// Beaucoup de chapitres : le détail d'une matière doit rester lisible et ne
+// jamais déborder.
+await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
+await page.waitForTimeout(700);
+await page.getByText('Anatomie', { exact: true }).first().click();
+await page.waitForTimeout(800);
+const addChapter = page.getByRole('button', { name: /Nouveau chapitre|Ajouter un chapitre/ }).first();
+if (await addChapter.count()) {
+  for (const name of ['Ostéologie', 'Myologie', 'Névrologie', 'Angiologie', 'Splanchnologie', 'Arthrologie']) {
+    await addChapter.click();
+    await page.waitForTimeout(300);
+    const field = page.getByLabel('Nom');
+    if (!(await field.count())) break;
+    await field.fill(name);
+    await page.getByRole('button', { name: 'Créer', exact: true }).click();
+    await page.waitForTimeout(500);
+  }
+}
+
+await nav.getByRole('link', { name: 'Progression', exact: true }).first().click();
+await page.waitForTimeout(1200);
+await page.locator('[data-progress-subject-row]').first().click();
+await page.waitForTimeout(700);
+const manyChapterRows = await page.locator('[data-progress-chapters] li').count();
+check('Le détail d’une matière liste ses chapitres', manyChapterRows >= 1, `${manyChapterRows} chapitre(s)`);
+check(
+  'Le détail par chapitre ne déborde pas horizontalement',
+  !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)),
+);
+
+// Aucune grande zone vide : chaque carte de la page doit contenir quelque
+// chose. Une carte haute et presque vide est exactement ce qu'on cherche à
+// éviter dans cette réorganisation.
+const emptyCards = await page.evaluate(() =>
+  [...document.querySelectorAll('main .surface-card')]
+    .filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.height > 220 && el.innerText.trim().length < 40;
+    })
+    .map((el) => `${Math.round(el.getBoundingClientRect().height)}px`),
+);
+check('Aucune carte haute et vide ne subsiste', emptyCards.length === 0, emptyCards.join(', '));
 
 // ────────────────── 6. Responsive ──────────────────
 for (const [name, viewport] of [

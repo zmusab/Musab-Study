@@ -267,6 +267,13 @@ export interface SubjectProgress {
   cards: number;
   reviewedCards: number;
   dueCards: number;
+  /**
+   * Cartes dont l'échéance est passée depuis au moins un jour — un sous-
+   * ensemble de `dueCards`. Ce n'est pas une nouvelle mesure : c'est le même
+   * champ `due` lu avec une borne plus stricte, et c'est ce qui distingue
+   * « à réviser aujourd'hui » de « en retard ».
+   */
+  lateCards: number;
   reviews: number;
   successRate: number | null;
   studyMs: number;
@@ -284,6 +291,12 @@ export function subjectProgress(
   now: Date = new Date(),
 ): SubjectProgress[] {
   const nowIso = now.toISOString();
+  // Une carte due ce matin n'est pas « en retard » : le retard commence au
+  // jour précédent, sans quoi tout ce qui est dû aujourd'hui serait annoncé
+  // comme oublié.
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDayIso = startOfDay.toISOString();
   return subjects
     .map((subject) => {
       const subjectCards = cards.filter((card) => card.subjectId === subject.id);
@@ -302,6 +315,7 @@ export function subjectProgress(
         cards: subjectCards.length,
         reviewedCards: reviewed.length,
         dueCards: subjectCards.filter((card) => card.due <= nowIso).length,
+        lateCards: subjectCards.filter((card) => card.due < startOfDayIso).length,
         reviews: stats.total,
         successRate: stats.successRate,
         studyMs: subjectLogs.reduce((sum, log) => sum + log.elapsedMs, 0),
