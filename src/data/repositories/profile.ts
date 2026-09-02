@@ -15,6 +15,14 @@ export const DEFAULT_PROFILE: Profile = {
   // des mesures — ils n'entrent dans aucune statistique.
   weeklyStudyMinutesGoal: 300,
   weeklyReviewGoal: 150,
+  // Après-midi et soir activés par défaut : un repère raisonnable pour un
+  // étudiant en cours la journée, modifiable depuis le calendrier.
+  availability: {
+    morning: { enabled: false, start: '09:00', end: '12:00' },
+    afternoon: { enabled: true, start: '14:00', end: '18:00' },
+    evening: { enabled: true, start: '20:00', end: '22:00' },
+  },
+  sessionMinutes: 45,
 };
 
 /**

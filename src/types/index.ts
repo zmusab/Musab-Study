@@ -37,6 +37,19 @@ export interface Profile {
    */
   weeklyStudyMinutesGoal: number;
   weeklyReviewGoal: number;
+
+  /**
+   * PLAGES DISPONIBLES pour la planification. Champs additifs non indexés :
+   * aucune migration Dexie. Le planificateur ne suppose jamais qu'une journée
+   * entière est libre — sans plage activée, il ne propose rien.
+   */
+  availability?: {
+    morning?: { enabled?: boolean; start?: string; end?: string };
+    afternoon?: { enabled?: boolean; start?: string; end?: string };
+    evening?: { enabled?: boolean; start?: string; end?: string };
+  };
+  /** Durée par défaut d'une séance planifiée, en minutes. */
+  sessionMinutes?: number;
 }
 
 // ────────────────────────── Cours & documents ──────────────────────────

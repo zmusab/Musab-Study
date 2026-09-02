@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Button, Modal, Select } from '@/components/ui';
 import { formatDayLong, planStudySessions, type ExamBrief, type PlannedSession } from '@/core/calendar';
 import { examReadiness, readinessLevel } from '@/core/progress/exam';
-import type { Chapter, Flashcard, ReviewLog } from '@/types';
+import type { CalendarEvent, Chapter, Flashcard, ReviewLog } from '@/types';
+import type { Availability } from '@/core/calendar/availability';
 
 /**
  * PRÉPARATION D'UNE ÉVALUATION — l'état réel, puis un plan proposé.
@@ -25,6 +26,9 @@ export function ExamPrepModal({
   chapters,
   cards,
   logs,
+  events,
+  availability,
+  sessionMinutes,
   now,
   onClose,
   onAcceptPlan,
@@ -35,12 +39,16 @@ export function ExamPrepModal({
   chapters: Chapter[];
   cards: Flashcard[];
   logs: ReviewLog[];
+  /** Événements existants : le plan évite les créneaux et les jours chargés. */
+  events: CalendarEvent[];
+  availability: Availability;
+  sessionMinutes: number;
   now: Date;
   onClose: () => void;
   onAcceptPlan: (sessions: PlannedSession[]) => void | Promise<void>;
   onReplacePlan: (sessions: PlannedSession[]) => void | Promise<void>;
 }) {
-  const [minutes, setMinutes] = useState(45);
+  const [minutes, setMinutes] = useState(sessionMinutes);
   const [saving, setSaving] = useState(false);
 
   const subjectId = brief?.event.subjectId ?? null;
@@ -55,8 +63,10 @@ export function ExamPrepModal({
     if (!brief || !subjectId) return null;
     return planStudySessions(brief.event.day, subjectId, subjectName, chapters, cards, logs, now, {
       minutesPerSession: minutes,
+      availability,
+      events,
     });
-  }, [brief, subjectId, subjectName, chapters, cards, logs, now, minutes]);
+  }, [brief, subjectId, subjectName, chapters, cards, logs, now, minutes, availability, events]);
 
   if (!brief) return null;
 
@@ -180,10 +190,17 @@ export function ExamPrepModal({
                 {plan.sessions.map((session) => (
                   <li
                     key={`${session.day}-${session.chapterId ?? 'general'}`}
+                    data-plan-day={session.day}
+                    data-plan-time={session.startTime ?? ''}
                     className="flex items-center gap-3 rounded-[var(--radius-control)] border border-[var(--line)] px-3 py-2"
                   >
-                    <span className="w-[9.5rem] shrink-0 text-[0.8rem] text-[var(--ink-soft)]">
+                    <span className="w-[11rem] shrink-0 text-[0.8rem] text-[var(--ink-soft)]">
                       {formatDayLong(session.day)}
+                      {session.startTime && (
+                        <span className="block text-[0.75rem] text-[var(--ink-faint)]">
+                          {session.startTime}–{session.endTime}
+                        </span>
+                      )}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[0.86rem] font-medium">{session.title}</span>
@@ -195,6 +212,14 @@ export function ExamPrepModal({
                   </li>
                 ))}
               </ul>
+              {plan.unplaced.length > 0 && (
+                <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]" data-plan-unplaced>
+                  {plan.unplaced.length} séance{plan.unplaced.length > 1 ? 's' : ''} n’
+                  {plan.unplaced.length > 1 ? 'ont' : 'a'} pas pu être placée
+                  {plan.unplaced.length > 1 ? 's' : ''} : {plan.unplaced[0]!.reason} Ajuste tes plages disponibles
+                  ou allège les journées concernées.
+                </p>
+              )}
             </>
           )}
         </section>

@@ -8,7 +8,14 @@ import { WeekView } from '@/components/features/calendar/WeekView';
 import { DayAgendaPanel } from '@/components/features/calendar/DayAgendaPanel';
 import { EventModal, type EventFormValues } from '@/components/features/calendar/EventModal';
 import { ExamPrepModal } from '@/components/features/calendar/ExamPrepModal';
+import { PlanReviewModal } from '@/components/features/calendar/PlanReviewModal';
+import { AvailabilityModal } from '@/components/features/calendar/AvailabilityModal';
 import { useCalendar } from '@/hooks/useCalendar';
+import { useProfile } from '@/hooks/useProfile';
+import { saveProfile } from '@/data/repositories/profile';
+import { normalizeAvailability, type Availability } from '@/core/calendar/availability';
+import { planWeek } from '@/core/calendar/plans';
+import { dayLoad, LOAD_COLORS, LOAD_LABELS } from '@/core/calendar/load';
 import {
   buildAgenda,
   dueByDay,
@@ -33,7 +40,7 @@ import {
 } from '@/data/repositories/calendar';
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { formatDuration } from '@/core/progress';
-import type { CalendarEvent, DayKey } from '@/types';
+import type { CalendarEvent, DayKey, ID } from '@/types';
 
 /**
  * CALENDRIER — voir sa journée, comprendre ce qui est urgent, commencer.
@@ -56,6 +63,7 @@ type CalendarView = (typeof VIEW_SEGMENTS)[number]['value'];
 
 export function CalendarPage() {
   const source = useCalendar();
+  const profile = useProfile();
   const navigate = useNavigate();
   const { notify } = useToast();
   const confirm = useConfirm();
@@ -66,6 +74,14 @@ export function CalendarPage() {
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [examEvent, setExamEvent] = useState<CalendarEvent | null>(null);
+  const [weekPlanOpen, setWeekPlanOpen] = useState(false);
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+
+  const availability = useMemo<Availability>(
+    () => normalizeAvailability(profile.availability),
+    [profile.availability],
+  );
+  const sessionMinutes = profile.sessionMinutes ?? 45;
 
   const now = useMemo(() => (source ? new Date(source.loadedAt) : new Date()), [source]);
 
@@ -100,6 +116,26 @@ export function CalendarPage() {
   const upcoming = useMemo(
     () => (source ? upcomingEvents(source.events, now, 60).slice(0, 3) : []),
     [source, now],
+  );
+
+  const weekPlan = useMemo(() => {
+    if (!source || !weekPlanOpen) return null;
+    return planWeek({
+      events: source.events,
+      subjects: source.subjects,
+      chapters: source.chapters,
+      cards: source.cards,
+      logs: source.logs,
+      availability,
+      weeklyGoalMinutes: profile.weeklyStudyMinutesGoal,
+      minutesPerSession: sessionMinutes,
+      now,
+    });
+  }, [source, weekPlanOpen, availability, profile.weeklyStudyMinutesGoal, sessionMinutes, now]);
+
+  const selectedLoad = useMemo(
+    () => (source ? dayLoad(selected, source.events, availability) : null),
+    [source, selected, availability],
   );
 
   const brief = useMemo(() => {
@@ -202,24 +238,36 @@ export function CalendarPage() {
     );
   };
 
-  const acceptPlan = async (sessions: PlannedSession[], replace: boolean) => {
-    if (!examEvent) return;
-    if (replace) await deletePlanFor(examEvent.id);
+  /**
+   * Écrit un plan validé. C'est le SEUL endroit qui touche à la base pour un
+   * plan : tant que cette fonction n'est pas appelée, la proposition n'existe
+   * qu'à l'écran.
+   */
+  const persistPlan = async (sessions: PlannedSession[], planForEventId: ID | null) => {
     await createEvents(
       sessions.map((session) => ({
         title: session.title,
         kind: 'review' as const,
         day: session.day,
-        subjectId: examEvent.subjectId,
+        subjectId: session.subjectId,
         chapterId: session.chapterId,
-        startTime: null,
-        endTime: null,
+        startTime: session.startTime,
+        endTime: session.endTime,
         importance: 2 as const,
         notes: session.reason,
-        planForEventId: examEvent.id,
+        planForEventId: planForEventId ?? session.planForEventId ?? null,
       })),
     );
-    notify(`${sessions.length} séances ajoutées à ton calendrier.`, 'success');
+    notify(
+      `${sessions.length} séance${sessions.length > 1 ? 's' : ''} ajoutée${sessions.length > 1 ? 's' : ''} à ton calendrier.`,
+      'success',
+    );
+  };
+
+  const acceptPlan = async (sessions: PlannedSession[], replace: boolean) => {
+    if (!examEvent) return;
+    if (replace) await deletePlanFor(examEvent.id);
+    await persistPlan(sessions, examEvent.id);
     setExamEvent(null);
   };
 
@@ -233,9 +281,17 @@ export function CalendarPage() {
               Tes évaluations, tes séances et les cartes que la répétition espacée programme — au même endroit.
             </p>
           </div>
-          <Button onClick={openCreate} data-calendar-new>
-            Nouvel événement
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setAvailabilityOpen(true)} data-calendar-availability>
+              Mes disponibilités
+            </Button>
+            <Button variant="secondary" onClick={() => setWeekPlanOpen(true)} data-calendar-plan-week>
+              Planifier ma semaine
+            </Button>
+            <Button onClick={openCreate} data-calendar-new>
+              Nouvel événement
+            </Button>
+          </div>
         </div>
       </FadeUp>
 
@@ -342,6 +398,23 @@ export function CalendarPage() {
         </Card>
 
         <Card className="lg:max-h-[42rem]">
+          {selectedLoad && (
+            <p
+              data-calendar-load
+              data-load-level={selectedLoad.level}
+              className="mb-3 flex flex-wrap items-center gap-2 text-[0.78rem]"
+            >
+              <span
+                aria-hidden
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: LOAD_COLORS[selectedLoad.level] }}
+              />
+              <span style={{ color: LOAD_COLORS[selectedLoad.level] }}>{LOAD_LABELS[selectedLoad.level]}</span>
+              <span className="text-[var(--ink-faint)]">
+                {selectedLoad.minutes} min engagées sur {selectedLoad.capacity} disponibles
+              </span>
+            </p>
+          )}
           <DayAgendaPanel
             agenda={selectedAgenda}
             onStart={start}
@@ -368,12 +441,46 @@ export function CalendarPage() {
         onSubmit={submitEvent}
       />
 
+      <PlanReviewModal
+        open={weekPlanOpen}
+        title="Planifier ma semaine"
+        description="Croise tes évaluations, tes chapitres faibles, tes cartes dues et ton objectif hebdomadaire."
+        sessions={weekPlan?.sessions ?? []}
+        unplaced={weekPlan?.unplaced ?? []}
+        blocked={weekPlan?.blocked ?? null}
+        footerNote={
+          weekPlan
+            ? `Objectif : ${weekPlan.goalMinutes} min/semaine, ${weekPlan.committedMinutes} min déjà planifiées.`
+            : undefined
+        }
+        onClose={() => setWeekPlanOpen(false)}
+        onConfirm={async (sessions) => {
+          await persistPlan(sessions, null);
+          setWeekPlanOpen(false);
+        }}
+      />
+
+      <AvailabilityModal
+        open={availabilityOpen}
+        availability={availability}
+        sessionMinutes={sessionMinutes}
+        onClose={() => setAvailabilityOpen(false)}
+        onSave={async (next, minutes) => {
+          await saveProfile({ availability: next, sessionMinutes: minutes });
+          setAvailabilityOpen(false);
+          notify('Disponibilités enregistrées.', 'success');
+        }}
+      />
+
       <ExamPrepModal
         open={examEvent !== null}
         brief={brief}
         chapters={source.chapters}
         cards={source.cards}
         logs={source.logs}
+        events={source.events}
+        availability={availability}
+        sessionMinutes={sessionMinutes}
         now={now}
         onClose={() => setExamEvent(null)}
         onAcceptPlan={(sessions) => acceptPlan(sessions, false)}
