@@ -48,6 +48,20 @@ export interface Profile {
   sessionMinutes?: number;
 }
 
+/**
+ * Jour de la semaine, nommé plutôt que numéroté : une ligne enregistrée reste
+ * lisible telle quelle, et un décalage d'indice ne peut pas se glisser entre
+ * deux versions.
+ */
+export type WeekdayId =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
 /** Une plage horaire telle qu'elle est ENREGISTRÉE : tout est facultatif. */
 export interface StoredAvailabilitySlot {
   enabled?: boolean;
@@ -75,15 +89,7 @@ export interface StoredDayAvailability {
  * lecture (voir `normalizeAvailability`), et seul un enregistrement explicite
  * de l'utilisateur réécrit la ligne au nouveau format.
  */
-export interface StoredAvailability extends StoredDayAvailability {
-  monday?: StoredDayAvailability;
-  tuesday?: StoredDayAvailability;
-  wednesday?: StoredDayAvailability;
-  thursday?: StoredDayAvailability;
-  friday?: StoredDayAvailability;
-  saturday?: StoredDayAvailability;
-  sunday?: StoredDayAvailability;
-}
+export type StoredAvailability = StoredDayAvailability & Partial<Record<WeekdayId, StoredDayAvailability>>;
 
 // ────────────────────────── Cours & documents ──────────────────────────
 
@@ -287,7 +293,31 @@ export interface Note {
  * la distinction sert réellement — un examen final ne pèse pas comme un
  * contrôle dans le calcul des priorités.
  */
-export type CalendarEventKind = 'exam' | 'midterm' | 'final' | 'course' | 'task' | 'review';
+/**
+ * ATTENTION au nom historique : `'course'` désigne une SÉANCE D'ÉTUDE (c'est
+ * son libellé depuis l'origine), pas un cours universitaire. Le cours
+ * universitaire, ajouté ensuite, est `'lecture'` — un bloc FIXE de l'emploi
+ * du temps, qui occupe le calendrier mais n'est jamais du travail personnel.
+ * Renommer `'course'` obligerait à réécrire les lignes déjà enregistrées ;
+ * mieux vaut un nom imparfait qu'une migration destructrice.
+ */
+export type CalendarEventKind = 'exam' | 'midterm' | 'final' | 'course' | 'task' | 'review' | 'lecture';
+
+/**
+ * Répétition hebdomadaire d'un cours. Portée par la ligne « série » ; les
+ * occurrences ne sont pas écrites en base, elles sont dépliées à la lecture
+ * (voir `core/calendar/recurrence.ts`). Une série de deux ans reste donc UNE
+ * ligne, et déplacer le semestre entier ne demande pas de réécrire cent
+ * lignes.
+ */
+export interface Recurrence {
+  /** Jours concernés — au moins un, sans quoi la série n'a aucune occurrence. */
+  weekdays: WeekdayId[];
+  /** Première date possible (incluse). */
+  startDay: DayKey;
+  /** Dernière date possible (incluse), ou null pour « sans fin annoncée ». */
+  endDay: DayKey | null;
+}
 
 /**
  * Cycle de vie d'une SÉANCE planifiée. `done` reste le champ historique et
@@ -328,6 +358,29 @@ export interface CalendarEvent {
   completedAt?: ISODateTime | null;
   /** Séances issues d'un plan de révision : identifiant de l'examen visé. */
   planForEventId?: ID | null;
+
+  /**
+   * Champs propres aux COURS universitaires (`kind: 'lecture'`). Additifs et
+   * non indexés, comme les précédents.
+   */
+  room?: string | null;
+  teacher?: string | null;
+
+  /**
+   * Trois champs suffisent à décrire une série et ses exceptions, sans
+   * seconde table :
+   *  - `recurrence` non nul ⇒ cette ligne est la DÉFINITION d'une série ; elle
+   *    n'apparaît jamais telle quelle dans le calendrier, ses occurrences sont
+   *    calculées ;
+   *  - `seriesId` non nul ⇒ cette ligne est une EXCEPTION : elle remplace
+   *    l'occurrence de la série tombant le jour `occurrenceDay` ;
+   *  - `cancelled` sur une exception ⇒ cette occurrence-là est supprimée,
+   *    sans toucher au reste de la série.
+   */
+  recurrence?: Recurrence | null;
+  seriesId?: ID | null;
+  occurrenceDay?: DayKey | null;
+  cancelled?: boolean;
 }
 
 // ───────────────────────────── Anatomie ─────────────────────────────

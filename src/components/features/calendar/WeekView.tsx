@@ -74,6 +74,28 @@ export function WeekView({
               </span>
             ))}
 
+            {/* COURS — bandeau teinté et heure en tête : l'emploi du temps doit
+                se lire d'un coup d'œil, sans se confondre avec les séances. */}
+            {agenda.lectures.map((entry) => (
+              <span
+                key={entry.event.id}
+                data-calendar-lecture-chip
+                title={[entry.event.title, entry.event.room].filter(Boolean).join(' · ')}
+                className="block overflow-hidden rounded-[4px] border-l-2 px-1.5 py-1 text-[0.7rem] leading-tight [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]"
+                style={{
+                  borderLeftColor: entry.meta.colorVar,
+                  backgroundColor: 'color-mix(in srgb, var(--nav-turquoise) 12%, transparent)',
+                }}
+              >
+                {entry.event.startTime && (
+                  <span className="font-medium tabular-nums" style={{ color: entry.meta.colorVar }}>
+                    {entry.event.startTime}{' '}
+                  </span>
+                )}
+                {entry.event.title}
+              </span>
+            ))}
+
             {agenda.sessions.map((entry) => (
               <span
                 key={entry.event.id}

@@ -2,10 +2,12 @@ import type { CalendarEvent, DayKey, ID } from '@/types';
 import { addDays, dayKey, parseDayKey } from '@/lib/date';
 import { eventKindMeta, isStudySession } from './index';
 import {
+  SLOT_ORDER,
   availabilityFor,
   availableMinutes,
   busyRanges,
   toMinutes,
+  type DayAvailability,
   type TimeRange,
   type WeeklyAvailability,
 } from './availability';
@@ -37,8 +39,17 @@ export interface DayLoad {
   minutes: number;
   /** Part de `minutes` déjà réellement travaillée (séances et tâches terminées). */
   workedMinutes: number;
+  /** Part de `minutes` qui est du travail personnel — hors cours et évaluations. */
+  studyMinutes: number;
   /** Minutes disponibles selon les plages déclarées de CE jour de la semaine. */
   capacity: number;
+  /**
+   * Ce qui reste de `capacity` une fois retiré ce qui est IMPOSÉ (cours,
+   * évaluations, rendez-vous). C'est la place réellement offerte à une séance
+   * d'étude : un lundi 8 h–12 h avec cours de 8 h à 10 h offre deux heures,
+   * pas quatre — et pas zéro non plus.
+   */
+  freeCapacity: number;
   /** Séances d'étude encore à faire — c'est la file de travail du jour. */
   sessions: number;
   /** Séances d'étude déjà terminées : elles pèsent, mais ne sont plus à faire. */
@@ -89,7 +100,10 @@ export function dayLoad(
     list.reduce((sum, event) => sum + eventMinutes(event), 0);
   const minutes = total(sameDay);
   const workedMinutes = total(done);
-  const capacity = availableMinutes(availabilityFor(availability, day));
+  const studyMinutes = total(sameDay.filter(isStudySession));
+  const slots = availabilityFor(availability, day);
+  const capacity = availableMinutes(slots);
+  const freeCapacity = Math.max(0, capacity - blockedMinutes(sameDay, slots));
   const evaluations = todo.filter((event) => eventKindMeta(event.kind).family === 'evaluation').length;
 
   const ratio = capacity > 0 ? minutes / capacity : 1;
@@ -107,6 +121,8 @@ export function dayLoad(
     minutes,
     capacity,
     workedMinutes,
+    studyMinutes,
+    freeCapacity,
     sessions: todo.filter(isStudySession).length,
     doneSessions: done.filter(isStudySession).length,
     evaluations,
@@ -125,6 +141,34 @@ export function dayLoad(
  * pas une journée vide, et l'agenda dit déjà « Journée libre » quand rien n'y
  * est inscrit. Deux états différents ne doivent pas porter le même mot.
  */
+/**
+ * Minutes des événements IMPOSÉS qui tombent dans les plages déclarées.
+ *
+ * Un cours de 8 h à 10 h ne prend rien à une disponibilité de 14 h à 18 h : il
+ * ne réduit la place que là où il empiète réellement. Un événement daté sans
+ * heure ne vise aucun créneau précis mais occupe bien la journée — on retient
+ * alors sa durée entière, l'hypothèse la moins optimiste.
+ */
+function blockedMinutes(events: readonly CalendarEvent[], slots: DayAvailability): number {
+  let blocked = 0;
+  for (const event of events) {
+    if (isStudySession(event)) continue;
+    if (event.startTime === null) {
+      blocked += eventMinutes(event);
+      continue;
+    }
+    const start = toMinutes(event.startTime);
+    const end = event.endTime ? toMinutes(event.endTime) : start + DEFAULT_EVENT_MINUTES;
+    for (const id of SLOT_ORDER) {
+      const slot = slots[id];
+      if (!slot.enabled) continue;
+      const overlap = Math.min(end, toMinutes(slot.end)) - Math.max(start, toMinutes(slot.start));
+      if (overlap > 0) blocked += overlap;
+    }
+  }
+  return blocked;
+}
+
 export const LOAD_LABELS: Record<LoadLevel, string> = {
   light: 'Journée légère',
   medium: 'Journée moyennement chargée',

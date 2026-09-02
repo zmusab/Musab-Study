@@ -1,6 +1,7 @@
 import type { CalendarEvent, DayKey, ID } from '@/types';
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { dayLoad, eventMinutes, type DayLoad } from './load';
+import { isStudySession } from './index';
 import {
   availabilityFor,
   firstFreeWindow,
@@ -177,7 +178,21 @@ export function scheduleSessions(
       // Une séance terminée compte dans le quota : la journée a bien été
       // travaillée, même s'il n'y reste rien à faire.
       if (load.sessions + load.doneSessions + extra.sessions >= config.maxSessionsPerDay) return;
-      if (load.minutes + extra.minutes + request.minutes > load.capacity * config.maxDayFill) return;
+      // Le garde-fou porte sur le TRAVAIL PERSONNEL rapporté à la place
+      // réellement libre. Un cours ne consomme pas ce budget : il a déjà
+      // réduit `freeCapacity`. Sans cette distinction, une matinée de cours
+      // rendrait la journée entière inutilisable, y compris les heures que
+      // j'ai explicitement déclarées disponibles à côté.
+      //
+      // Et il ne s'applique qu'à partir de la DEUXIÈME séance : il sert à
+      // empêcher d'empiler, pas à interdire de commencer. Refuser d'utiliser
+      // deux heures libres parce qu'une séance de 90 min en occuperait 75 %
+      // reviendrait à ne rien proposer les jours les plus contraints — ceux
+      // où l'on en a le plus besoin.
+      const studyPlanned = load.studyMinutes + extra.minutes;
+      if (studyPlanned > 0 && studyPlanned + request.minutes > load.freeCapacity * config.maxDayFill) {
+        return;
+      }
 
       const slot = firstFreeWindow(
         availabilityFor(availability, day),
@@ -248,17 +263,22 @@ export function scheduleSessions(
 }
 
 /**
- * Minutes déjà engagées sur une semaine — sert au budget hebdomadaire.
+ * Minutes d'ÉTUDE PERSONNELLE déjà engagées sur une semaine — sert au budget
+ * hebdomadaire.
  *
- * Le travail terminé compte : l'objectif hebdomadaire porte sur des minutes
- * de travail, et une séance faite en fait partie. Sans cela, une semaine
- * entièrement travaillée paraîtrait vide et le planificateur en proposerait
- * autant une deuxième fois.
+ * Deux règles, opposées mais cohérentes :
+ *  - le travail terminé compte : l'objectif porte sur des minutes de travail,
+ *    et une séance faite en fait partie ; sans cela une semaine entièrement
+ *    travaillée paraîtrait vide et le planificateur en proposerait autant une
+ *    seconde fois ;
+ *  - un cours universitaire, un examen ou un devoir NE comptent pas : ce n'est
+ *    pas du travail personnel. Un emploi du temps chargé pèse sur la CHARGE
+ *    des journées (voir `load.ts`), il ne remplit pas l'objectif d'étude.
  */
 export function committedMinutes(events: readonly CalendarEvent[], days: readonly DayKey[]): number {
   const wanted = new Set(days);
   return events
-    .filter((event) => wanted.has(event.day))
+    .filter((event) => wanted.has(event.day) && isStudySession(event))
     .reduce((total, event) => total + eventMinutes(event), 0);
 }
 

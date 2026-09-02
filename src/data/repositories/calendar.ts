@@ -1,12 +1,14 @@
 import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { dayKey, nowISO } from '@/lib/date';
+import { occurrenceDays, parseOccurrenceId } from '@/core/calendar/recurrence';
 import type {
   CalendarEvent,
   CalendarEventKind,
   DayKey,
   ID,
   Importance,
+  Recurrence,
   ReviewLog,
   StudySessionStatus,
 } from '@/types';
@@ -32,6 +34,10 @@ export interface EventDraft {
   importance?: Importance;
   notes?: string;
   planForEventId?: ID | null;
+  /** Cours universitaires uniquement. */
+  room?: string | null;
+  teacher?: string | null;
+  recurrence?: Recurrence | null;
 }
 
 export async function createEvent(draft: EventDraft): Promise<CalendarEvent> {
@@ -49,6 +55,12 @@ export async function createEvent(draft: EventDraft): Promise<CalendarEvent> {
     startedAt: null,
     completedAt: null,
     planForEventId: draft.planForEventId ?? null,
+    room: draft.room?.trim() || null,
+    teacher: draft.teacher?.trim() || null,
+    recurrence: draft.recurrence ?? null,
+    seriesId: null,
+    occurrenceDay: null,
+    cancelled: false,
     notes: draft.notes?.trim() ?? '',
     done: false,
     createdAt: nowISO(),
@@ -73,6 +85,12 @@ export async function createEvents(drafts: readonly EventDraft[]): Promise<Calen
     startedAt: null,
     completedAt: null,
     planForEventId: draft.planForEventId ?? null,
+    room: draft.room?.trim() || null,
+    teacher: draft.teacher?.trim() || null,
+    recurrence: draft.recurrence ?? null,
+    seriesId: null,
+    occurrenceDay: null,
+    cancelled: false,
     notes: draft.notes?.trim() ?? '',
     done: false,
     createdAt: nowISO(),
@@ -94,6 +112,207 @@ export async function deletePlanFor(eventId: ID): Promise<number> {
   const planned = await db.calendarEvents.filter((event) => event.planForEventId === eventId).toArray();
   await db.calendarEvents.bulkDelete(planned.map((event) => event.id));
   return planned.length;
+}
+
+// ────────────────────────────── Séries de cours ──────────────────────────────
+
+/**
+ * Portée d'une modification ou d'une suppression sur un cours récurrent.
+ *
+ * `'following'` scinde la série en deux : l'ancienne s'arrête la veille, une
+ * nouvelle reprend à partir du jour visé. Les occurrences PASSÉES restent donc
+ * telles qu'elles ont eu lieu — on ne réécrit pas l'histoire d'un semestre
+ * parce qu'un horaire change en cours de route.
+ */
+export type SeriesScope = 'occurrence' | 'following' | 'series';
+
+/** Champs qu'une modification de cours peut toucher. */
+export type CoursePatch = Partial<
+  Pick<
+    CalendarEvent,
+    | 'title'
+    | 'subjectId'
+    | 'chapterId'
+    | 'startTime'
+    | 'endTime'
+    | 'room'
+    | 'teacher'
+    | 'notes'
+    | 'day'
+  >
+> & { recurrence?: Recurrence | null };
+
+/** Retrouve la ligne SÉRIE dont dépend un événement, s'il y en a une. */
+async function seriesMasterOf(event: CalendarEvent): Promise<CalendarEvent | null> {
+  const id = event.seriesId ?? (event.recurrence ? event.id : null);
+  if (id === null) return null;
+  return (await db.calendarEvents.get(id)) ?? null;
+}
+
+const previousDay = (day: DayKey): DayKey => {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() - 1);
+  return dayKey(date);
+};
+
+/**
+ * Modifie un cours selon la portée demandée.
+ *
+ * - `occurrence` : écrit (ou met à jour) une EXCEPTION pour ce jour-là. La
+ *   série n'est pas touchée.
+ * - `following`  : borne la série à la veille et en crée une nouvelle à partir
+ *   de ce jour, avec les nouvelles valeurs.
+ * - `series`     : modifie la définition elle-même. Les exceptions déjà posées
+ *   sur des occurrences précises sont conservées : ce sont des choix
+ *   explicites, ce n'est pas au code de les effacer.
+ *
+ * Un cours ponctuel (sans série) est simplement mis à jour.
+ */
+export async function updateCourse(
+  event: CalendarEvent,
+  patch: CoursePatch,
+  scope: SeriesScope = 'occurrence',
+): Promise<void> {
+  const master = await seriesMasterOf(event);
+  if (master === null) {
+    await db.calendarEvents.update(event.id, patch);
+    return;
+  }
+
+  const day = event.occurrenceDay ?? parseOccurrenceId(event.id)?.day ?? event.day;
+
+  if (scope === 'series') {
+    await db.calendarEvents.update(master.id, patch);
+    return;
+  }
+
+  if (scope === 'occurrence') {
+    const existing = await db.calendarEvents
+      .filter((row) => row.seriesId === master.id && (row.occurrenceDay ?? row.day) === day)
+      .first();
+    if (existing) {
+      await db.calendarEvents.update(existing.id, { ...patch, cancelled: false });
+      return;
+    }
+    await db.calendarEvents.add({
+      ...master,
+      ...patch,
+      id: uid('evt'),
+      day: patch.day ?? day,
+      recurrence: null,
+      seriesId: master.id,
+      occurrenceDay: day,
+      cancelled: false,
+      createdAt: nowISO(),
+    });
+    return;
+  }
+
+  // `following` — scinder la série.
+  const recurrence = master.recurrence!;
+  if (day <= recurrence.startDay) {
+    // Il n'y a rien avant : modifier la série entière revient au même, et
+    // évite de laisser derrière soi une série vide.
+    await db.calendarEvents.update(master.id, patch);
+    return;
+  }
+
+  await db.transaction('rw', db.calendarEvents, async () => {
+    await db.calendarEvents.update(master.id, {
+      recurrence: { ...recurrence, endDay: previousDay(day) },
+    });
+    // Les exceptions posées sur la partie détachée appartenaient à l'ancienne
+    // définition : elles ne veulent plus rien dire pour la nouvelle.
+    const orphans = await db.calendarEvents
+      .filter((row) => row.seriesId === master.id && (row.occurrenceDay ?? row.day) >= day)
+      .toArray();
+    await db.calendarEvents.bulkDelete(orphans.map((row) => row.id));
+
+    await db.calendarEvents.add({
+      ...master,
+      ...patch,
+      id: uid('evt'),
+      day,
+      recurrence: {
+        ...(patch.recurrence ?? recurrence),
+        startDay: day,
+        endDay: (patch.recurrence ?? recurrence).endDay,
+      },
+      seriesId: null,
+      occurrenceDay: null,
+      cancelled: false,
+      createdAt: nowISO(),
+    });
+  });
+}
+
+/**
+ * Supprime un cours selon la même portée.
+ *
+ * Aucune de ces opérations ne touche une séance d'étude ni `reviewLogs` :
+ * supprimer un cours ne réécrit jamais le travail déjà fait.
+ */
+export async function deleteCourse(event: CalendarEvent, scope: SeriesScope = 'occurrence'): Promise<void> {
+  const master = await seriesMasterOf(event);
+  if (master === null) {
+    await db.calendarEvents.delete(event.id);
+    return;
+  }
+
+  const day = event.occurrenceDay ?? parseOccurrenceId(event.id)?.day ?? event.day;
+
+  if (scope === 'series') {
+    await db.transaction('rw', db.calendarEvents, async () => {
+      const exceptions = await db.calendarEvents.filter((row) => row.seriesId === master.id).toArray();
+      await db.calendarEvents.bulkDelete([master.id, ...exceptions.map((row) => row.id)]);
+    });
+    return;
+  }
+
+  if (scope === 'occurrence') {
+    const existing = await db.calendarEvents
+      .filter((row) => row.seriesId === master.id && (row.occurrenceDay ?? row.day) === day)
+      .first();
+    if (existing) {
+      await db.calendarEvents.update(existing.id, { cancelled: true });
+      return;
+    }
+    // Une occurrence supprimée est une exception « annulée » : la série reste
+    // intacte, seul ce jour-là disparaît.
+    await db.calendarEvents.add({
+      ...master,
+      id: uid('evt'),
+      day,
+      recurrence: null,
+      seriesId: master.id,
+      occurrenceDay: day,
+      cancelled: true,
+      createdAt: nowISO(),
+    });
+    return;
+  }
+
+  // `following` — la série s'arrête la veille ; le passé est conservé.
+  const recurrence = master.recurrence!;
+  await db.transaction('rw', db.calendarEvents, async () => {
+    if (day <= recurrence.startDay) {
+      const exceptions = await db.calendarEvents.filter((row) => row.seriesId === master.id).toArray();
+      await db.calendarEvents.bulkDelete([master.id, ...exceptions.map((row) => row.id)]);
+      return;
+    }
+    await db.calendarEvents.update(master.id, {
+      recurrence: { ...recurrence, endDay: previousDay(day) },
+    });
+    const orphans = await db.calendarEvents
+      .filter((row) => row.seriesId === master.id && (row.occurrenceDay ?? row.day) >= day)
+      .toArray();
+    await db.calendarEvents.bulkDelete(orphans.map((row) => row.id));
+  });
+}
+
+/** Nombre d'occurrences d'une série sur une fenêtre — sert aux confirmations. */
+export function countOccurrences(master: CalendarEvent, from: DayKey, to: DayKey): number {
+  return master.recurrence ? occurrenceDays(master.recurrence, from, to).length : 0;
 }
 
 // ────────────────────────────── Cycle de vie d'une séance ──────────────────────────────

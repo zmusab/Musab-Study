@@ -8,16 +8,20 @@ import { WeekView } from '@/components/features/calendar/WeekView';
 import { DayAgendaPanel } from '@/components/features/calendar/DayAgendaPanel';
 import { EventModal, type EventFormValues } from '@/components/features/calendar/EventModal';
 import { ExamPrepModal } from '@/components/features/calendar/ExamPrepModal';
+import { TimetableView } from '@/components/features/calendar/TimetableView';
+import { SeriesScopeModal } from '@/components/features/calendar/SeriesScopeModal';
 import { PlanReviewModal } from '@/components/features/calendar/PlanReviewModal';
 import { AvailabilityModal } from '@/components/features/calendar/AvailabilityModal';
 import { useCalendar } from '@/hooks/useCalendar';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
 import {
+  WEEKDAY_ORDER,
   normalizeAvailability,
   serializeAvailability,
   type WeeklyAvailability,
 } from '@/core/calendar/availability';
+import { expandRecurring, isSeriesMaster } from '@/core/calendar/recurrence';
 import { planWeek } from '@/core/calendar/plans';
 import { dayLoad, LOAD_COLORS, LOAD_LABELS } from '@/core/calendar/load';
 import {
@@ -25,6 +29,8 @@ import {
   dueByDay,
   examBrief,
   eventKindMeta,
+  formatDayLong,
+  isLecture,
   formatMonthYear,
   monthMatrix,
   upcomingEvents,
@@ -36,15 +42,18 @@ import {
   completeSession,
   createEvent,
   createEvents,
+  deleteCourse,
   deleteEvent,
   deletePlanFor,
   resetSession,
   startSession,
+  updateCourse,
   updateEvent,
+  type SeriesScope,
 } from '@/data/repositories/calendar';
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { formatDuration } from '@/core/progress';
-import type { CalendarEvent, DayKey, ID } from '@/types';
+import type { CalendarEvent, DayKey, ID, WeekdayId } from '@/types';
 
 /**
  * CALENDRIER — voir sa journée, comprendre ce qui est urgent, commencer.
@@ -62,6 +71,9 @@ const VIEW_SEGMENTS = [
   { value: 'month' as const, label: 'Mois' },
   { value: 'week' as const, label: 'Semaine' },
   { value: 'day' as const, label: 'Jour' },
+  // L'emploi du temps n'est pas une quatrième façon de regarder des dates :
+  // c'est la semaine TYPE, celle qui se répète.
+  { value: 'timetable' as const, label: 'Emploi du temps' },
 ];
 type CalendarView = (typeof VIEW_SEGMENTS)[number]['value'];
 
@@ -78,6 +90,9 @@ export function CalendarPage() {
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [examEvent, setExamEvent] = useState<CalendarEvent | null>(null);
+  /** Portée à choisir avant d'agir sur un cours récurrent. */
+  const [scopeAsk, setScopeAsk] = useState<{ event: CalendarEvent; action: 'edit' | 'delete' } | null>(null);
+  const [editScope, setEditScope] = useState<SeriesScope>('occurrence');
   const [weekPlanOpen, setWeekPlanOpen] = useState(false);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
 
@@ -88,6 +103,32 @@ export function CalendarPage() {
   const sessionMinutes = profile.sessionMinutes ?? 45;
 
   const now = useMemo(() => (source ? new Date(source.loadedAt) : new Date()), [source]);
+
+  /**
+   * Les séries de cours sont dépliées UNE fois, ici, sur une fenêtre qui
+   * couvre à la fois ce qui est affiché et l'horizon du planificateur. Tout
+   * le reste de la page — grille, agenda, charge, plans — ne voit plus que
+   * des événements datés et n'a rien à savoir de la récurrence.
+   */
+  const events = useMemo(() => {
+    if (!source) return [];
+    const from = dayKey(addDays(now, -120));
+    const to = dayKey(addDays(now, 400));
+    return expandRecurring(source.events, from, to);
+  }, [source, now]);
+
+  /** Les cours récurrents, rangés par jour de la semaine — l'emploi du temps. */
+  const lecturesByWeekday = useMemo(() => {
+    const table = Object.fromEntries(WEEKDAY_ORDER.map((id) => [id, [] as CalendarEvent[]])) as Record<
+      WeekdayId,
+      CalendarEvent[]
+    >;
+    for (const event of source?.events ?? []) {
+      if (!isLecture(event) || !isSeriesMaster(event)) continue;
+      for (const weekday of event.recurrence!.weekdays) table[weekday].push(event);
+    }
+    return table;
+  }, [source]);
 
   // Jours réellement affichés : c'est le seul périmètre sur lequel on agrège
   // les cartes dues, pour ne pas parcourir toute la base à chaque rendu.
@@ -110,22 +151,22 @@ export function CalendarPage() {
   const agendaFor = useCallback(
     (day: DayKey) =>
       source
-        ? buildAgenda(day, source.events, due, source.subjects, source.chapters, now)
+        ? buildAgenda(day, events, due, source.subjects, source.chapters, now)
         : buildAgenda(day, [], new Map(), [], [], now),
-    [source, due, now],
+    [source, events, due, now],
   );
 
   const selectedAgenda = useMemo(() => agendaFor(selected), [agendaFor, selected]);
 
   const upcoming = useMemo(
-    () => (source ? upcomingEvents(source.events, now, 60).slice(0, 3) : []),
-    [source, now],
+    () => (source ? upcomingEvents(events, now, 60).slice(0, 3) : []),
+    [source, events, now],
   );
 
   const weekPlan = useMemo(() => {
     if (!source || !weekPlanOpen) return null;
     return planWeek({
-      events: source.events,
+      events,
       subjects: source.subjects,
       chapters: source.chapters,
       cards: source.cards,
@@ -135,17 +176,17 @@ export function CalendarPage() {
       minutesPerSession: sessionMinutes,
       now,
     });
-  }, [source, weekPlanOpen, availability, profile.weeklyStudyMinutesGoal, sessionMinutes, now]);
+  }, [source, events, weekPlanOpen, availability, profile.weeklyStudyMinutesGoal, sessionMinutes, now]);
 
   const selectedLoad = useMemo(
-    () => (source ? dayLoad(selected, source.events, availability) : null),
-    [source, selected, availability],
+    () => (source ? dayLoad(selected, events, availability) : null),
+    [source, events, selected, availability],
   );
 
   const brief = useMemo(() => {
     if (!source || !examEvent) return null;
-    return examBrief(examEvent, source.subjects, source.chapters, source.cards, source.logs, source.events, now);
-  }, [source, examEvent, now]);
+    return examBrief(examEvent, source.subjects, source.chapters, source.cards, source.logs, events, now);
+  }, [source, events, examEvent, now]);
 
   if (!source) return null;
 
@@ -168,38 +209,73 @@ export function CalendarPage() {
     setEditing(null);
     setFormOpen(true);
   };
+  /** La ligne SÉRIE dont dépend l'événement en cours d'édition, s'il y en a une. */
+  const seriesOf = (event: CalendarEvent | null): CalendarEvent | null => {
+    if (!event?.seriesId || !source) return null;
+    return source.events.find((row) => row.id === event.seriesId) ?? null;
+  };
+
+  /**
+   * Modifier ou supprimer une occurrence de cours récurrent demande d'abord
+   * la portée : on ne devine pas si « 10 h au lieu de 8 h » vaut pour lundi
+   * prochain ou pour tout le semestre.
+   */
   const openEdit = (entry: AgendaEvent) => {
+    if (entry.event.seriesId) {
+      setScopeAsk({ event: entry.event, action: 'edit' });
+      return;
+    }
+    setEditScope('occurrence');
     setEditing(entry.event);
     setFormOpen(true);
   };
 
   const submitEvent = async (values: EventFormValues) => {
+    // Les champs de cours ne suivent pas un événement qui n'en est pas un :
+    // changer de genre en cours de saisie ne doit pas laisser traîner une
+    // récurrence sur un devoir.
+    const courseFields = isLecture(values)
+      ? {
+          room: values.room.trim() || null,
+          teacher: values.teacher.trim() || null,
+          recurrence: values.recurrence,
+        }
+      : { room: null, teacher: null, recurrence: null };
+
+    const common = {
+      title: values.title.trim(),
+      kind: values.kind,
+      day: values.day,
+      subjectId: values.subjectId,
+      chapterId: values.chapterId,
+      startTime: values.startTime,
+      endTime: values.endTime,
+      importance: values.importance,
+      notes: values.notes.trim(),
+      ...courseFields,
+    };
+
     if (editing) {
-      await updateEvent(editing.id, {
-        title: values.title.trim(),
-        kind: values.kind,
-        day: values.day,
-        subjectId: values.subjectId,
-        chapterId: values.chapterId,
-        startTime: values.startTime,
-        endTime: values.endTime,
-        importance: values.importance,
-        notes: values.notes.trim(),
-      });
-      notify('Événement mis à jour.', 'success');
+      if (editing.seriesId) {
+        await updateCourse(editing, common, editScope);
+        notify(
+          editScope === 'series'
+            ? 'Série de cours mise à jour.'
+            : editScope === 'following'
+              ? 'Cours mis à jour à partir de cette date.'
+              : 'Cours mis à jour pour cette date.',
+          'success',
+        );
+      } else {
+        await updateEvent(editing.id, common);
+        notify('Événement mis à jour.', 'success');
+      }
     } else {
-      await createEvent({
-        title: values.title,
-        kind: values.kind,
-        day: values.day,
-        subjectId: values.subjectId,
-        chapterId: values.chapterId,
-        startTime: values.startTime,
-        endTime: values.endTime,
-        importance: values.importance,
-        notes: values.notes,
-      });
-      notify('Événement ajouté.', 'success');
+      await createEvent(common);
+      notify(
+        common.recurrence ? 'Cours récurrent ajouté à ton emploi du temps.' : 'Événement ajouté.',
+        'success',
+      );
     }
     setSelected(values.day);
     setFormOpen(false);
@@ -207,6 +283,10 @@ export function CalendarPage() {
   };
 
   const removeEvent = async (entry: AgendaEvent) => {
+    if (entry.event.seriesId) {
+      setScopeAsk({ event: entry.event, action: 'delete' });
+      return;
+    }
     const ok = await confirm({
       title: 'Supprimer cet événement ?',
       description: entry.event.title,
@@ -216,6 +296,28 @@ export function CalendarPage() {
     if (!ok) return;
     await deleteEvent(entry.event.id);
     notify('Événement supprimé.', 'success');
+  };
+
+  /** Suite d'une action sur un cours récurrent, une fois la portée choisie. */
+  const applyScope = async (scope: SeriesScope) => {
+    if (!scopeAsk) return;
+    const { event, action } = scopeAsk;
+    setScopeAsk(null);
+    if (action === 'edit') {
+      setEditScope(scope);
+      setEditing(event);
+      setFormOpen(true);
+      return;
+    }
+    await deleteCourse(event, scope);
+    notify(
+      scope === 'series'
+        ? 'Série de cours supprimée.'
+        : scope === 'following'
+          ? 'Cours supprimé à partir de cette date.'
+          : 'Ce cours a été retiré de cette date.',
+      'success',
+    );
   };
 
   /**
@@ -375,8 +477,26 @@ export function CalendarPage() {
         <SegmentedControl size="sm" segments={VIEW_SEGMENTS} value={view} onChange={setView} />
       </div>
 
+      {/* ── Emploi du temps : la semaine TYPE, pleine largeur ── */}
+      {view === 'timetable' && (
+        <Card className="mt-4">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[1.05rem]">Semaine type</h2>
+            <p className="text-[0.8rem] text-[var(--ink-faint)]">
+              Tes cours récurrents et ce qui reste libre dans tes plages déclarées.
+            </p>
+          </div>
+          <TimetableView lecturesByWeekday={lecturesByWeekday} availability={availability} />
+        </Card>
+      )}
+
       {/* ── Grille + agenda ── */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div
+        className={
+          'mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] ' +
+          (view === 'timetable' ? 'hidden' : '')
+        }
+      >
         <Card>
           {view === 'month' && (
             <MonthGrid weeks={weeks} agendaFor={agendaFor} selected={selected} onSelect={setSelected} />
@@ -441,6 +561,7 @@ export function CalendarPage() {
         open={formOpen}
         day={selected}
         event={editing}
+        series={seriesOf(editing)}
         subjects={source.subjects}
         chapters={source.chapters}
         onClose={() => {
@@ -481,13 +602,28 @@ export function CalendarPage() {
         }}
       />
 
+      <SeriesScopeModal
+        open={scopeAsk !== null}
+        title={scopeAsk?.action === 'delete' ? 'Supprimer ce cours récurrent' : 'Modifier ce cours récurrent'}
+        description={
+          scopeAsk
+            ? `${scopeAsk.event.title} — ${formatDayLong(scopeAsk.event.day)}. Que faut-il ${
+                scopeAsk.action === 'delete' ? 'supprimer' : 'modifier'
+              } ?`
+            : ''
+        }
+        destructive={scopeAsk?.action === 'delete'}
+        onClose={() => setScopeAsk(null)}
+        onChoose={applyScope}
+      />
+
       <ExamPrepModal
         open={examEvent !== null}
         brief={brief}
         chapters={source.chapters}
         cards={source.cards}
         logs={source.logs}
-        events={source.events}
+        events={events}
         availability={availability}
         sessionMinutes={sessionMinutes}
         now={now}

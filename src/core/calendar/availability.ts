@@ -1,4 +1,4 @@
-import type { CalendarEvent, DayKey, StoredAvailability, StoredDayAvailability } from '@/types';
+import type { CalendarEvent, DayKey, StoredAvailability, StoredDayAvailability, WeekdayId } from '@/types';
 import { parseDayKey } from '@/lib/date';
 import { addMinutes } from './index';
 
@@ -47,14 +47,12 @@ export const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
 
 // ────────────────────────────── Les sept jours ──────────────────────────────
 
-export type WeekdayId =
-  | 'monday'
-  | 'tuesday'
-  | 'wednesday'
-  | 'thursday'
-  | 'friday'
-  | 'saturday'
-  | 'sunday';
+/**
+ * Les noms de jours sont déclarés avec le modèle, dans `types/` : ils
+ * apparaissent aussi bien dans les disponibilités enregistrées que dans la
+ * récurrence d'un cours, et une seule définition évite qu'ils divergent.
+ */
+export type { WeekdayId } from '@/types';
 
 /** La semaine commence le lundi, comme la grille du calendrier. */
 export const WEEKDAY_ORDER: readonly WeekdayId[] = [

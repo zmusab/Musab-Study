@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, Select, Textarea } from '@/components/ui';
-import { EVENT_KINDS, addMinutes } from '@/core/calendar';
-import type { CalendarEvent, CalendarEventKind, Chapter, DayKey, ID, Importance, Subject } from '@/types';
+import { EVENT_KINDS, addMinutes, isLecture } from '@/core/calendar';
+import { WEEKDAY_ORDER, WEEKDAY_SHORT, weekdayOf } from '@/core/calendar/availability';
+import type {
+  CalendarEvent,
+  CalendarEventKind,
+  Chapter,
+  DayKey,
+  ID,
+  Importance,
+  Recurrence,
+  Subject,
+  WeekdayId,
+} from '@/types';
 
 /**
  * Création et modification d'un événement — le même formulaire pour les deux,
@@ -27,12 +38,18 @@ export interface EventFormValues {
   endTime: string | null;
   importance: Importance;
   notes: string;
+  /** Cours universitaires seulement — vides ailleurs. */
+  room: string;
+  teacher: string;
+  /** Null quand le cours ne se répète pas. */
+  recurrence: Recurrence | null;
 }
 
 export function EventModal({
   open,
   day,
   event,
+  series = null,
   subjects,
   chapters,
   onClose,
@@ -42,27 +59,44 @@ export function EventModal({
   day: DayKey;
   /** Null pour une création. */
   event: CalendarEvent | null;
+  /** Ligne SÉRIE de l'événement modifié, quand c'en est une occurrence. */
+  series?: CalendarEvent | null;
   subjects: Subject[];
   chapters: Chapter[];
   onClose: () => void;
   onSubmit: (values: EventFormValues) => void | Promise<void>;
 }) {
-  const [values, setValues] = useState<EventFormValues>(() => initialValues(day, event, subjects));
+  const [values, setValues] = useState<EventFormValues>(() => initialValues(day, event, subjects, series));
   const [saving, setSaving] = useState(false);
 
   // Rouvrir la fenêtre doit toujours repartir de l'événement visé, pas de la
   // saisie précédente.
   useEffect(() => {
-    if (open) setValues(initialValues(day, event, subjects));
-  }, [open, day, event, subjects]);
+    if (open) setValues(initialValues(day, event, subjects, series));
+  }, [open, day, event, subjects, series]);
 
   const subjectChapters = chapters.filter((chapter) => chapter.subjectId === values.subjectId);
+  const lecture = isLecture(values);
 
   const set = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
 
+  /** Un jour se coche et se décoche ; la liste reste dans l'ordre de la semaine. */
+  const toggleWeekday = (id: WeekdayId) =>
+    setValues((current) => {
+      const recurrence = current.recurrence;
+      if (!recurrence) return current;
+      const weekdays = recurrence.weekdays.includes(id)
+        ? recurrence.weekdays.filter((entry) => entry !== id)
+        : WEEKDAY_ORDER.filter((entry) => entry === id || recurrence.weekdays.includes(entry));
+      return { ...current, recurrence: { ...recurrence, weekdays } };
+    });
+
   const submit = async () => {
     if (values.title.trim().length === 0 || saving) return;
+    // Une série sans jour ne produirait aucune occurrence : la refuser vaut
+    // mieux qu'enregistrer un cours qui n'apparaîtra jamais.
+    if (values.recurrence !== null && values.recurrence.weekdays.length === 0) return;
     setSaving(true);
     try {
       await onSubmit(values);
@@ -199,6 +233,119 @@ export function EventModal({
           </Select>
         )}
 
+        {/* ── Cours universitaire : salle, enseignant, récurrence ── */}
+        {lecture && (
+          <div className="flex flex-col gap-4" data-event-lecture-fields>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Salle"
+                placeholder="Facultatif — ex. Amphi B"
+                value={values.room}
+                onChange={(input) => set('room', input.target.value)}
+              />
+              <Input
+                label="Enseignant"
+                placeholder="Facultatif"
+                value={values.teacher}
+                onChange={(input) => set('teacher', input.target.value)}
+              />
+            </div>
+
+            <div className="rounded-[var(--radius-card)] border border-[var(--line)] p-3">
+              <label className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={values.recurrence !== null}
+                  aria-label="Cours récurrent"
+                  onChange={(input) =>
+                    setValues((current) => ({
+                      ...current,
+                      recurrence: input.target.checked
+                        ? {
+                            // Par défaut, le jour de la date choisie : c'est le
+                            // seul jour dont on soit sûr qu'il convienne.
+                            weekdays: [weekdayOf(current.day)],
+                            startDay: current.day,
+                            endDay: null,
+                          }
+                        : null,
+                    }))
+                  }
+                  className="h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="text-[0.92rem] font-medium">Cours récurrent</span>
+              </label>
+
+              {values.recurrence !== null && (
+                <div className="mt-3 flex flex-col gap-3" data-event-recurrence>
+                  <div>
+                    <p className="mb-1.5 text-[0.72rem] font-medium tracking-wide text-[var(--ink-faint)]">
+                      Jours de la semaine
+                    </p>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {WEEKDAY_ORDER.map((id) => {
+                        const active = values.recurrence!.weekdays.includes(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => toggleWeekday(id)}
+                            aria-pressed={active}
+                            aria-label={WEEKDAY_SHORT[id]}
+                            data-recurrence-day={id}
+                            data-touch-target
+                            className={
+                              'min-h-[2.4rem] rounded-[var(--radius-control)] border text-[0.74rem] font-medium transition-colors ' +
+                              (active
+                                ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
+                                : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
+                            }
+                          >
+                            {WEEKDAY_SHORT[id]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Input
+                      label="À partir du"
+                      type="date"
+                      value={values.recurrence.startDay}
+                      onChange={(input) =>
+                        setValues((current) => ({
+                          ...current,
+                          recurrence: { ...current.recurrence!, startDay: input.target.value },
+                        }))
+                      }
+                    />
+                    <Input
+                      label="Jusqu’au"
+                      hint="Facultatif — sans date de fin, le cours continue."
+                      type="date"
+                      value={values.recurrence.endDay ?? ''}
+                      onChange={(input) =>
+                        setValues((current) => ({
+                          ...current,
+                          recurrence: {
+                            ...current.recurrence!,
+                            endDay: input.target.value === '' ? null : input.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  {values.recurrence.weekdays.length === 0 && (
+                    <p className="text-[0.78rem] text-[var(--mastery-1)]">
+                      Choisis au moins un jour : sans jour, la série n’a aucune occurrence.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <Textarea
           label="Notes"
           rows={3}
@@ -211,8 +358,16 @@ export function EventModal({
   );
 }
 
-function initialValues(day: DayKey, event: CalendarEvent | null, subjects: Subject[]): EventFormValues {
+function initialValues(
+  day: DayKey,
+  event: CalendarEvent | null,
+  subjects: Subject[],
+  series: CalendarEvent | null = null,
+): EventFormValues {
   if (event) {
+    // Pour une occurrence de série, la récurrence à afficher est celle de la
+    // SÉRIE, pas celle de l'occurrence (qui n'en porte aucune).
+    const recurrence = event.recurrence ?? series?.recurrence ?? null;
     return {
       title: event.title,
       kind: event.kind,
@@ -223,6 +378,9 @@ function initialValues(day: DayKey, event: CalendarEvent | null, subjects: Subje
       endTime: event.endTime,
       importance: event.importance ?? 2,
       notes: event.notes,
+      room: event.room ?? '',
+      teacher: event.teacher ?? '',
+      recurrence: recurrence ? { ...recurrence, weekdays: [...recurrence.weekdays] } : null,
     };
   }
   return {
@@ -235,5 +393,8 @@ function initialValues(day: DayKey, event: CalendarEvent | null, subjects: Subje
     endTime: null,
     importance: 2,
     notes: '',
+    room: '',
+    teacher: '',
+    recurrence: null,
   };
 }

@@ -26,7 +26,12 @@ import { EVALUATION_KIND_LABELS, isEvaluationKind } from '@/core/progress/exam';
 
 // ────────────────────────────── Genres d'événement ──────────────────────────────
 
-export type EventFamily = 'evaluation' | 'session' | 'goal' | 'other';
+/**
+ * `'fixed'` : un bloc imposé de l'emploi du temps — un cours universitaire.
+ * Il occupe le calendrier et bloque les créneaux, mais ce n'est jamais du
+ * travail personnel : rien de ce qui mesure l'étude ne le compte.
+ */
+export type EventFamily = 'evaluation' | 'session' | 'fixed' | 'goal' | 'other';
 
 export interface EventKindMeta {
   kind: CalendarEventKind;
@@ -42,7 +47,13 @@ export const EVENT_KINDS: readonly EventKindMeta[] = [
   { kind: 'final', label: 'Examen final', family: 'evaluation', colorVar: 'var(--mastery-0)', rank: 5 },
   { kind: 'exam', label: 'Examen', family: 'evaluation', colorVar: 'var(--mastery-0)', rank: 4 },
   { kind: 'midterm', label: 'Contrôle', family: 'evaluation', colorVar: 'var(--mastery-1)', rank: 3 },
+  // Turquoise, comme la section « Cours » de la navigation : un cours
+  // universitaire ne doit jamais se confondre d'un coup d'œil avec une séance
+  // d'étude (violet), une évaluation (rouge) ou un devoir (jaune).
+  { kind: 'lecture', label: 'Cours', family: 'fixed', colorVar: 'var(--nav-turquoise)', rank: 2 },
   { kind: 'task', label: 'Devoir', family: 'goal', colorVar: 'var(--mastery-2)', rank: 2 },
+  // `'course'` est le nom HISTORIQUE de la séance d'étude — voir le
+  // commentaire de `CalendarEventKind` dans `types/`.
   { kind: 'course', label: 'Séance d’étude', family: 'session', colorVar: 'var(--accent)', rank: 1 },
   { kind: 'review', label: 'Révision planifiée', family: 'session', colorVar: 'var(--accent)', rank: 1 },
 ];
@@ -64,6 +75,15 @@ export function eventKindMeta(kind: CalendarEventKind): EventKindMeta {
 /** Une séance d'étude est un événement dont le genre appartient à la famille « session ». */
 export function isStudySession(event: Pick<CalendarEvent, 'kind'>): boolean {
   return eventKindMeta(event.kind).family === 'session';
+}
+
+/**
+ * Un cours universitaire — un bloc fixe. Il bloque le calendrier et s'affiche
+ * dans l'emploi du temps ; il n'est jamais compté comme du temps d'étude, ne
+ * se « commence » ni ne se « termine », et n'écrit rien dans `reviewLogs`.
+ */
+export function isLecture(event: Pick<CalendarEvent, 'kind'>): boolean {
+  return eventKindMeta(event.kind).family === 'fixed';
 }
 
 // ────────────────────────────── État d'une séance ──────────────────────────────
@@ -213,6 +233,8 @@ export interface DayAgenda {
   day: DayKey;
   /** Évaluations d'abord : ce sont elles qui commandent la journée. */
   evaluations: AgendaEvent[];
+  /** Cours universitaires — des blocs imposés, pas du travail personnel. */
+  lectures: AgendaEvent[];
   sessions: AgendaEvent[];
   others: AgendaEvent[];
   due: DueBucket | null;
@@ -242,15 +264,17 @@ export function buildAgenda(
     .sort(byTimeThenRank);
 
   const evaluations = decorated.filter((entry) => entry.meta.family === 'evaluation');
+  const lectures = decorated.filter((entry) => entry.meta.family === 'fixed');
   const sessions = decorated.filter((entry) => entry.meta.family === 'session');
   const others = decorated.filter(
-    (entry) => entry.meta.family !== 'evaluation' && entry.meta.family !== 'session',
+    (entry) => !['evaluation', 'fixed', 'session'].includes(entry.meta.family),
   );
   const dueBucket = due.get(day) ?? null;
 
   return {
     day,
     evaluations,
+    lectures,
     sessions,
     others,
     due: dueBucket,

@@ -43,8 +43,10 @@ export function DayAgendaPanel({
           <p className="mt-0.5 text-[0.8rem] text-[var(--ink-faint)]">
             {agenda.isEmpty
               ? 'Rien de prévu.'
-              : `${agenda.evaluations.length + agenda.sessions.length + agenda.others.length} événement${
-                  agenda.evaluations.length + agenda.sessions.length + agenda.others.length > 1 ? 's' : ''
+              : `${agenda.evaluations.length + agenda.lectures.length + agenda.sessions.length + agenda.others.length} événement${
+                  agenda.evaluations.length + agenda.lectures.length + agenda.sessions.length + agenda.others.length > 1
+                    ? 's'
+                    : ''
                 }${agenda.due && agenda.due.cards > 0 ? ` · ${agenda.due.cards} carte${agenda.due.cards > 1 ? 's' : ''} due${agenda.due.cards > 1 ? 's' : ''}` : ''}`}
           </p>
         </div>
@@ -85,6 +87,52 @@ export function DayAgendaPanel({
               <Button size="sm" onClick={() => onOpenExam(entry)}>
                 Préparer
               </Button>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(entry)}>
+                Modifier
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDelete(entry)}>
+                Supprimer
+              </Button>
+            </div>
+          </article>
+        ))}
+
+        {/* COURS — des blocs imposés. Ni « Commencer » ni « Terminer » : un
+            cours n'est pas du travail personnel, et rien ici ne le chronomètre. */}
+        {agenda.lectures.map((entry) => (
+          <article
+            key={entry.event.id}
+            data-calendar-lecture
+            data-lecture-series={entry.event.seriesId ?? ''}
+            className="rounded-[var(--radius-card)] border-l-[3px] border-y border-r border-y-[var(--line)] border-r-[var(--line)] p-3"
+            style={{ borderLeftColor: entry.meta.colorVar }}
+          >
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.72rem] uppercase tracking-wide">
+              <span className="font-medium" style={{ color: entry.meta.colorVar }}>
+                {entry.meta.label}
+              </span>
+              {entry.event.startTime && (
+                <span className="normal-case text-[var(--ink-faint)]">
+                  {entry.event.startTime}
+                  {entry.event.endTime ? `–${entry.event.endTime}` : ''}
+                </span>
+              )}
+              {entry.event.seriesId && (
+                <span className="normal-case text-[var(--ink-faint)]" title="Cours récurrent">
+                  · chaque semaine
+                </span>
+              )}
+            </p>
+            <p className="mt-1 text-[0.92rem] font-medium leading-snug">{entry.event.title}</p>
+            {(entry.subjectName || entry.event.room || entry.event.teacher) && (
+              <p className="mt-0.5 text-[0.8rem] text-[var(--ink-soft)]">
+                {[entry.subjectName, entry.event.room, entry.event.teacher].filter(Boolean).join(' · ')}
+              </p>
+            )}
+            {entry.event.notes && (
+              <p className="mt-1.5 text-[0.8rem] leading-relaxed text-[var(--ink-faint)]">{entry.event.notes}</p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="ghost" onClick={() => onEdit(entry)}>
                 Modifier
               </Button>

@@ -92,6 +92,28 @@ export function MonthGrid({
                     </span>
                   ))}
 
+                  {/* Un cours n'a pas besoin de son titre dans une case de mois,
+                      mais sa présence doit se voir : un trait turquoise par
+                      cours, distinct des pastilles violettes des séances. */}
+                  {agenda.lectures.length > 0 && (
+                    <span className="flex flex-wrap items-center gap-0.5" data-calendar-lecture-dots>
+                      {agenda.lectures.slice(0, 4).map((entry) => (
+                        <span
+                          key={entry.event.id}
+                          aria-hidden
+                          title={entry.event.title}
+                          className="h-1 w-3 rounded-full"
+                          style={{ backgroundColor: entry.meta.colorVar }}
+                        />
+                      ))}
+                      {agenda.lectures.length > 4 && (
+                        <span className="text-[0.62rem] text-[var(--ink-faint)]">
+                          +{agenda.lectures.length - 4}
+                        </span>
+                      )}
+                    </span>
+                  )}
+
                   {agenda.sessions.length > 0 && (
                     <span className="mt-auto flex flex-wrap items-center gap-1">
                       {agenda.sessions.slice(0, 4).map((entry) => (
