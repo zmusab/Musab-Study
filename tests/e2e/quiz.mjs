@@ -103,6 +103,54 @@ const dbSnapshot = () =>
     };
   });
 
+/**
+ * Ajoute directement une flashcard réelle marquée « tombe à l'examen »
+ * (importance 3) sur la matière donnée — les cartes créées par ce script via
+ * le formulaire manuel de Flashcards ont toutes l'importance par défaut (2),
+ * ce qui ne suffit jamais à produire une estimation en probabilité élevée.
+ * Cette carte est une vraie carte, traitée par l'application exactement
+ * comme n'importe quelle autre — ce n'est pas un double de test.
+ */
+const seedHighImportanceCard = (subjectName) =>
+  page.evaluate(async (name) => {
+    const open = indexedDB.open('musab-study');
+    const db = await new Promise((resolve, reject) => {
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    const subjects = await new Promise((resolve) => {
+      const request = db.transaction('subjects').objectStore('subjects').getAll();
+      request.onsuccess = () => resolve(request.result);
+    });
+    const subject = subjects.find((s) => s.name === name);
+    const now = new Date().toISOString();
+    const card = {
+      id: 'e2e_examen_probable_high',
+      subjectId: subject.id,
+      chapterId: null,
+      question: 'Quel os forme la base du crâne en arrière ?',
+      answer: 'L’os occipital.',
+      importance: 3,
+      difficulty: 2,
+      ease: 2.5,
+      interval: 0,
+      reps: 0,
+      lapses: 0,
+      due: now,
+      lastReview: null,
+      origin: 'manual',
+      sourceChunkIds: [],
+      createdAt: now,
+    };
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('flashcards', 'readwrite');
+      tx.objectStore('flashcards').put(card);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, subjectName);
+
 /** Répond à toutes les questions restantes ; renvoie le nombre de réponses données. */
 const answerAll = async ({ chooseCorrect = false } = {}) => {
   let answered = 0;
@@ -176,8 +224,8 @@ for (const [q, a] of CARDS) {
 // ────────────────── 3. Création d'un quiz : types et paramètres ──────────────────
 await goQuiz();
 check(
-  'Les six types de quiz sont proposés',
-  (await page.locator('[data-quiz-scope]').count()) === 6,
+  'Les sept types de quiz sont proposés (dont « Examen probable »)',
+  (await page.locator('[data-quiz-scope]').count()) === 7,
 );
 check(
   'Un mode sans distinction de compteur reste sélectionnable',
@@ -493,6 +541,150 @@ check(
   'Le format mixte construit des questions valides (QCM et/ou Vrai/Faux, jamais autre chose)',
   sawQcm || sawVf,
 );
+
+// ────────────────── 14. « Examen probable » — une ESTIMATION, jamais une certitude ──────────────────
+await seedHighImportanceCard('Anatomie');
+await resetToSetup();
+await page.reload({ waitUntil: 'networkidle' });
+await goQuiz();
+await resetToSetup();
+await page.waitForTimeout(300);
+
+check(
+  'Le mode « Examen probable » est proposé parmi les types de quiz',
+  await page.locator('[data-quiz-scope="exam-likely"]').isVisible(),
+);
+await page.locator('[data-quiz-scope="exam-likely"]').click();
+await page.waitForTimeout(300);
+
+const examLikelyPanelText = await page.locator('[data-quiz-exam-likely-panel]').innerText();
+check(
+  'Le texte « Questions probables — estimation basée sur le contenu disponible » est affiché',
+  examLikelyPanelText.includes('Questions probables') && examLikelyPanelText.includes('Estimation basée sur le contenu disponible'),
+);
+check(
+  'La note de transparence explique que l’estimation ne garantit rien',
+  (await page.locator('[data-quiz-exam-likely-disclaimer]').innerText()).includes('ne garantit pas les questions de l’examen'),
+);
+check(
+  'Sans examen enregistré pour cette matière, l’absence de donnée est dite honnêtement',
+  examLikelyPanelText.includes('Aucun examen enregistré pour cette matière'),
+);
+
+// Renforcer avec l'IA sans clé configurée : message honnête, rien ne casse,
+// aucune fausse analyse n'est enregistrée.
+const analyzeButton = page.locator('[data-quiz-exam-likely-analyze]');
+if (await analyzeButton.count()) {
+  await analyzeButton.click();
+  await page.waitForTimeout(500);
+  const toastText = await page.locator('[aria-live="polite"]').innerText().catch(() => '');
+  check(
+    'Sans clé API, le renfort IA le dit clairement plutôt que d’échouer en silence',
+    /clé API/i.test(toastText),
+    toastText.replace(/\n/g, ' | '),
+  );
+}
+
+await page.getByLabel('Nombre de questions').selectOption('5');
+await page.getByLabel('Format').selectOption('mixed');
+const beforeExamLikely = await dbSnapshot();
+await page.locator('[data-quiz-start]').click();
+await page.waitForTimeout(800);
+
+check('Le quiz « Examen probable » démarre', await page.locator('[data-quiz-session]').isVisible());
+const likelihoodBadge = page.locator('[data-quiz-exam-likelihood]');
+check('La première question porte un badge de probabilité (🟢🟡🟠)', await likelihoodBadge.count() > 0);
+const badgeLevel = await likelihoodBadge.getAttribute('data-quiz-exam-likelihood');
+check('Le niveau de probabilité est l’une des trois valeurs attendues', ['high', 'medium', 'low'].includes(badgeLevel ?? ''));
+
+const wholeBodyText = await page.locator('body').innerText();
+check(
+  'Aucune formulation de certitude (« tombera à l’examen ») n’apparaît jamais',
+  !/tombera à l.examen|va tomber à l.examen/i.test(wholeBodyText),
+);
+
+await page.locator('[data-quiz-option]').first().click();
+await page.waitForTimeout(400);
+const explanationText = await page.locator('[data-quiz-explanation]').innerText();
+check(
+  'Après la réponse, la formulation approuvée « estimée comme prioritaire » est utilisée',
+  explanationText.includes('estimée comme prioritaire selon les données disponibles'),
+);
+check('« Basé sur : [chapitre] » apparaît après la réponse', /Basé sur\s*:/.test(explanationText));
+
+await page.locator('[data-quiz-next]').click();
+await page.waitForTimeout(400);
+await answerAll();
+await page.waitForTimeout(500);
+
+check('Les résultats de « Examen probable » s’affichent', await page.locator('[data-quiz-results]').isVisible());
+check(
+  'La répartition par probabilité estimée est affichée',
+  await page.locator('[data-quiz-exam-likely-results]').isVisible(),
+);
+
+const afterExamLikely = await dbSnapshot();
+check(
+  'Les flashcards ne sont jamais modifiées par « Examen probable » (aucune échéance SM-2 touchée)',
+  JSON.stringify(beforeExamLikely.cards) === JSON.stringify(afterExamLikely.cards),
+);
+const quizLogsBeforeCount = beforeExamLikely.logs.filter((l) => l.itemKind === 'quiz').length;
+const quizLogsAfter = afterExamLikely.logs.filter((l) => l.itemKind === 'quiz');
+check(
+  'Les réponses de « Examen probable » sont journalisées comme un quiz normal (itemKind: quiz, rating: null)',
+  quizLogsAfter.length === quizLogsBeforeCount + 5 &&
+    quizLogsAfter.slice(-5).every((l) => l.rating === null),
+  `${quizLogsBeforeCount} → ${quizLogsAfter.length}`,
+);
+
+const retryButton = page.locator('[data-quiz-retry-important]');
+if (await retryButton.count()) {
+  await retryButton.click();
+  await page.waitForTimeout(700);
+  check(
+    '« Refaire les questions importantes » relance une vraie session, pas un écran vide',
+    await page.locator('[data-quiz-session]').isVisible(),
+  );
+  await answerAll();
+  await page.waitForTimeout(500);
+  check('Cette relance se termine aussi par un vrai résultat', await page.locator('[data-quiz-results]').isVisible());
+} else {
+  check('Sans notion en probabilité élevée dans ce tirage, aucun bouton n’est proposé à tort', true);
+}
+
+// ────────────────── 15. « Examen probable » — iPad portrait/paysage ──────────────────
+for (const [name, viewport] of [
+  ['paysage', { width: 1194, height: 834 }],
+  ['portrait', { width: 834, height: 1194 }],
+]) {
+  await page.setViewportSize(viewport);
+  await page.waitForTimeout(400);
+  await goQuiz();
+  await resetToSetup();
+  await page.waitForTimeout(400);
+  await page.locator('[data-quiz-scope="exam-likely"]').click();
+  await page.waitForTimeout(300);
+  let overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  check(`« Examen probable » : aucun débordement horizontal en configuration (${name})`, !overflow);
+
+  await page.locator('[data-quiz-start]').click();
+  await page.waitForTimeout(700);
+  if (await page.locator('[data-quiz-session]').isVisible()) {
+    overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    check(`« Examen probable » : aucun débordement horizontal pendant une question (${name})`, !overflow);
+    await page.locator('[data-quiz-option]').first().click();
+    await page.waitForTimeout(400);
+    overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    check(`« Examen probable » : aucun débordement horizontal après réponse (${name})`, !overflow);
+    await page.locator('[data-quiz-next]').click();
+    await page.waitForTimeout(400);
+    await answerAll();
+    await page.waitForTimeout(500);
+    overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    check(`« Examen probable » : aucun débordement horizontal sur les résultats (${name})`, !overflow);
+  }
+}
+await page.setViewportSize({ width: 1194, height: 834 });
 
 console.log('\n--- Erreurs console ---');
 console.log(errors.length ? errors.join('\n') : 'aucune');

@@ -1,16 +1,17 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 export function Chip({
   children,
   color,
   className,
+  ...rest
 }: {
   children: ReactNode;
   /** Couleur d'accent explicite (variable CSS ou hexadécimal). */
   color?: string;
   className?: string;
-}) {
+} & HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
       className={cn(
@@ -24,6 +25,7 @@ export function Chip({
           ? { borderColor: color, color, backgroundColor: 'transparent' }
           : { borderColor: 'var(--line)', color: 'var(--ink-soft)' }
       }
+      {...rest}
     >
       {children}
     </span>

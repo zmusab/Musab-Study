@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { Button, EmptyState, Icon, useConfirm } from '@/components/ui';
@@ -7,6 +8,7 @@ import { QuizSetup } from '@/components/features/quiz/QuizSetup';
 import { QuizSession } from '@/components/features/quiz/QuizSession';
 import { QuizResults } from '@/components/features/quiz/QuizResults';
 import { useProgress } from '@/hooks/useProgress';
+import { db } from '@/data/db';
 import { recordQuizResults } from '@/data/repositories/quiz';
 import { weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
@@ -19,6 +21,7 @@ import {
   type QuizFormat,
   type QuizResult,
   type QuizScope,
+  type QuizTables,
 } from '@/core/quiz';
 import type { ID } from '@/types';
 
@@ -37,11 +40,20 @@ import type { ID } from '@/types';
 export function QuizPage() {
   const source = useProgress();
   const confirm = useConfirm();
+  // Analyses IA déjà enregistrées par chapitre (voir NotionsTab / QuizSetup) —
+  // renforcent l'estimation « Examen probable » quand elles existent, sans
+  // jamais être requises pour que le reste du Quiz fonctionne.
+  const chapterAnalyses = useLiveQuery(() => db.chapterAnalyses.toArray(), []) ?? [];
 
   const [built, setBuilt] = useState<QuizBuildResult | null>(null);
   const [answers, setAnswers] = useState<QuizAnswerRecord[]>([]);
   const [result, setResult] = useState<QuizResult | null>(null);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+
+  const quizTables: QuizTables | null = useMemo(
+    () => (source ? { ...source.tables, chapterAnalyses } : null),
+    [source, chapterAnalyses],
+  );
 
   const cardCountBySubject = useMemo(() => {
     const map = new Map<ID, number>();
@@ -100,7 +112,7 @@ export function QuizPage() {
   }
 
   const start = (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => {
-    const generated = buildQuiz(scope, source.tables, {
+    const generated = buildQuiz(scope, quizTables!, {
       count,
       difficulty,
       format,
@@ -108,6 +120,24 @@ export function QuizPage() {
     });
     if (generated.blocked) {
       setBlockedMessage(generated.blocked);
+      return;
+    }
+    setBlockedMessage(null);
+    setBuilt(generated);
+    setAnswers([]);
+    setResult(null);
+  };
+
+  /** « Refaire les questions importantes » — rejoue directement les cartes en probabilité élevée du quiz précédent. */
+  const retryImportant = (cardIds: ID[]) => {
+    const generated = buildQuiz(
+      { kind: 'cards', cardIds },
+      quizTables!,
+      { count: cardIds.length, difficulty: 'mixed', format: 'mixed', now: new Date(source.loadedAt) },
+    );
+    if (generated.blocked) {
+      setBlockedMessage(generated.blocked);
+      setResult(null);
       return;
     }
     setBlockedMessage(null);
@@ -164,7 +194,7 @@ export function QuizPage() {
       />
 
       {result ? (
-        <QuizResults result={result} onRestart={restart} />
+        <QuizResults result={result} onRestart={restart} onRetryImportant={retryImportant} />
       ) : built ? (
         <QuizSession questions={built.questions} index={answers.length} onAnswer={(r) => void handleAnswer(r)} />
       ) : (

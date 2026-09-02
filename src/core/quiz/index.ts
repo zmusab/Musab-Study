@@ -1,6 +1,14 @@
 import { masteryPct } from '@/core/mastery';
 import { chapterProgress, weakPoints } from '@/core/progress';
-import type { Chapter, Difficulty, Flashcard, ID, ReviewLog, Subject } from '@/types';
+import { upcomingEvaluations } from '@/core/progress/exam';
+import {
+  chapterSignalsFromAnalyses,
+  rankForExamLikely,
+  type ExamLikelihoodInfo,
+} from '@/core/quiz/examLikely';
+import type { CalendarEvent, Chapter, ChapterAnalysis, Difficulty, Flashcard, ID, ReviewLog, Subject } from '@/types';
+
+export type { ExamLikelihood, ExamLikelihoodInfo } from '@/core/quiz/examLikely';
 
 /**
  * QUIZ — évaluation de connaissances, distincte des flashcards.
@@ -43,7 +51,17 @@ export type QuizScope =
   /** Cartes que la répétition espacée programme aujourd'hui ou avant. */
   | { kind: 'due' }
   /** Matière d'une évaluation à venir — les chapitres faibles y passent en premier. */
-  | { kind: 'exam'; subjectId: ID };
+  | { kind: 'exam'; subjectId: ID }
+  /**
+   * « Examen probable » — ESTIMATION, jamais une prédiction (voir
+   * `core/quiz/examLikely.ts`). `chapterIds` vide = toute la matière.
+   * `evaluationEventId` : l'examen réellement enregistré au calendrier à
+   * utiliser pour contextualiser l'estimation, ou `null` si aucun n'est
+   * disponible ou choisi.
+   */
+  | { kind: 'exam-likely'; subjectId: ID; chapterIds: ID[]; evaluationEventId: ID | null }
+  /** Cartes précises, désignées par id — sert par exemple à « Refaire les questions importantes ». */
+  | { kind: 'cards'; cardIds: ID[] };
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
 
@@ -68,6 +86,10 @@ export interface QuizTables {
   chapters: readonly Chapter[];
   cards: readonly Flashcard[];
   logs: readonly ReviewLog[];
+  /** Optionnelles : seul le scope `'exam-likely'` les utilise, tous les appelants existants restent valides sans elles. */
+  events?: readonly CalendarEvent[];
+  /** Analyses IA déjà enregistrées par chapitre (voir `services/courses/notions.ts`) — jamais recalculées ici. */
+  chapterAnalyses?: readonly ChapterAnalysis[];
 }
 
 export interface QuizQuestionInstance {
@@ -97,6 +119,12 @@ export interface QuizQuestionInstance {
    * fabriquée, seulement un fait mesuré et déjà vrai avant le quiz.
    */
   masteryContext: string;
+  /**
+   * Estimation « Examen probable » — `null` pour tout autre scope. Une
+   * ESTIMATION de probabilité de contenu, jamais une prédiction : voir
+   * `core/quiz/examLikely.ts`.
+   */
+  examLikelihood: ExamLikelihoodInfo | null;
 }
 
 export interface QuizBuildResult {
@@ -154,6 +182,16 @@ export function scopeCards(scope: QuizScope, tables: QuizTables, now: Date = new
       const weak = weakPoints(tables.subjects, tables.chapters, tables.cards, tables.logs, 20);
       const wantedCardIds = new Set(weak.flatMap((point) => point.cardIds));
       return tables.cards.filter((card) => wantedCardIds.has(card.id));
+    }
+    case 'exam-likely': {
+      const subjectCards = tables.cards.filter((card) => card.subjectId === scope.subjectId);
+      if (scope.chapterIds.length === 0) return subjectCards;
+      const wantedChapters = new Set(scope.chapterIds);
+      return subjectCards.filter((card) => card.chapterId !== null && wantedChapters.has(card.chapterId));
+    }
+    case 'cards': {
+      const wanted = new Set(scope.cardIds);
+      return tables.cards.filter((card) => wanted.has(card.id));
     }
     default:
       return [];
@@ -350,7 +388,9 @@ export function buildQuiz(
         ? 'Pas encore de point faible mesuré : réponds à quelques flashcards, puis reviens ici.'
         : scope.kind === 'due'
           ? 'Aucune carte due pour l’instant : rien à évaluer aujourd’hui.'
-          : 'Aucune flashcard sur ce périmètre : crée-en avant de lancer un quiz.',
+          : scope.kind === 'exam-likely'
+            ? 'Aucune flashcard sur ce chapitre : impossible d’estimer les questions probables sans contenu à évaluer.'
+            : 'Aucune flashcard sur ce périmètre : crée-en avant de lancer un quiz.',
     );
   }
 
@@ -367,7 +407,33 @@ export function buildQuiz(
   const allCards = tables.cards;
 
   const requestedFormat = options.format ?? 'qcm';
-  const ordered = priorityOrder(scope, effectivePool, tables, random);
+
+  // « Examen probable » a son propre classement (probabilité de contenu +
+  // lacune réelle de l'étudiant, voir core/quiz/examLikely.ts) — calculé à
+  // part plutôt que d'alourdir `priorityOrder`, qui reste inchangé pour tous
+  // les autres scopes.
+  let ordered: Flashcard[];
+  let examInfoByCardId: Map<ID, { score: number; info: ExamLikelihoodInfo }> | null = null;
+  if (scope.kind === 'exam-likely') {
+    const chapterSignals = chapterSignalsFromAnalyses(tables.chapterAnalyses ?? []);
+    const evaluation = scope.evaluationEventId
+      ? (upcomingEvaluations(tables.events ?? [], tables.subjects, now).find(
+          (candidate) => candidate.event.id === scope.evaluationEventId,
+        ) ?? null)
+      : null;
+    const ranking = rankForExamLikely(
+      effectivePool,
+      chapterSignals,
+      (chapterId) => (chapterId ? (chapterName.get(chapterId) ?? null) : null),
+      tables.logs,
+      evaluation,
+    );
+    ordered = ranking.ordered;
+    examInfoByCardId = ranking.infoByCardId;
+  } else {
+    ordered = priorityOrder(scope, effectivePool, tables, random);
+  }
+
   const questions: QuizQuestionInstance[] = [];
   let counter = 0;
   for (const card of ordered) {
@@ -389,6 +455,7 @@ export function buildQuiz(
       chapterName: card.chapterId ? (chapterName.get(card.chapterId) ?? null) : null,
       difficulty: card.difficulty,
       masteryContext: buildMasteryContext(card),
+      examLikelihood: examInfoByCardId?.get(card.id)?.info ?? null,
       ...content,
     });
   }

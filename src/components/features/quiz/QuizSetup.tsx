@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Select, Swatch } from '@/components/ui';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { Button, Card, Select, Swatch, useToast } from '@/components/ui';
+import { db } from '@/data/db';
+import { listChunks } from '@/data/repositories/documents';
+import { listSubjectAnalyses, saveChapterAnalysis } from '@/data/repositories/notions';
+import { analyzeChapter, InsufficientChapterContentError } from '@/services/courses/notions';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
+import { hasApiKey } from '@/services/ai/settings';
+import type { ContextLookup } from '@/services/rag/retrieval';
 import type { QuizDifficulty, QuizFormat, QuizScope } from '@/core/quiz';
 import type { Evaluation } from '@/core/progress/exam';
 import type { Chapter, ID, Subject } from '@/types';
@@ -14,7 +22,7 @@ import type { Chapter, ID, Subject } from '@/types';
  * partout ailleurs dans l'application.
  */
 
-type ScopeId = 'subject' | 'chapter' | 'subjects' | 'weak' | 'due' | 'exam';
+type ScopeId = 'subject' | 'chapter' | 'subjects' | 'weak' | 'due' | 'exam' | 'exam-likely';
 
 const SCOPE_META: { id: ScopeId; label: string; hint: string }[] = [
   { id: 'subject', label: 'Une matière', hint: 'Toutes les cartes d’une matière.' },
@@ -23,6 +31,7 @@ const SCOPE_META: { id: ScopeId; label: string; hint: string }[] = [
   { id: 'weak', label: 'Mes points faibles', hint: 'Les chapitres où ton taux de réussite mesuré est le plus bas.' },
   { id: 'due', label: 'Mes cartes à revoir', hint: 'Ce que la répétition espacée programme aujourd’hui.' },
   { id: 'exam', label: 'Avant un examen', hint: 'La matière d’une évaluation à venir, chapitres faibles en tête.' },
+  { id: 'exam-likely', label: 'Examen probable', hint: 'Estimation des notions les plus susceptibles d’être évaluées — jamais une certitude.' },
 ];
 
 const COUNT_OPTIONS = [5, 10, 15, 20];
@@ -37,6 +46,98 @@ const FORMAT_OPTIONS: { value: QuizFormat; label: string }[] = [
   { value: 'vf', label: 'Vrai ou faux' },
   { value: 'mixed', label: 'QCM + Vrai/Faux' },
 ];
+
+/**
+ * Renfort optionnel : lance l'analyse IA déjà existante (`analyzeChapter`,
+ * la même que l'onglet « Notions » d'une matière) sur les chapitres du
+ * périmètre qui n'en ont pas encore. N'invente rien de neuf — l'estimation
+ * fonctionne déjà sans elle (importance des flashcards, historique de
+ * réponses, examen enregistré) ; ceci ne fait qu'ajouter le signal du cours
+ * quand une clé API est configurée.
+ */
+function ExamLikelyAiBoost({
+  subjectId,
+  subjects,
+  subjectChapters,
+  targetChapters,
+}: {
+  subjectId: ID;
+  subjects: Subject[];
+  subjectChapters: Chapter[];
+  targetChapters: Chapter[];
+}) {
+  const { notify } = useToast();
+  const [analyzing, setAnalyzing] = useState(false);
+  const analyses = useLiveQuery(() => listSubjectAnalyses(subjectId), [subjectId]) ?? [];
+  const analyzedChapterIds = useMemo(() => new Set(analyses.map((a) => a.chapterId)), [analyses]);
+  const unanalyzed = targetChapters.filter((chapter) => !analyzedChapterIds.has(chapter.id));
+
+  if (targetChapters.length === 0) return null;
+
+  const run = async () => {
+    if (!hasApiKey()) {
+      notify('Ajoute ta clé API dans Paramètres pour renforcer l’estimation avec l’IA.', 'error');
+      return;
+    }
+    setAnalyzing(true);
+    let done = 0;
+    try {
+      const documentRows = await db.documents.where('subjectId').equals(subjectId).toArray();
+      const lookup: ContextLookup = {
+        subjects: new Map(subjects.map((subject) => [subject.id, subject])),
+        chapters: new Map(subjectChapters.map((chapter) => [chapter.id, chapter])),
+        documents: new Map(documentRows.map((document) => [document.id, { id: document.id, name: document.name }])),
+      };
+      for (const chapter of unanalyzed) {
+        const chunks = await listChunks({ subjectId, chapterId: chapter.id });
+        // Pas de contenu de cours indexé pour ce chapitre : on passe au
+        // suivant plutôt que d'échouer tout le lot pour un seul chapitre.
+        if (chunks.length === 0) continue;
+        try {
+          const notions = await analyzeChapter({ chunks, lookup });
+          await saveChapterAnalysis(subjectId, chapter.id, notions);
+          done += 1;
+        } catch (error) {
+          if (!(error instanceof InsufficientChapterContentError)) throw error;
+        }
+      }
+      notify(
+        done > 0
+          ? `${done} chapitre(s) analysé(s) — l’estimation en tient maintenant compte.`
+          : 'Aucun chapitre de ce périmètre n’a assez de contenu de cours indexé à analyser.',
+        done > 0 ? 'success' : 'error',
+      );
+    } catch (error) {
+      notify(aiOrchestrator.describeAiError(error), 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5 text-[0.8rem]"
+      data-quiz-exam-likely-ai-boost
+    >
+      <p className="text-[var(--ink-soft)]">
+        {unanalyzed.length === 0
+          ? 'Cours déjà analysé par l’IA pour ce périmètre — l’estimation en tient compte.'
+          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} chapitre(s) analysé(s) par l’IA.`}
+      </p>
+      {unanalyzed.length > 0 && (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={analyzing}
+          onClick={() => void run()}
+          data-quiz-exam-likely-analyze
+        >
+          {analyzing ? 'Analyse en cours…' : 'Renforcer avec l’analyse IA du cours'}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function QuizSetup({
   subjects,
@@ -61,6 +162,8 @@ export function QuizSetup({
   const [chapterId, setChapterId] = useState<ID | null>(null);
   const [subjectIds, setSubjectIds] = useState<ID[]>([]);
   const [examSubjectId, setExamSubjectId] = useState<ID | null>(examEvaluations[0]?.subjectId ?? null);
+  const [examLikelySubjectId, setExamLikelySubjectId] = useState<ID | null>(subjects[0]?.id ?? null);
+  const [examLikelyChapterIds, setExamLikelyChapterIds] = useState<ID[]>([]);
   const [count, setCount] = useState(10);
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('mixed');
   const [format, setFormat] = useState<QuizFormat>('qcm');
@@ -68,6 +171,21 @@ export function QuizSetup({
   const subjectChapters = useMemo(
     () => chapters.filter((chapter) => chapter.subjectId === subjectId),
     [chapters, subjectId],
+  );
+  const examLikelySubjectChapters = useMemo(
+    () => chapters.filter((chapter) => chapter.subjectId === examLikelySubjectId),
+    [chapters, examLikelySubjectId],
+  );
+  const examLikelyEvaluation = useMemo(
+    () => examEvaluations.find((entry) => entry.subjectId === examLikelySubjectId) ?? null,
+    [examEvaluations, examLikelySubjectId],
+  );
+  const examLikelyTargetChapters = useMemo(
+    () =>
+      examLikelyChapterIds.length > 0
+        ? examLikelySubjectChapters.filter((chapter) => examLikelyChapterIds.includes(chapter.id))
+        : examLikelySubjectChapters,
+    [examLikelySubjectChapters, examLikelyChapterIds],
   );
 
   const scope = useMemo<QuizScope | null>(() => {
@@ -84,10 +202,19 @@ export function QuizSetup({
         return { kind: 'due' };
       case 'exam':
         return examSubjectId ? { kind: 'exam', subjectId: examSubjectId } : null;
+      case 'exam-likely':
+        return examLikelySubjectId
+          ? {
+              kind: 'exam-likely',
+              subjectId: examLikelySubjectId,
+              chapterIds: examLikelyChapterIds,
+              evaluationEventId: examLikelyEvaluation?.evaluation.event.id ?? null,
+            }
+          : null;
       default:
         return null;
     }
-  }, [scopeId, subjectId, chapterId, subjectIds, examSubjectId]);
+  }, [scopeId, subjectId, chapterId, subjectIds, examSubjectId, examLikelySubjectId, examLikelyChapterIds, examLikelyEvaluation]);
 
   const toggleSubject = (id: ID) =>
     setSubjectIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
@@ -105,7 +232,9 @@ export function QuizSetup({
                   ? dueCardCount
                   : meta.id === 'exam'
                     ? examEvaluations.length
-                    : null;
+                    : meta.id === 'exam-likely'
+                      ? (examLikelySubjectId ? (cardCountBySubject.get(examLikelySubjectId) ?? 0) : 0)
+                      : null;
             const active = scopeId === meta.id;
             return (
               <button
@@ -225,6 +354,99 @@ export function QuizSetup({
               ))}
             </Select>
           )}
+        </section>
+      )}
+
+      {scopeId === 'exam-likely' && (
+        <section className="flex flex-col gap-3" data-quiz-exam-likely-panel>
+          <div>
+            <p className="text-[0.92rem] font-semibold">Questions probables</p>
+            <p className="mt-0.5 text-[0.8rem] leading-relaxed text-[var(--ink-faint)]">
+              Estimation basée sur le contenu disponible.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Matière"
+              value={examLikelySubjectId ?? ''}
+              onChange={(event) => {
+                setExamLikelySubjectId(event.target.value || null);
+                setExamLikelyChapterIds([]);
+              }}
+            >
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name} — {cardCountBySubject.get(subject.id) ?? 0} carte
+                  {(cardCountBySubject.get(subject.id) ?? 0) > 1 ? 's' : ''}
+                </option>
+              ))}
+            </Select>
+            <div>
+              <p className="text-[0.78rem] font-semibold tracking-wide text-[var(--ink-soft)]">
+                {examLikelyEvaluation
+                  ? `Examen détecté : ${examLikelyEvaluation.evaluation.label} dans ${examLikelyEvaluation.evaluation.daysUntil} j`
+                  : 'Aucun examen enregistré pour cette matière'}
+              </p>
+              <p className="mt-1 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+                {examLikelyEvaluation
+                  ? 'Sa date contextualise l’estimation, sans jamais la rendre certaine.'
+                  : 'L’estimation fonctionne quand même, sans contexte de proximité d’examen.'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[0.82rem] font-medium text-[var(--ink-soft)]">
+              Chapitre(s) — laisse tout décoché pour couvrir toute la matière
+            </p>
+            <div className="flex flex-wrap gap-2" data-quiz-exam-likely-chapters-picker>
+              {examLikelySubjectChapters.length === 0 ? (
+                <p className="text-[0.82rem] text-[var(--ink-faint)]">Cette matière n’a pas encore de chapitre.</p>
+              ) : (
+                examLikelySubjectChapters.map((chapterRow) => {
+                  const active = examLikelyChapterIds.includes(chapterRow.id);
+                  return (
+                    <button
+                      key={chapterRow.id}
+                      type="button"
+                      onClick={() =>
+                        setExamLikelyChapterIds((current) =>
+                          current.includes(chapterRow.id)
+                            ? current.filter((id) => id !== chapterRow.id)
+                            : [...current, chapterRow.id],
+                        )
+                      }
+                      aria-pressed={active}
+                      data-touch-target
+                      className={
+                        'rounded-full border px-3 py-1.5 text-[0.84rem] transition-colors ' +
+                        (active
+                          ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
+                          : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
+                      }
+                    >
+                      {chapterRow.name}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {examLikelySubjectId && (
+            <ExamLikelyAiBoost
+              subjectId={examLikelySubjectId}
+              subjects={subjects}
+              subjectChapters={examLikelySubjectChapters}
+              targetChapters={examLikelyTargetChapters}
+            />
+          )}
+
+          <p className="text-[0.76rem] leading-relaxed text-[var(--ink-faint)]" data-quiz-exam-likely-disclaimer>
+            L’estimation est basée sur les contenus disponibles et les données d’apprentissage. Elle ne garantit pas
+            les questions de l’examen.
+          </p>
         </section>
       )}
 

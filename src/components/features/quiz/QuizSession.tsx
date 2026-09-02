@@ -7,6 +7,16 @@ import type { QuizAnswerRecord, QuizQuestionInstance } from '@/core/quiz';
 const DIFFICULTY_LABEL: Record<1 | 2 | 3, string> = { 1: 'Facile', 2: 'Moyen', 3: 'Difficile' };
 
 /**
+ * « Examen probable » — badge d'ESTIMATION, jamais de certitude. Le libellé
+ * dit explicitement « estimée », jamais « tombera à l'examen ».
+ */
+const EXAM_LIKELIHOOD_META: Record<'high' | 'medium' | 'low', { emoji: string; label: string; color: string }> = {
+  high: { emoji: '🟢', label: 'Probabilité élevée', color: 'var(--mastery-3)' },
+  medium: { emoji: '🟡', label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
+  low: { emoji: '🟠', label: 'Probabilité faible', color: 'var(--mastery-1)' },
+};
+
+/**
  * DÉROULÉ D'UNE QUESTION — question → réponse → correction → suivante.
  *
  * Une fois une option choisie, elle se fige : les boutons ne répondent plus
@@ -81,7 +91,18 @@ export function QuizSession({
               {question.chapterName && (
                 <p className="text-[0.78rem] text-[var(--ink-faint)]">{question.chapterName}</p>
               )}
-              <p className="text-[0.78rem] text-[var(--ink-faint)]">{DIFFICULTY_LABEL[question.difficulty]}</p>
+              <div className="flex items-center gap-2">
+                {question.examLikelihood && (
+                  <Chip
+                    color={EXAM_LIKELIHOOD_META[question.examLikelihood.level].color}
+                    data-quiz-exam-likelihood={question.examLikelihood.level}
+                  >
+                    {EXAM_LIKELIHOOD_META[question.examLikelihood.level].emoji}{' '}
+                    {EXAM_LIKELIHOOD_META[question.examLikelihood.level].label}
+                  </Chip>
+                )}
+                <p className="text-[0.78rem] text-[var(--ink-faint)]">{DIFFICULTY_LABEL[question.difficulty]}</p>
+              </div>
             </div>
             <p className="mt-1.5 text-[1.08rem] font-medium leading-relaxed">{question.question}</p>
 
@@ -152,6 +173,24 @@ export function QuizSession({
                     <p className="mt-1 text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
                       {question.masteryContext}
                     </p>
+                    {question.examLikelihood && (
+                      <div
+                        className="mt-2.5 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5"
+                        data-quiz-exam-likelihood-detail
+                      >
+                        <p className="text-[0.8rem] leading-relaxed text-[var(--ink-soft)]">
+                          Cette question est estimée comme prioritaire selon les données disponibles.
+                        </p>
+                        <ul className="mt-1 list-inside list-disc text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+                          {question.examLikelihood.reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                        <p className="mt-1.5 text-[0.76rem] font-medium text-[var(--ink-faint)]">
+                          Basé sur : {question.examLikelihood.chapterName ?? question.chapterName ?? 'ce contenu'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
