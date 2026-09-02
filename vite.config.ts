@@ -58,6 +58,25 @@ export default defineConfig({
         // exclues du glob et servies par le cache d'exécution.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         globIgnores: ['**/anatomy/thumbs/**', '**/anatomy/schema/**'],
+        // Le mode SPA du service worker (`NavigationRoute` — voir plus bas)
+        // sert `index.html` pour toute NAVIGATION de page qui ne correspond
+        // à aucun fichier précaché, afin que `/cours`, `/quiz`, etc. restent
+        // utilisables même hors-ligne. Sans cette liste d'exclusion, une
+        // navigation vers /api/ai/status (taper l'URL dans la barre
+        // d'adresse, par exemple) serait INTERCEPTÉE PAR LE SERVICE WORKER
+        // et recevrait la coquille de l'application au lieu d'atteindre la
+        // fonction Vercel — exactement le symptôme observé. Les fonctions
+        // `api/ai/*` n'ont de toute façon jamais besoin de ce filet SPA :
+        // elles renvoient du JSON, jamais une page à afficher.
+        //
+        // Sans effet sur les appels `fetch()` internes de l'application
+        // (`services/ai/providerStatus.ts`, les relais eux-mêmes) : Workbox
+        // ne fait jouer `NavigationRoute` QUE pour les requêtes de
+        // navigation (`request.mode === 'navigate'`, càd un chargement de
+        // page complet), jamais pour un `fetch()` déclenché par du code —
+        // ce filet ne concernait donc que la vérification manuelle depuis le
+        // navigateur, pas le fonctionnement réel du Hub IA.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/anatomy/') && url.pathname.endsWith('.glb'),
