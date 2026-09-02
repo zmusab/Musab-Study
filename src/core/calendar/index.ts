@@ -27,11 +27,15 @@ import { EVALUATION_KIND_LABELS, isEvaluationKind } from '@/core/progress/exam';
 // ────────────────────────────── Genres d'événement ──────────────────────────────
 
 /**
- * `'fixed'` : un bloc imposé de l'emploi du temps — un cours universitaire.
- * Il occupe le calendrier et bloque les créneaux, mais ce n'est jamais du
- * travail personnel : rien de ce qui mesure l'étude ne le compte.
+ * Deux familles BLOQUANTES, distinctes à l'affichage mais traitées pareil par
+ * le planificateur :
+ *  - `'fixed'` : un cours universitaire, imposé par la faculté ;
+ *  - `'personal'` : « Temps pour soi » — sport, repas, repos, rendez-vous.
+ *
+ * Toutes deux occupent le calendrier et bloquent les créneaux, et aucune n'est
+ * du travail personnel : rien de ce qui mesure l'étude ne les compte.
  */
-export type EventFamily = 'evaluation' | 'session' | 'fixed' | 'goal' | 'other';
+export type EventFamily = 'evaluation' | 'session' | 'fixed' | 'personal' | 'goal' | 'other';
 
 export interface EventKindMeta {
   kind: CalendarEventKind;
@@ -51,6 +55,9 @@ export const EVENT_KINDS: readonly EventKindMeta[] = [
   // universitaire ne doit jamais se confondre d'un coup d'œil avec une séance
   // d'étude (violet), une évaluation (rouge) ou un devoir (jaune).
   { kind: 'lecture', label: 'Cours', family: 'fixed', colorVar: 'var(--nav-turquoise)', rank: 2 },
+  // Orange : ni le turquoise des cours, ni le violet des séances, ni le rouge
+  // des évaluations. Du temps qui m'appartient se repère au premier coup d'œil.
+  { kind: 'personal', label: 'Temps pour soi', family: 'personal', colorVar: 'var(--nav-orange)', rank: 2 },
   { kind: 'task', label: 'Devoir', family: 'goal', colorVar: 'var(--mastery-2)', rank: 2 },
   // `'course'` est le nom HISTORIQUE de la séance d'étude — voir le
   // commentaire de `CalendarEventKind` dans `types/`.
@@ -84,6 +91,16 @@ export function isStudySession(event: Pick<CalendarEvent, 'kind'>): boolean {
  */
 export function isLecture(event: Pick<CalendarEvent, 'kind'>): boolean {
   return eventKindMeta(event.kind).family === 'fixed';
+}
+
+/**
+ * Un BLOC IMPOSÉ : cours ou temps pour soi. C'est la notion que manipule le
+ * planificateur — il n'a pas à savoir si l'heure est prise par un amphi ou par
+ * une séance de sport, seulement qu'elle est prise.
+ */
+export function isFixedBlock(event: Pick<CalendarEvent, 'kind'>): boolean {
+  const family = eventKindMeta(event.kind).family;
+  return family === 'fixed' || family === 'personal';
 }
 
 // ────────────────────────────── État d'une séance ──────────────────────────────
@@ -233,8 +250,11 @@ export interface DayAgenda {
   day: DayKey;
   /** Évaluations d'abord : ce sont elles qui commandent la journée. */
   evaluations: AgendaEvent[];
-  /** Cours universitaires — des blocs imposés, pas du travail personnel. */
-  lectures: AgendaEvent[];
+  /**
+   * Blocs imposés — cours et temps pour soi. Ils occupent la journée sans
+   * jamais être du travail personnel.
+   */
+  fixed: AgendaEvent[];
   sessions: AgendaEvent[];
   others: AgendaEvent[];
   due: DueBucket | null;
@@ -264,17 +284,17 @@ export function buildAgenda(
     .sort(byTimeThenRank);
 
   const evaluations = decorated.filter((entry) => entry.meta.family === 'evaluation');
-  const lectures = decorated.filter((entry) => entry.meta.family === 'fixed');
+  const fixed = decorated.filter((entry) => isFixedBlock(entry.event));
   const sessions = decorated.filter((entry) => entry.meta.family === 'session');
   const others = decorated.filter(
-    (entry) => !['evaluation', 'fixed', 'session'].includes(entry.meta.family),
+    (entry) => entry.meta.family === 'goal' || entry.meta.family === 'other',
   );
   const dueBucket = due.get(day) ?? null;
 
   return {
     day,
     evaluations,
-    lectures,
+    fixed,
     sessions,
     others,
     due: dueBucket,

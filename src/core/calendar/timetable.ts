@@ -1,4 +1,5 @@
 import type { CalendarEvent, WeekdayId } from '@/types';
+import { eventKindMeta } from './index';
 import {
   SLOT_ORDER,
   fromMinutes,
@@ -7,7 +8,8 @@ import {
 } from './availability';
 
 /**
- * EMPLOI DU TEMPS D'UNE JOURNÉE TYPE — les cours, et ce qui reste entre eux.
+ * EMPLOI DU TEMPS D'UNE JOURNÉE TYPE — les blocs imposés, et ce qui reste
+ * entre eux.
  *
  * Logique pure : elle répond à « quand puis-je réellement travailler le
  * lundi ? » en retirant les cours des plages déclarées disponibles. C'est la
@@ -19,38 +21,41 @@ import {
  */
 
 export interface TimetableRow {
-  kind: 'lecture' | 'free';
+  kind: 'block' | 'free';
   start: string;
   end: string;
   label: string;
   detail: string | null;
+  /** Couleur du genre — un cours et un temps pour soi ne se confondent pas. */
+  color: string | null;
 }
 
 /** En dessous, un « créneau libre » n'est pas un créneau de travail. */
 const MIN_FREE_MINUTES = 15;
-/** Durée retenue pour un cours sans heure de fin — la même hypothèse qu'ailleurs. */
-const DEFAULT_LECTURE_MINUTES = 60;
+/** Durée retenue pour un bloc sans heure de fin — la même hypothèse qu'ailleurs. */
+const DEFAULT_BLOCK_MINUTES = 60;
 
 export function timetableRows(
-  lectures: readonly CalendarEvent[],
+  blocks: readonly CalendarEvent[],
   availability: WeeklyAvailability,
   weekday: WeekdayId,
 ): TimetableRow[] {
-  const busy = lectures
+  const busy = blocks
     .filter((event) => event.startTime !== null)
     .map((event) => {
       const start = toMinutes(event.startTime!);
-      const end = event.endTime ? toMinutes(event.endTime) : start + DEFAULT_LECTURE_MINUTES;
+      const end = event.endTime ? toMinutes(event.endTime) : start + DEFAULT_BLOCK_MINUTES;
       return { start, end: Math.max(end, start), event };
     })
     .sort((a, b) => a.start - b.start);
 
   const rows: TimetableRow[] = busy.map(({ start, end, event }) => ({
-    kind: 'lecture' as const,
+    kind: 'block' as const,
     start: fromMinutes(start),
     end: fromMinutes(end),
     label: event.title,
     detail: [event.room, event.teacher].filter(Boolean).join(' · ') || null,
+    color: eventKindMeta(event.kind).colorVar,
   }));
 
   const day = availability[weekday];
@@ -99,5 +104,6 @@ const free = (start: number, end: number): TimetableRow => {
     end: fromMinutes(end),
     label: `libre · ${hours > 0 ? `${hours} h${rest > 0 ? ` ${rest}` : ''}` : `${rest} min`}`,
     detail: null,
+    color: null,
   };
 };

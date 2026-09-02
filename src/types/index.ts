@@ -300,8 +300,20 @@ export interface Note {
  * du temps, qui occupe le calendrier mais n'est jamais du travail personnel.
  * Renommer `'course'` obligerait à réécrire les lignes déjà enregistrées ;
  * mieux vaut un nom imparfait qu'une migration destructrice.
+ *
+ * `'personal'` — « Temps pour soi » : sport, repas, repos, rendez-vous. Comme
+ * le cours, il occupe le calendrier et bloque le créneau, et comme lui il
+ * n'est jamais du travail personnel mesuré.
  */
-export type CalendarEventKind = 'exam' | 'midterm' | 'final' | 'course' | 'task' | 'review' | 'lecture';
+export type CalendarEventKind =
+  | 'exam'
+  | 'midterm'
+  | 'final'
+  | 'course'
+  | 'task'
+  | 'review'
+  | 'lecture'
+  | 'personal';
 
 /**
  * Répétition hebdomadaire d'un cours. Portée par la ligne « série » ; les

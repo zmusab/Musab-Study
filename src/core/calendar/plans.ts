@@ -269,8 +269,21 @@ export function planWeek(input: WeekPlanInput): WeekPlan {
 
   /**
    * Une demande par chapitre travaillable, avec un score qui croise les
-   * mesures disponibles : faiblesse, cartes dues, et proximité d'une
-   * évaluation réellement inscrite au calendrier.
+   * mesures RÉELLEMENT enregistrées ailleurs dans l'application :
+   *
+   *  - `weakness`  — la maîtrise calculée par `chapterProgress`, elle-même
+   *    issue de `reviewLogs` et de l'état SM-2 des cartes ;
+   *  - `errorRate` — le taux d'échec mesuré sur ces mêmes réponses ;
+   *  - `dueShare`  — la part des cartes que la répétition espacée programme
+   *    aujourd'hui ou avant ;
+   *  - `lateShare` — celles qui sont EN RETARD, pondérées par leur retard
+   *    moyen : une matière qui accumule des cartes en souffrance passe devant,
+   *    ce qui est précisément le signal que donne la page Révisions ;
+   *  - `examProximity` — la date d'évaluation saisie au calendrier.
+   *
+   * Aucune de ces mesures n'est fabriquée, et surtout AUCUNE n'est réécrite :
+   * les échéances SM-2 restent telles que `scheduleNext` les a posées. Le
+   * planificateur les LIT pour décider de l'ordre, il n'y touche pas.
    */
   const candidates: (SessionRequest & { score: number })[] = [];
   for (const subject of subjectsWithCards) {
@@ -282,12 +295,32 @@ export function planWeek(input: WeekPlanInput): WeekPlan {
       const chapterCards = input.cards.filter(
         (card) => card.subjectId === subject.id && card.chapterId === row.chapterId,
       );
-      const dueCards = chapterCards.filter((card) => card.due <= nowIso).length;
+      const due = chapterCards.filter((card) => card.due <= nowIso);
+      const dueCards = due.length;
+      const late = due.filter((card) => dayKey(new Date(card.due)) < today);
       const weakness = row.masteryPct === null ? 1 : Math.max(0, 1 - row.masteryPct / 100);
       const errorRate = row.successRate === null ? 0 : 1 - row.successRate;
       const dueShare = chapterCards.length > 0 ? dueCards / chapterCards.length : 0;
+      const lateShare = chapterCards.length > 0 ? late.length / chapterCards.length : 0;
 
-      const score = weakness * 45 + errorRate * 20 + dueShare * 20 + examProximity * 40;
+      // Le retard MOYEN module la pénalité : deux cartes oubliées depuis un
+      // mois pèsent plus que dix cartes en retard d'un jour. Plafonné à deux
+      // semaines, au-delà le signal n'apprend plus rien.
+      const lateness =
+        late.length === 0
+          ? 0
+          : Math.min(
+              1,
+              late.reduce((sum, card) => sum + daysBetweenDayKeys(dayKey(new Date(card.due)), today), 0) /
+                (late.length * 14),
+            );
+
+      const score =
+        weakness * 45 +
+        errorRate * 20 +
+        dueShare * 20 +
+        lateShare * (15 + lateness * 15) +
+        examProximity * 40;
       if (score <= 0) continue;
 
       candidates.push({
@@ -296,7 +329,7 @@ export function planWeek(input: WeekPlanInput): WeekPlan {
         chapterId: row.chapterId,
         chapterName: row.name,
         title: `${subject.name} — ${row.chapterId === null ? 'révision' : row.name}`,
-        reason: buildReason(row.masteryPct, row.successRate, dueCards, exam, today),
+        reason: buildReason(row.masteryPct, row.successRate, dueCards, late.length, exam, today),
         minutes,
         cardIds: chapterCards.map((card) => card.id),
         deadline: exam ? exam.day : null,
@@ -361,6 +394,7 @@ function buildReason(
   masteryPct: number | null,
   successRate: number | null,
   dueCards: number,
+  lateCards: number,
   exam: CalendarEvent | null,
   today: DayKey,
 ): string {
@@ -377,6 +411,8 @@ function buildReason(
   else parts.push(`maîtrise ${masteryPct} %`);
   if (successRate !== null && successRate < 0.75) parts.push(`${Math.round(successRate * 100)} % de réussite`);
   if (dueCards > 0) parts.push(`${dueCards} carte${dueCards > 1 ? 's' : ''} due${dueCards > 1 ? 's' : ''}`);
+  // Le retard est dit à part : c'est lui qui explique un passage en tête.
+  if (lateCards > 0) parts.push(`dont ${lateCards} en retard`);
   return parts.join(' · ');
 }
 

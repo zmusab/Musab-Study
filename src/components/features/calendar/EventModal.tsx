@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, Select, Textarea } from '@/components/ui';
 import { EVENT_KINDS, addMinutes, isLecture } from '@/core/calendar';
-import { WEEKDAY_ORDER, WEEKDAY_SHORT, weekdayOf } from '@/core/calendar/availability';
+import { WEEKDAY_LABELS, WEEKDAY_ORDER, WEEKDAY_SHORT, weekdayOf } from '@/core/calendar/availability';
 import type {
   CalendarEvent,
   CalendarEventKind,
@@ -77,6 +77,7 @@ export function EventModal({
 
   const subjectChapters = chapters.filter((chapter) => chapter.subjectId === values.subjectId);
   const lecture = isLecture(values);
+  const personal = values.kind === 'personal';
 
   const set = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
@@ -122,7 +123,7 @@ export function EventModal({
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4">
         <Input
           label="Titre"
           placeholder="Révision — nerfs crâniens"
@@ -130,7 +131,7 @@ export function EventModal({
           onChange={(input) => set('title', input.target.value)}
         />
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           <Select
             label="Type"
             value={values.kind}
@@ -145,7 +146,10 @@ export function EventModal({
           <Input label="Date" type="date" value={values.day} onChange={(input) => set('day', input.target.value)} />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* Un repas ou une séance de sport n'appartient à aucune matière :
+            proposer un sélecteur reviendrait à en imposer une par défaut. */}
+        {!personal && (
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           <Select
             label="Matière"
             value={values.subjectId ?? ''}
@@ -187,8 +191,9 @@ export function EventModal({
             </Select>
           )}
         </div>
+        )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           <Input
             label="Heure de début"
             hint="Facultative — sans heure, l’événement occupe la journée."
@@ -233,118 +238,125 @@ export function EventModal({
           </Select>
         )}
 
-        {/* ── Cours universitaire : salle, enseignant, récurrence ── */}
+        {/* ── Cours universitaire : salle et enseignant ── */}
         {lecture && (
-          <div className="flex flex-col gap-4" data-event-lecture-fields>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                label="Salle"
-                placeholder="Facultatif — ex. Amphi B"
-                value={values.room}
-                onChange={(input) => set('room', input.target.value)}
-              />
-              <Input
-                label="Enseignant"
-                placeholder="Facultatif"
-                value={values.teacher}
-                onChange={(input) => set('teacher', input.target.value)}
-              />
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2" data-event-lecture-fields>
+            <Input
+              label="Salle"
+              placeholder="Facultatif — ex. Amphi B"
+              value={values.room}
+              onChange={(input) => set('room', input.target.value)}
+            />
+            <Input
+              label="Enseignant"
+              placeholder="Facultatif"
+              value={values.teacher}
+              onChange={(input) => set('teacher', input.target.value)}
+            />
+          </div>
+        )}
 
-            <div className="rounded-[var(--radius-card)] border border-[var(--line)] p-3">
-              <label className="flex items-center gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={values.recurrence !== null}
-                  aria-label="Cours récurrent"
+        {/* ── Récurrence — pour TOUT genre d'événement ──
+            Un cours se répète, mais un entraînement, un repas ou une séance de
+            révision hebdomadaire aussi. La réserver aux cours obligeait à
+            recréer la même ligne chaque semaine. */}
+        <div className="flex min-w-0 flex-col gap-3">
+          <Select
+            label="Récurrence"
+            value={values.recurrence === null ? 'none' : 'weekly'}
+            data-event-recurrence-mode
+            onChange={(input) =>
+              setValues((current) => ({
+                ...current,
+                recurrence:
+                  input.target.value === 'none'
+                    ? null
+                    : {
+                        // Par défaut, le jour de la date choisie : c'est le seul
+                        // dont on soit sûr qu'il convienne.
+                        weekdays: [weekdayOf(current.day)],
+                        startDay: current.day,
+                        endDay: null,
+                      },
+              }))
+            }
+          >
+            <option value="none">Aucune</option>
+            <option value="weekly">Chaque semaine</option>
+          </Select>
+
+          {values.recurrence !== null && (
+            <div
+              className="flex min-w-0 flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] p-3"
+              data-event-recurrence
+            >
+              <div className="min-w-0">
+                <p className="mb-1.5 text-[0.78rem] font-semibold tracking-wide text-[var(--ink-soft)]">
+                  Jours de la semaine
+                </p>
+                <div className="grid grid-cols-7 gap-1">
+                  {WEEKDAY_ORDER.map((id) => {
+                    const active = values.recurrence!.weekdays.includes(id);
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => toggleWeekday(id)}
+                        aria-pressed={active}
+                        aria-label={WEEKDAY_LABELS[id]}
+                        data-recurrence-day={id}
+                        data-touch-target
+                        className={
+                          'min-h-11 min-w-0 rounded-[var(--radius-control)] border px-0.5 text-[0.72rem] font-medium transition-colors ' +
+                          (active
+                            ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
+                            : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
+                        }
+                      >
+                        {WEEKDAY_SHORT[id]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <Input
+                  label="À partir du"
+                  type="date"
+                  className="min-w-0"
+                  value={values.recurrence.startDay}
                   onChange={(input) =>
                     setValues((current) => ({
                       ...current,
-                      recurrence: input.target.checked
-                        ? {
-                            // Par défaut, le jour de la date choisie : c'est le
-                            // seul jour dont on soit sûr qu'il convienne.
-                            weekdays: [weekdayOf(current.day)],
-                            startDay: current.day,
-                            endDay: null,
-                          }
-                        : null,
+                      recurrence: { ...current.recurrence!, startDay: input.target.value },
                     }))
                   }
-                  className="h-4 w-4 accent-[var(--accent)]"
                 />
-                <span className="text-[0.92rem] font-medium">Cours récurrent</span>
-              </label>
-
-              {values.recurrence !== null && (
-                <div className="mt-3 flex flex-col gap-3" data-event-recurrence>
-                  <div>
-                    <p className="mb-1.5 text-[0.72rem] font-medium tracking-wide text-[var(--ink-faint)]">
-                      Jours de la semaine
-                    </p>
-                    <div className="grid grid-cols-7 gap-1.5">
-                      {WEEKDAY_ORDER.map((id) => {
-                        const active = values.recurrence!.weekdays.includes(id);
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => toggleWeekday(id)}
-                            aria-pressed={active}
-                            aria-label={WEEKDAY_SHORT[id]}
-                            data-recurrence-day={id}
-                            data-touch-target
-                            className={
-                              'min-h-[2.4rem] rounded-[var(--radius-control)] border text-[0.74rem] font-medium transition-colors ' +
-                              (active
-                                ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
-                                : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
-                            }
-                          >
-                            {WEEKDAY_SHORT[id]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      label="À partir du"
-                      type="date"
-                      value={values.recurrence.startDay}
-                      onChange={(input) =>
-                        setValues((current) => ({
-                          ...current,
-                          recurrence: { ...current.recurrence!, startDay: input.target.value },
-                        }))
-                      }
-                    />
-                    <Input
-                      label="Jusqu’au"
-                      hint="Facultatif — sans date de fin, le cours continue."
-                      type="date"
-                      value={values.recurrence.endDay ?? ''}
-                      onChange={(input) =>
-                        setValues((current) => ({
-                          ...current,
-                          recurrence: {
-                            ...current.recurrence!,
-                            endDay: input.target.value === '' ? null : input.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  {values.recurrence.weekdays.length === 0 && (
-                    <p className="text-[0.78rem] text-[var(--mastery-1)]">
-                      Choisis au moins un jour : sans jour, la série n’a aucune occurrence.
-                    </p>
-                  )}
-                </div>
+                <Input
+                  label="Jusqu’au"
+                  hint="Facultatif — sans date de fin, la série continue."
+                  type="date"
+                  className="min-w-0"
+                  value={values.recurrence.endDay ?? ''}
+                  onChange={(input) =>
+                    setValues((current) => ({
+                      ...current,
+                      recurrence: {
+                        ...current.recurrence!,
+                        endDay: input.target.value === '' ? null : input.target.value,
+                      },
+                    }))
+                  }
+                />
+              </div>
+              {values.recurrence.weekdays.length === 0 && (
+                <p className="text-[0.78rem] text-[var(--mastery-1)]">
+                  Choisis au moins un jour : sans jour, la série n’a aucune occurrence.
+                </p>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <Textarea
           label="Notes"

@@ -105,7 +105,11 @@ export function Modal({
             tabIndex={-1}
             className={cn(
               'relative w-full bg-[var(--surface)] shadow-[var(--shadow-lift)] outline-none',
-              'max-h-[88vh] overflow-y-auto scroll-contain pb-safe',
+              // `overflow-x-hidden` explicite : `overflow-y-auto` seul fait
+              // calculer `overflow-x: auto` par la spec, et le moindre
+              // dépassement d'un pixel rend la fenêtre pannable de côté sur
+              // iPad — le contenu part alors en biais au défilement.
+              'max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain scroll-contain pb-safe',
               // Feuille ancrée en bas sur mobile, carte centrée sur grand écran.
               'rounded-t-2xl sm:rounded-[var(--radius-card)]',
               widths[size],
@@ -119,14 +123,14 @@ export function Modal({
             animate="visible"
             exit="exit"
           >
-            <div className="p-6">
+            <div className="min-w-0 p-6">
               <h2 className="text-[1.15rem]">{title}</h2>
               {description && (
                 <p className="mt-1.5 text-[0.88rem] leading-relaxed text-[var(--ink-soft)]">
                   {description}
                 </p>
               )}
-              {children && <div className="mt-5">{children}</div>}
+              {children && <div className="mt-5 min-w-0">{children}</div>}
               {footer && <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">{footer}</div>}
             </div>
           </motion.div>

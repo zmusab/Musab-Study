@@ -1,16 +1,17 @@
 import { cn } from '@/lib/cn';
 import { Icon } from '@/components/ui';
-import { formatDayShort, type DayAgenda } from '@/core/calendar';
+import { formatDayShort, isFixedBlock, type AgendaEvent, type DayAgenda } from '@/core/calendar';
 
 /**
- * VUE SEMAINE — sept colonnes, chacune listant sa journée en clair.
+ * VUE SEMAINE ET VUE JOUR — une journée par bloc, lue de haut en bas.
  *
- * Contrairement au mois, la semaine a la place d'écrire les titres : on les
- * écrit. Une carte due reste malgré tout une ligne agrégée, jamais une par
- * carte.
+ * L'ancienne version alignait sept colonnes de hauteur fixe : sur iPad, six
+ * d'entre elles étaient vides et la septième tronquait ses titres. On lit une
+ * journée comme un agenda — heure à gauche, événement à droite — et les jours
+ * s'empilent, deux par ligne en paysage, un seul en portrait.
  *
- * En portrait, les sept colonnes deviennent sept blocs empilés : compresser
- * sept colonnes sur 834 px rendrait chaque titre illisible.
+ * Ce qui n'a PAS d'heure ne se voit pas attribuer une heure inventée : ces
+ * événements sont groupés au-dessus, sous « toute la journée ».
  */
 export function WeekView({
   days,
@@ -25,11 +26,23 @@ export function WeekView({
   today: string;
   onSelect: (day: string) => void;
 }) {
+  const single = days.length === 1;
+
   return (
-    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-7" data-calendar-week>
+    <div
+      className={cn('grid min-w-0 gap-2', single ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2')}
+      data-calendar-week
+    >
       {days.map((day) => {
         const agenda = agendaFor(day);
         const isSelected = day === selected;
+        const timed = [...agenda.evaluations, ...agenda.fixed, ...agenda.sessions, ...agenda.others]
+          .filter((entry) => entry.event.startTime !== null)
+          .sort((a, b) => a.event.startTime!.localeCompare(b.event.startTime!));
+        const allDay = [...agenda.evaluations, ...agenda.fixed, ...agenda.sessions, ...agenda.others].filter(
+          (entry) => entry.event.startTime === null,
+        );
+
         return (
           <button
             key={day}
@@ -38,104 +51,90 @@ export function WeekView({
             aria-pressed={isSelected}
             data-calendar-cell={day}
             className={cn(
-              // `min-w-0` : sans lui, une colonne de grille prend la largeur
-              // de son plus long contenu et déborde sur la voisine.
-              'flex min-h-[8rem] min-w-0 flex-col gap-1.5 overflow-hidden rounded-[var(--radius-control)] border p-2 text-left transition-colors',
+              // `min-w-0` : sans lui, une colonne de grille prend la largeur de
+              // son plus long contenu et déborde sur la voisine.
+              // Pas de hauteur minimale imposée : une journée vide n'a aucune
+              // raison d'occuper huit centimètres d'écran. Les cartes se
+              // dimensionnent sur leur contenu, ce qui rend la semaine
+              // lisible d'un seul regard au lieu d'une colonne de vides.
+              'flex min-w-0 flex-col gap-1 overflow-hidden rounded-[var(--radius-control)] border p-2.5 text-left transition-colors',
+              single && 'min-h-[12rem]',
               isSelected
                 ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
                 : 'border-[var(--line)] hover:bg-[var(--surface-2)]',
             )}
           >
-            <span className="flex items-center justify-between gap-2">
+            <span className="flex items-baseline justify-between gap-2">
               <span
                 className={cn(
-                  'text-[0.78rem] font-medium',
+                  'text-[0.82rem] font-semibold',
                   day === today ? 'text-[var(--accent)]' : 'text-[var(--ink-soft)]',
                 )}
               >
                 {formatDayShort(day)}
               </span>
               {agenda.due && agenda.due.cards > 0 && (
-                <span className="flex items-center gap-1 rounded-full bg-[var(--surface-2)] px-1.5 text-[0.68rem] tabular-nums text-[var(--ink-soft)]">
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--surface-2)] px-1.5 text-[0.68rem] tabular-nums text-[var(--ink-soft)]">
                   <Icon name="review" size={10} />
                   {agenda.due.cards}
                 </span>
               )}
             </span>
 
-            {agenda.evaluations.map((entry) => (
-              <span
-                key={entry.event.id}
-                title={entry.event.title}
-                className="block overflow-hidden rounded-[4px] px-1.5 py-1 text-[0.7rem] font-medium leading-tight text-white [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]"
-                style={{ backgroundColor: entry.meta.colorVar }}
-              >
-                {entry.event.title}
+            {allDay.length > 0 && (
+              <span className="flex min-w-0 flex-col gap-0.5">
+                {allDay.map((entry) => (
+                  <Row key={entry.event.id} entry={entry} time="jour" />
+                ))}
               </span>
+            )}
+
+            {timed.map((entry) => (
+              <Row key={entry.event.id} entry={entry} time={entry.event.startTime!} />
             ))}
 
-            {/* COURS — bandeau teinté et heure en tête : l'emploi du temps doit
-                se lire d'un coup d'œil, sans se confondre avec les séances. */}
-            {agenda.lectures.map((entry) => (
-              <span
-                key={entry.event.id}
-                data-calendar-lecture-chip
-                title={[entry.event.title, entry.event.room].filter(Boolean).join(' · ')}
-                className="block overflow-hidden rounded-[4px] border-l-2 px-1.5 py-1 text-[0.7rem] leading-tight [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]"
-                style={{
-                  borderLeftColor: entry.meta.colorVar,
-                  backgroundColor: 'color-mix(in srgb, var(--nav-turquoise) 12%, transparent)',
-                }}
-              >
-                {entry.event.startTime && (
-                  <span className="font-medium tabular-nums" style={{ color: entry.meta.colorVar }}>
-                    {entry.event.startTime}{' '}
-                  </span>
-                )}
-                {entry.event.title}
-              </span>
-            ))}
-
-            {agenda.sessions.map((entry) => (
-              <span
-                key={entry.event.id}
-                className="flex items-start gap-1.5 text-[0.72rem] leading-tight text-[var(--ink-soft)]"
-              >
-                <span
-                  aria-hidden
-                  className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor:
-                      entry.state === 'done'
-                        ? 'var(--mastery-3)'
-                        : entry.state === 'missed'
-                          ? 'var(--ink-faint)'
-                          : 'var(--accent)',
-                  }}
-                />
-                <span
-                  title={entry.event.title}
-                  className={cn(
-                    'min-w-0 flex-1 overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]',
-                    entry.state === 'done' && 'line-through opacity-60',
-                  )}
-                >
-                  {entry.event.startTime ? `${entry.event.startTime} ` : ''}
-                  {entry.event.title}
-                </span>
-              </span>
-            ))}
-
-            {agenda.others.map((entry) => (
-              <span key={entry.event.id} className="truncate text-[0.72rem] text-[var(--ink-faint)]">
-                {entry.event.title}
-              </span>
-            ))}
-
-            {agenda.isEmpty && <span className="text-[0.72rem] text-[var(--ink-faint)]">—</span>}
+            {agenda.isEmpty && <span className="text-[0.74rem] text-[var(--ink-faint)]">Rien de prévu</span>}
           </button>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Une ligne d'agenda : l'heure d'abord, puis un trait de couleur qui dit le
+ * genre, puis le titre. Le trait porte l'information de couleur — un fond
+ * teinté sur sept lignes empilées devient vite du bruit.
+ */
+function Row({ entry, time }: { entry: AgendaEvent; time: string }) {
+  const done = entry.meta.family === 'session' && entry.state === 'done';
+  const color =
+    entry.meta.family === 'session'
+      ? entry.state === 'done'
+        ? 'var(--mastery-3)'
+        : entry.state === 'missed'
+          ? 'var(--ink-faint)'
+          : entry.meta.colorVar
+      : entry.meta.colorVar;
+
+  return (
+    <span
+      className="flex min-w-0 items-start gap-1.5 text-[0.74rem] leading-tight"
+      data-calendar-lecture-chip={isFixedBlock(entry.event) ? '' : undefined}
+      title={[entry.event.title, entry.event.room].filter(Boolean).join(' · ')}
+    >
+      <span className="w-[2.6rem] shrink-0 tabular-nums text-[var(--ink-faint)]">
+        {time === 'jour' ? '—' : time}
+      </span>
+      <span aria-hidden className="mt-[0.2rem] h-3 w-[3px] shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span
+        className={cn(
+          'min-w-0 flex-1 overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2] [display:-webkit-box]',
+          done && 'line-through opacity-60',
+        )}
+      >
+        {entry.event.title}
+      </span>
+    </span>
   );
 }

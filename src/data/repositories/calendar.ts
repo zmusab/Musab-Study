@@ -114,7 +114,7 @@ export async function deletePlanFor(eventId: ID): Promise<number> {
   return planned.length;
 }
 
-// ────────────────────────────── Séries de cours ──────────────────────────────
+// ──────────────────────────── Séries récurrentes ────────────────────────────
 
 /**
  * Portée d'une modification ou d'une suppression sur un cours récurrent.
@@ -126,8 +126,8 @@ export async function deletePlanFor(eventId: ID): Promise<number> {
  */
 export type SeriesScope = 'occurrence' | 'following' | 'series';
 
-/** Champs qu'une modification de cours peut toucher. */
-export type CoursePatch = Partial<
+/** Champs qu'une modification d'un événement récurrent peut toucher. */
+export type RecurringPatch = Partial<
   Pick<
     CalendarEvent,
     | 'title'
@@ -156,7 +156,7 @@ const previousDay = (day: DayKey): DayKey => {
 };
 
 /**
- * Modifie un cours selon la portée demandée.
+ * Modifie un événement récurrent selon la portée demandée.
  *
  * - `occurrence` : écrit (ou met à jour) une EXCEPTION pour ce jour-là. La
  *   série n'est pas touchée.
@@ -166,11 +166,11 @@ const previousDay = (day: DayKey): DayKey => {
  *   sur des occurrences précises sont conservées : ce sont des choix
  *   explicites, ce n'est pas au code de les effacer.
  *
- * Un cours ponctuel (sans série) est simplement mis à jour.
+ * Un événement ponctuel (sans série) est simplement mis à jour.
  */
-export async function updateCourse(
+export async function updateRecurringEvent(
   event: CalendarEvent,
-  patch: CoursePatch,
+  patch: RecurringPatch,
   scope: SeriesScope = 'occurrence',
 ): Promise<void> {
   const master = await seriesMasterOf(event);
@@ -247,12 +247,15 @@ export async function updateCourse(
 }
 
 /**
- * Supprime un cours selon la même portée.
+ * Supprime un événement récurrent selon la même portée.
  *
- * Aucune de ces opérations ne touche une séance d'étude ni `reviewLogs` :
- * supprimer un cours ne réécrit jamais le travail déjà fait.
+ * Aucune de ces opérations ne touche une séance d'étude terminée ni
+ * `reviewLogs` : supprimer une série ne réécrit jamais le travail déjà fait.
  */
-export async function deleteCourse(event: CalendarEvent, scope: SeriesScope = 'occurrence'): Promise<void> {
+export async function deleteRecurringEvent(
+  event: CalendarEvent,
+  scope: SeriesScope = 'occurrence',
+): Promise<void> {
   const master = await seriesMasterOf(event);
   if (master === null) {
     await db.calendarEvents.delete(event.id);

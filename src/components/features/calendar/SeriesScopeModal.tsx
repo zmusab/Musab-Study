@@ -2,11 +2,11 @@ import { Button, Modal } from '@/components/ui';
 import type { SeriesScope } from '@/data/repositories/calendar';
 
 /**
- * PORTÉE D'UNE MODIFICATION SUR UN COURS RÉCURRENT.
+ * PORTÉE D'UNE MODIFICATION SUR UN ÉVÉNEMENT RÉCURRENT.
  *
- * Un cours récurrent est une série : changer son horaire peut vouloir dire
- * trois choses très différentes. Les deviner à la place de l'utilisateur
- * serait le meilleur moyen de lui effacer un semestre — on demande.
+ * Une récurrence est une série : changer son horaire peut vouloir dire trois
+ * choses très différentes. Les deviner à la place de l'utilisateur serait le
+ * meilleur moyen de lui effacer un semestre — on demande.
  *
  * « Cette occurrence et les suivantes » ne touche jamais au passé : ce qui a
  * déjà eu lieu reste tel qu'il a eu lieu.
@@ -22,7 +22,7 @@ const OPTIONS: { scope: SeriesScope; label: string; hint: string }[] = [
     label: 'Cette occurrence et les suivantes',
     hint: 'Les occurrences passées restent inchangées.',
   },
-  { scope: 'series', label: 'Toute la série', hint: 'Du premier au dernier cours.' },
+  { scope: 'series', label: 'Toute la série', hint: 'Du premier au dernier.' },
 ];
 
 export function SeriesScopeModal({

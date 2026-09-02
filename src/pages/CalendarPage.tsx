@@ -30,6 +30,7 @@ import {
   examBrief,
   eventKindMeta,
   formatDayLong,
+  isFixedBlock,
   isLecture,
   formatMonthYear,
   monthMatrix,
@@ -42,12 +43,12 @@ import {
   completeSession,
   createEvent,
   createEvents,
-  deleteCourse,
+  deleteRecurringEvent,
   deleteEvent,
   deletePlanFor,
   resetSession,
   startSession,
-  updateCourse,
+  updateRecurringEvent,
   updateEvent,
   type SeriesScope,
 } from '@/data/repositories/calendar';
@@ -117,14 +118,14 @@ export function CalendarPage() {
     return expandRecurring(source.events, from, to);
   }, [source, now]);
 
-  /** Les cours récurrents, rangés par jour de la semaine — l'emploi du temps. */
+  /** Les blocs récurrents, rangés par jour de la semaine — l'emploi du temps. */
   const lecturesByWeekday = useMemo(() => {
     const table = Object.fromEntries(WEEKDAY_ORDER.map((id) => [id, [] as CalendarEvent[]])) as Record<
       WeekdayId,
       CalendarEvent[]
     >;
     for (const event of source?.events ?? []) {
-      if (!isLecture(event) || !isSeriesMaster(event)) continue;
+      if (!isFixedBlock(event) || !isSeriesMaster(event)) continue;
       for (const weekday of event.recurrence!.weekdays) table[weekday].push(event);
     }
     return table;
@@ -231,23 +232,24 @@ export function CalendarPage() {
   };
 
   const submitEvent = async (values: EventFormValues) => {
-    // Les champs de cours ne suivent pas un événement qui n'en est pas un :
-    // changer de genre en cours de saisie ne doit pas laisser traîner une
-    // récurrence sur un devoir.
-    const courseFields = isLecture(values)
-      ? {
-          room: values.room.trim() || null,
-          teacher: values.teacher.trim() || null,
-          recurrence: values.recurrence,
-        }
-      : { room: null, teacher: null, recurrence: null };
+    // Salle et enseignant n'ont de sens que pour un cours : changer de genre
+    // en cours de saisie ne doit pas laisser traîner un nom de professeur sur
+    // un repas. La récurrence, elle, vaut pour tous les genres.
+    const courseFields = {
+      room: isLecture(values) ? values.room.trim() || null : null,
+      teacher: isLecture(values) ? values.teacher.trim() || null : null,
+      recurrence: values.recurrence,
+    };
 
+    // « Temps pour soi » n'a ni matière ni chapitre : le formulaire ne les
+    // propose pas, la ligne enregistrée ne doit pas en garder non plus.
+    const isPersonal = values.kind === 'personal';
     const common = {
       title: values.title.trim(),
       kind: values.kind,
       day: values.day,
-      subjectId: values.subjectId,
-      chapterId: values.chapterId,
+      subjectId: isPersonal ? null : values.subjectId,
+      chapterId: isPersonal ? null : values.chapterId,
       startTime: values.startTime,
       endTime: values.endTime,
       importance: values.importance,
@@ -257,13 +259,13 @@ export function CalendarPage() {
 
     if (editing) {
       if (editing.seriesId) {
-        await updateCourse(editing, common, editScope);
+        await updateRecurringEvent(editing, common, editScope);
         notify(
           editScope === 'series'
-            ? 'Série de cours mise à jour.'
+            ? 'Série mise à jour.'
             : editScope === 'following'
-              ? 'Cours mis à jour à partir de cette date.'
-              : 'Cours mis à jour pour cette date.',
+              ? 'Série mise à jour à partir de cette date.'
+              : 'Événement mis à jour pour cette date.',
           'success',
         );
       } else {
@@ -273,7 +275,7 @@ export function CalendarPage() {
     } else {
       await createEvent(common);
       notify(
-        common.recurrence ? 'Cours récurrent ajouté à ton emploi du temps.' : 'Événement ajouté.',
+        common.recurrence ? 'Événement récurrent ajouté à ton calendrier.' : 'Événement ajouté.',
         'success',
       );
     }
@@ -309,13 +311,13 @@ export function CalendarPage() {
       setFormOpen(true);
       return;
     }
-    await deleteCourse(event, scope);
+    await deleteRecurringEvent(event, scope);
     notify(
       scope === 'series'
-        ? 'Série de cours supprimée.'
+        ? 'Série supprimée.'
         : scope === 'following'
-          ? 'Cours supprimé à partir de cette date.'
-          : 'Ce cours a été retiré de cette date.',
+          ? 'Série supprimée à partir de cette date.'
+          : 'Retiré de cette date uniquement.',
       'success',
     );
   };
@@ -483,7 +485,7 @@ export function CalendarPage() {
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-[1.05rem]">Semaine type</h2>
             <p className="text-[0.8rem] text-[var(--ink-faint)]">
-              Tes cours récurrents et ce qui reste libre dans tes plages déclarées.
+              Tes cours et temps pour toi récurrents, et ce qui reste libre dans tes plages déclarées.
             </p>
           </div>
           <TimetableView lecturesByWeekday={lecturesByWeekday} availability={availability} />
@@ -604,7 +606,11 @@ export function CalendarPage() {
 
       <SeriesScopeModal
         open={scopeAsk !== null}
-        title={scopeAsk?.action === 'delete' ? 'Supprimer ce cours récurrent' : 'Modifier ce cours récurrent'}
+        title={
+          scopeAsk?.action === 'delete'
+            ? 'Supprimer cet événement récurrent'
+            : 'Modifier cet événement récurrent'
+        }
         description={
           scopeAsk
             ? `${scopeAsk.event.title} — ${formatDayLong(scopeAsk.event.day)}. Que faut-il ${

@@ -15,7 +15,11 @@ import { cn } from '@/lib/cn';
  */
 
 const CONTROL_BASE = cn(
-  'w-full bg-[var(--bg-elevated)] text-[var(--ink)]',
+  // `min-w-0` : un `input[type=date]` ou `[type=time]` a une largeur
+  // intrinsèque minimale imposée par son sélecteur natif. Dans une colonne de
+  // grille (dont le `min-width` vaut `auto`), cette largeur l'emporte sur
+  // `w-full` et fait déborder la fenêtre horizontalement.
+  'w-full min-w-0 bg-[var(--bg-elevated)] text-[var(--ink)]',
   'border border-[var(--line)] rounded-[var(--radius-control)]',
   'px-3.5 py-2.5 min-h-11',
   'placeholder:text-[var(--ink-faint)]',

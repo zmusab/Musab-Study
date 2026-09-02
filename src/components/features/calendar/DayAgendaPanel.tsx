@@ -43,8 +43,8 @@ export function DayAgendaPanel({
           <p className="mt-0.5 text-[0.8rem] text-[var(--ink-faint)]">
             {agenda.isEmpty
               ? 'Rien de prévu.'
-              : `${agenda.evaluations.length + agenda.lectures.length + agenda.sessions.length + agenda.others.length} événement${
-                  agenda.evaluations.length + agenda.lectures.length + agenda.sessions.length + agenda.others.length > 1
+              : `${agenda.evaluations.length + agenda.fixed.length + agenda.sessions.length + agenda.others.length} événement${
+                  agenda.evaluations.length + agenda.fixed.length + agenda.sessions.length + agenda.others.length > 1
                     ? 's'
                     : ''
                 }${agenda.due && agenda.due.cards > 0 ? ` · ${agenda.due.cards} carte${agenda.due.cards > 1 ? 's' : ''} due${agenda.due.cards > 1 ? 's' : ''}` : ''}`}
@@ -97,12 +97,14 @@ export function DayAgendaPanel({
           </article>
         ))}
 
-        {/* COURS — des blocs imposés. Ni « Commencer » ni « Terminer » : un
-            cours n'est pas du travail personnel, et rien ici ne le chronomètre. */}
-        {agenda.lectures.map((entry) => (
+        {/* BLOCS IMPOSÉS — cours et temps pour soi. Ni « Commencer » ni
+            « Terminer » : ce n'est pas du travail personnel, et rien ici ne le
+            chronomètre. */}
+        {agenda.fixed.map((entry) => (
           <article
             key={entry.event.id}
             data-calendar-lecture
+            data-event-kind={entry.event.kind}
             data-lecture-series={entry.event.seriesId ?? ''}
             className="rounded-[var(--radius-card)] border-l-[3px] border-y border-r border-y-[var(--line)] border-r-[var(--line)] p-3"
             style={{ borderLeftColor: entry.meta.colorVar }}
@@ -118,7 +120,7 @@ export function DayAgendaPanel({
                 </span>
               )}
               {entry.event.seriesId && (
-                <span className="normal-case text-[var(--ink-faint)]" title="Cours récurrent">
+                <span className="normal-case text-[var(--ink-faint)]" title="Événement récurrent">
                   · chaque semaine
                 </span>
               )}

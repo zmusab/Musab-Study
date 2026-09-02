@@ -108,30 +108,52 @@ const storedEvents = () =>
     }));
   });
 
-/** Ouvre le formulaire et remplit un cours ; `recurrence` = liste de jours. */
-const createCourse = async ({ title, day, start, end, room, teacher, recurrence, until }) => {
+/** Ouvre le formulaire et remplit un événement ; `recurrence` = liste de jours. */
+const createCourse = async ({ title, kind = 'lecture', day, start, end, room, teacher, recurrence, until }) => {
   await page.getByRole('button', { name: 'Nouvel événement' }).click();
   await page.waitForTimeout(400);
   await page.getByLabel('Titre').fill(title);
-  await page.getByLabel('Type').selectOption('lecture');
-  await page.waitForTimeout(200);
+  await page.getByLabel('Type').selectOption(kind);
+  await page.waitForTimeout(250);
   await page.getByLabel('Date').fill(day);
-  await page.getByLabel('Heure de début').fill(start);
-  await page.getByLabel('Heure de fin').fill(end);
+  if (start) await page.getByLabel('Heure de début').fill(start);
+  if (end) await page.getByLabel('Heure de fin').fill(end);
   if (room) await page.getByLabel('Salle').fill(room);
   if (teacher) await page.getByLabel('Enseignant').fill(teacher);
   if (recurrence) {
-    await page.getByLabel('Cours récurrent').check();
-    await page.waitForTimeout(250);
+    await page.getByLabel('Récurrence').selectOption('weekly');
+    await page.waitForTimeout(300);
     for (const id of recurrence) {
       const chip = page.locator(`[data-recurrence-day="${id}"]`);
       if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
+    }
+    // Décocher les jours non demandés, laissés par le jour de la date choisie.
+    for (const chip of await page.locator('[data-recurrence-day]').all()) {
+      const id = await chip.getAttribute('data-recurrence-day');
+      if (!recurrence.includes(id) && (await chip.getAttribute('aria-pressed')) === 'true') await chip.click();
     }
     if (until) await page.getByLabel('Jusqu’au').fill(until);
   }
   await dialog.getByRole('button', { name: 'Ajouter', exact: true }).click();
   await page.waitForTimeout(1100);
 };
+
+/** Aucun débordement horizontal DANS la fenêtre : elle ne défile qu'en hauteur. */
+const modalOverflow = () =>
+  page.evaluate(() => {
+    const panel = document.querySelector('[role="dialog"]');
+    if (!panel) return null;
+    const rect = panel.getBoundingClientRect();
+    const wider = [...panel.querySelectorAll('*')].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && (r.right > rect.right + 0.5 || r.left < rect.left - 0.5);
+    });
+    return {
+      scrolls: panel.scrollWidth > panel.clientWidth,
+      overflowX: getComputedStyle(panel).overflowX,
+      outside: wider.length,
+    };
+  });
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
 
@@ -531,7 +553,125 @@ check(
   !/Histologie/.test(await page.locator('[data-calendar-timetable]').innerText()),
 );
 
-// ────────────────── 13. Vues et orientations iPad ──────────────────
+// ────────────────── 13. « Temps pour soi » ──────────────────
+// Sport, repas, repos : du temps qui m'appartient. Il bloque le calendrier
+// sans jamais compter comme du travail.
+await page.getByRole('tab', { name: 'Semaine' }).click();
+await page.waitForTimeout(500);
+// Le premier lundi à venir — le seul jour déclaré disponible, et il tombe
+// dans la fenêtre de sept jours du plan de semaine.
+const personalDay = MONDAY;
+await createCourse({
+  title: 'Natation',
+  kind: 'personal',
+  day: personalDay,
+  start: '08:00',
+  end: '12:00',
+  recurrence: ['monday', 'wednesday', 'friday', 'saturday', 'sunday', 'tuesday', 'thursday'],
+});
+
+const personalRows = (await storedEvents()).filter((row) => row.kind === 'personal');
+check(
+  'Un « temps pour soi » récurrent est enregistré comme une série',
+  personalRows.length === 1 && personalRows[0].recurrence !== null,
+  JSON.stringify(personalRows[0]?.recurrence ?? null),
+);
+check(
+  'Il ne se voit attribuer aucune matière',
+  personalRows[0].room === null && personalRows[0].teacher === null,
+);
+
+await selectDay(personalDay);
+const personalCard = page.locator('[data-calendar-lecture][data-event-kind="personal"]').first();
+check('Il apparaît dans l’agenda du jour', await personalCard.isVisible());
+check(
+  'Il porte son propre libellé, distinct des cours',
+  /TEMPS POUR SOI/i.test(await personalCard.innerText()),
+  (await personalCard.innerText()).replace(/\n/g, ' | '),
+);
+check(
+  'Il ne se « commence » pas : ce n’est pas une séance d’étude',
+  (await personalCard.locator('button').allInnerTexts()).join(' ') === 'Modifier Supprimer',
+);
+
+await page.getByRole('tab', { name: 'Emploi du temps' }).click();
+await page.waitForTimeout(700);
+check(
+  'Il apparaît dans l’emploi du temps hebdomadaire',
+  /Natation/.test(await page.locator('[data-calendar-timetable]').innerText()),
+);
+
+// Il bloque réellement : disponible 08 h–12 h uniquement, natation 08 h–12 h,
+// le planificateur ne doit rien proposer ce jour-là.
+await page.getByRole('tab', { name: 'Mois' }).click();
+await page.waitForTimeout(500);
+await page.locator('[data-calendar-plan-week]').click();
+await page.waitForTimeout(900);
+const afterPersonal = await page.locator('[data-plan-session]').evaluateAll((items) =>
+  items.map((item) => ({
+    day: item.querySelector('input[type="date"]').value,
+    time: item.querySelector('input[type="time"]').value,
+  })),
+);
+check(
+  'Aucune séance n’est posée sur un temps pour soi qui occupe toute la plage',
+  afterPersonal.length === 0,
+  afterPersonal.map((row) => `${row.day} ${row.time}`).join(', ') || 'aucune séance proposée',
+);
+check(
+  'Le planificateur explique qu’il ne reste aucun créneau',
+  /Aucun créneau libre|objectif hebdomadaire/.test(await dialog.innerText()),
+);
+await page.locator('[data-plan-refuse]').click();
+await page.waitForTimeout(600);
+
+const logsAfterPersonal = await page.evaluate(async () => {
+  const open = indexedDB.open('musab-study');
+  const db = await new Promise((resolve) => {
+    open.onsuccess = () => resolve(open.result);
+  });
+  const rows = await new Promise((resolve) => {
+    const request = db.transaction('reviewLogs').objectStore('reviewLogs').getAll();
+    request.onsuccess = () => resolve(request.result);
+  });
+  db.close();
+  return rows.length;
+});
+check('Un temps pour soi n’écrit rien dans reviewLogs', logsAfterPersonal === 0, `${logsAfterPersonal} lignes`);
+
+// ────────────────── 14. Récurrence disponible pour tout genre ──────────────────
+await page.getByRole('button', { name: 'Nouvel événement' }).click();
+await page.waitForTimeout(500);
+check(
+  'Le choix « Récurrence » est visible dès l’ouverture, sans changer de type',
+  await page.getByLabel('Récurrence').isVisible(),
+);
+check(
+  'Il propose « Aucune » par défaut',
+  (await page.getByLabel('Récurrence').inputValue()) === 'none',
+);
+check(
+  'Les jours ne sont proposés qu’une fois la récurrence activée',
+  (await page.locator('[data-event-recurrence]').count()) === 0,
+);
+await page.getByLabel('Récurrence').selectOption('weekly');
+await page.waitForTimeout(350);
+check(
+  'Activer « Chaque semaine » révèle les sept jours et les deux dates',
+  (await page.locator('[data-recurrence-day]').count()) === 7 &&
+    (await page.getByLabel('À partir du').isVisible()) &&
+    (await page.getByLabel('Jusqu’au').isVisible()),
+);
+const overflow = await modalOverflow();
+check(
+  'La fenêtre ne défile que verticalement, sans rien qui dépasse',
+  overflow !== null && !overflow.scrolls && overflow.overflowX === 'hidden' && overflow.outside === 0,
+  JSON.stringify(overflow),
+);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+
+// ────────────────── 15. Vues et orientations iPad ──────────────────
 for (const view of ['Mois', 'Semaine', 'Jour', 'Emploi du temps']) {
   await page.getByRole('tab', { name: view }).click();
   await page.waitForTimeout(600);
@@ -552,6 +692,21 @@ for (const [name, viewport] of [
     check(`Aucun débordement horizontal — ${view} en ${name}`, !overflowX);
   }
   await page.screenshot({ path: `${SHOT}/cours-${name}.png` });
+
+  await page.getByRole('button', { name: 'Nouvel événement' }).click();
+  await page.waitForTimeout(500);
+  await page.getByLabel('Type').selectOption('lecture');
+  await page.getByLabel('Récurrence').selectOption('weekly');
+  await page.waitForTimeout(400);
+  const modal = await modalOverflow();
+  check(
+    `La fenêtre « Nouvel événement » ne déborde pas en ${name}`,
+    modal !== null && !modal.scrolls && modal.overflowX === 'hidden' && modal.outside === 0,
+    JSON.stringify(modal),
+  );
+  await page.screenshot({ path: `${SHOT}/cours-modal-${name}.png` });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
 }
 
 const smallTargets = await page.evaluate(() =>

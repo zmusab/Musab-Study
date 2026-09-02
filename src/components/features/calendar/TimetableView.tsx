@@ -4,7 +4,6 @@ import {
   availableMinutes,
   type WeeklyAvailability,
 } from '@/core/calendar/availability';
-import { eventKindMeta } from '@/core/calendar';
 import { timetableRows } from '@/core/calendar/timetable';
 import type { CalendarEvent, WeekdayId } from '@/types';
 
@@ -12,8 +11,8 @@ import type { CalendarEvent, WeekdayId } from '@/types';
  * EMPLOI DU TEMPS HEBDOMADAIRE — le motif qui se répète, pas une semaine datée.
  *
  * La vue Semaine montre SEPT DATES ; celle-ci montre la semaine TYPE : les
- * cours récurrents à leur place, et, entre eux, ce qui reste réellement libre
- * dans les plages déclarées disponibles. C'est exactement la question qu'on se
+ * blocs récurrents — cours et temps pour soi — à leur place, et, entre eux, ce
+ * qui reste réellement libre dans les plages déclarées disponibles. C'est exactement la question qu'on se
  * pose en ouvrant son emploi du temps : « quand est-ce que je peux travailler
  * lundi ? ».
  *
@@ -23,15 +22,16 @@ export function TimetableView({
   lecturesByWeekday,
   availability,
 }: {
+  /** Blocs imposés récurrents (cours et temps pour soi), par jour de semaine. */
   lecturesByWeekday: Record<WeekdayId, CalendarEvent[]>;
   availability: WeeklyAvailability;
 }) {
-  const meta = eventKindMeta('lecture');
-
   return (
     // Sept colonnes en paysage, quatre en portrait, une sur téléphone : sept
     // colonnes sur 834 px rendraient chaque intitulé de cours illisible.
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:grid-cols-7" data-calendar-timetable>
+    // `items-start` : sans lui, chaque colonne prend la hauteur de la plus
+    // remplie, et six jours calmes affichent un grand vide sous leur contenu.
+    <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 lg:grid-cols-7" data-calendar-timetable>
       {WEEKDAY_ORDER.map((weekday) => {
         const rows = timetableRows(lecturesByWeekday[weekday] ?? [], availability, weekday);
         const capacity = availableMinutes(availability[weekday]);
@@ -52,14 +52,16 @@ export function TimetableView({
                 data-timetable-row={row.kind}
                 className="flex min-w-0 flex-col rounded-[4px] px-1.5 py-1 text-[0.72rem] leading-tight"
                 style={
-                  row.kind === 'lecture'
-                    ? { backgroundColor: 'color-mix(in srgb, var(--nav-turquoise) 12%, transparent)' }
+                  row.color
+                    ? { backgroundColor: `color-mix(in srgb, ${row.color} 12%, transparent)` }
                     : undefined
                 }
               >
                 <span
-                  className="tabular-nums text-[0.68rem] font-medium"
-                  style={{ color: row.kind === 'lecture' ? meta.colorVar : 'var(--ink-faint)' }}
+                  // `whitespace-nowrap` : « 14:00–18:00 » coupé en deux lignes
+                  // dans une colonne de 110 px devient illisible.
+                  className="whitespace-nowrap text-[0.64rem] font-medium tabular-nums"
+                  style={{ color: row.color ?? 'var(--ink-faint)' }}
                 >
                   {row.start}
                   <span className="text-[var(--ink-faint)] font-normal">{`–${row.end}`}</span>
@@ -78,7 +80,7 @@ export function TimetableView({
 
             {rows.length === 0 && (
               <p className="px-1.5 text-[0.72rem] leading-snug text-[var(--ink-faint)]">
-                {capacity === 0 ? 'Aucune plage déclarée.' : 'Aucun cours — tout le temps déclaré est libre.'}
+                {capacity === 0 ? 'Aucune plage déclarée.' : 'Rien d’imposé — tout le temps déclaré est libre.'}
               </p>
             )}
           </section>

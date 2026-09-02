@@ -9,11 +9,13 @@ import {
 } from '@/core/calendar/recurrence';
 import { timetableRows } from '@/core/calendar/timetable';
 import { normalizeAvailability, type WeeklyAvailability } from '@/core/calendar/availability';
-import { buildAgenda, eventKindMeta, isLecture, isStudySession } from '@/core/calendar';
+import { buildAgenda, eventKindMeta, isFixedBlock, isLecture, isStudySession } from '@/core/calendar';
 import { dayLoad } from '@/core/calendar/load';
 import { committedMinutes, scheduleSessions, type SessionRequest } from '@/core/calendar/planner';
+import { planWeek } from '@/core/calendar/plans';
+import { DEFAULT_EASE } from '@/core/srs';
 import { dayKey } from '@/lib/date';
-import type { CalendarEvent, Recurrence } from '@/types';
+import type { CalendarEvent, Chapter, Flashcard, Recurrence, ReviewLog, Subject } from '@/types';
 
 /**
  * COURS UNIVERSITAIRES — des blocs FIXES.
@@ -230,7 +232,7 @@ describe('cours et séance d’étude sont deux choses différentes', () => {
   it('l’agenda du jour range les cours à part', () => {
     const study = event({ id: 'study', day: TODAY, kind: 'review', startTime: '14:00' });
     const agenda = buildAgenda(TODAY, [course, study], new Map(), [], [], NOW);
-    expect(agenda.lectures.map((entry) => entry.event.id)).toEqual(['l1']);
+    expect(agenda.fixed.map((entry) => entry.event.id)).toEqual(['l1']);
     expect(agenda.sessions.map((entry) => entry.event.id)).toEqual(['study']);
     expect(agenda.others).toEqual([]);
   });
@@ -398,6 +400,195 @@ describe('emploi du temps hebdomadaire', () => {
 
   it('ne fabrique aucun horaire pour un cours sans heure', () => {
     const rows = timetableRows([lecture({ id: 'a', day: MONDAY })], availability, 'monday');
-    expect(rows.filter((row) => row.kind === 'lecture')).toEqual([]);
+    expect(rows.filter((row) => row.kind === 'block')).toEqual([]);
+  });
+});
+
+// ────────────────────────── « Temps pour soi » ──────────────────────────
+
+/**
+ * Sport, repas, repos, rendez-vous. Comme un cours, ce temps occupe la
+ * journée ; comme lui, il n'est jamais du travail personnel mesuré.
+ */
+describe('temps pour soi', () => {
+  const availability = wideDay();
+  const personal = (overrides: Partial<CalendarEvent> & { id: string; day: string }): CalendarEvent =>
+    event({ kind: 'personal', title: 'Natation', ...overrides });
+
+  it('a sa propre couleur et son propre libellé', () => {
+    expect(eventKindMeta('personal').label).toBe('Temps pour soi');
+    const colors = new Set(
+      (['personal', 'lecture', 'review', 'exam', 'task'] as const).map((kind) => eventKindMeta(kind).colorVar),
+    );
+    expect(colors.size).toBe(5);
+  });
+
+  it('n’est ni une séance d’étude ni un cours, mais bloque comme un cours', () => {
+    const block = personal({ id: 'p', day: TODAY, startTime: '18:00', endTime: '20:00' });
+    expect(isStudySession(block)).toBe(false);
+    expect(isLecture(block)).toBe(false);
+    expect(isFixedBlock(block)).toBe(true);
+  });
+
+  it('occupe la journée sans jamais compter comme du travail', () => {
+    const load = dayLoad(TODAY, [personal({ id: 'p', day: TODAY, startTime: '18:00', endTime: '20:00' })], availability);
+    expect(load.minutes).toBe(120);
+    expect(load.studyMinutes).toBe(0);
+    expect(load.sessions).toBe(0);
+    expect(load.busy).toEqual([{ start: '18:00', end: '20:00' }]);
+  });
+
+  it('ne compte pas dans les minutes d’étude de la semaine', () => {
+    const block = personal({ id: 'p', day: TODAY, startTime: '18:00', endTime: '20:00' });
+    const study = event({ id: 's', day: TODAY, kind: 'review', startTime: '14:00', endTime: '15:00' });
+    expect(committedMinutes([block, study], [TODAY])).toBe(60);
+  });
+
+  it('réduit la place laissée aux séances, exactement comme un cours', () => {
+    const morning = normalizeAvailability({
+      morning: { enabled: true, start: '08:00', end: '12:00' },
+      afternoon: { enabled: false },
+      evening: { enabled: false },
+    });
+    const load = dayLoad(TODAY, [personal({ id: 'p', day: TODAY, startTime: '08:00', endTime: '10:00' })], morning);
+    expect(load.freeCapacity).toBe(120);
+  });
+
+  it('n’accueille jamais une séance sur son créneau', () => {
+    const result = scheduleSessions(
+      [request()],
+      [personal({ id: 'p', day: TODAY, startTime: '08:00', endTime: '12:00' })],
+      availability,
+      { now: NOW, horizonDays: 1 },
+    );
+    expect(result.sessions[0]!.startTime).toBe('12:00');
+  });
+
+  it('cumule avec les cours pour réduire la journée', () => {
+    // Une matinée de cours et une soirée de sport : il ne reste que
+    // l'après-midi, et c'est là que la séance doit tomber.
+    const events = [
+      lecture({ id: 'l', day: TODAY, startTime: '08:00', endTime: '12:00' }),
+      personal({ id: 'p', day: TODAY, startTime: '13:30', endTime: '21:00' }),
+    ];
+    const result = scheduleSessions([request({ minutes: 90 })], events, availability, {
+      now: NOW,
+      horizonDays: 1,
+    });
+    expect(result.sessions[0]!.startTime).toBe('12:00');
+    expect(result.sessions[0]!.endTime).toBe('13:30');
+  });
+
+  it('se range dans l’agenda avec les cours, jamais avec les séances', () => {
+    const agenda = buildAgenda(
+      TODAY,
+      [
+        personal({ id: 'p', day: TODAY, startTime: '18:00' }),
+        event({ id: 's', day: TODAY, kind: 'review', startTime: '14:00' }),
+      ],
+      new Map(),
+      [],
+      [],
+      NOW,
+    );
+    expect(agenda.fixed.map((entry) => entry.event.id)).toEqual(['p']);
+    expect(agenda.sessions.map((entry) => entry.event.id)).toEqual(['s']);
+  });
+
+  it('apparaît dans l’emploi du temps avec sa couleur', () => {
+    const rows = timetableRows(
+      [personal({ id: 'p', day: MONDAY, title: 'Natation', startTime: '18:00', endTime: '20:00' })],
+      availability,
+      'monday',
+    );
+    const block = rows.find((row) => row.kind === 'block')!;
+    expect(block.label).toBe('Natation');
+    expect(block.color).toBe(eventKindMeta('personal').colorVar);
+  });
+});
+
+// ──────────────── Les données pilotent réellement la priorité ────────────────
+
+/**
+ * « Si beaucoup de flashcards d'Anatomie sont dues ou en retard, le système
+ * doit augmenter la priorité d'Anatomie. » Ce qui suit le vérifie sur des
+ * cartes réelles, sans jamais toucher à leurs échéances SM-2.
+ */
+describe('les cartes dues et en retard pilotent la priorité', () => {
+  const subjects: Subject[] = [
+    { id: 's1', name: 'Anatomie', color: '#888', createdAt: '2026-01-01T00:00:00.000Z', position: 0 },
+    { id: 's2', name: 'Physiologie', color: '#888', createdAt: '2026-01-01T00:00:00.000Z', position: 1 },
+  ];
+  const chapters: Chapter[] = [];
+
+  /** Deux matières identiques, sauf l'échéance de leurs cartes. */
+  const cardsFor = (subjectId: string, dueIso: string, count = 4): Flashcard[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `${subjectId}-c${i}`,
+      subjectId,
+      chapterId: null,
+      question: 'Q',
+      answer: 'A',
+      importance: 2 as const,
+      difficulty: 2 as const,
+      ease: DEFAULT_EASE,
+      interval: 5,
+      reps: 3,
+      lapses: 0,
+      due: dueIso,
+      lastReview: '2026-03-10T00:00:00.000Z',
+      origin: 'manual' as const,
+      sourceChunkIds: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }));
+
+  const base = {
+    events: [] as CalendarEvent[],
+    subjects,
+    chapters,
+    logs: [] as ReviewLog[],
+    availability: wideDay(),
+    weeklyGoalMinutes: 600,
+    minutesPerSession: 45,
+    now: NOW,
+  };
+
+  it('fait passer devant la matière dont les cartes sont en retard', () => {
+    const plan = planWeek({
+      ...base,
+      // Anatomie : quatre cartes en retard de deux semaines.
+      // Physiologie : quatre cartes qui arriveront à échéance plus tard.
+      cards: [
+        ...cardsFor('s1', '2026-03-04T00:00:00.000Z'),
+        ...cardsFor('s2', '2026-04-15T00:00:00.000Z'),
+      ],
+    });
+    expect(plan.sessions[0]!.subjectId).toBe('s1');
+    expect(plan.sessions[0]!.reason).toMatch(/en retard/);
+  });
+
+  it('distingue une carte simplement due d’une carte en retard', () => {
+    const plan = planWeek({
+      ...base,
+      cards: [
+        // Dues aujourd'hui d'un côté, en retard de trois semaines de l'autre.
+        ...cardsFor('s1', '2026-03-18T00:00:00.000Z'),
+        ...cardsFor('s2', '2026-02-25T00:00:00.000Z'),
+      ],
+    });
+    expect(plan.sessions[0]!.subjectId).toBe('s2');
+  });
+
+  it('n’invente aucune échéance : les cartes ne sont jamais réécrites', () => {
+    const cards = [...cardsFor('s1', '2026-03-04T00:00:00.000Z'), ...cardsFor('s2', '2026-04-15T00:00:00.000Z')];
+    const before = cards.map((card) => ({ due: card.due, interval: card.interval, ease: card.ease }));
+    planWeek({ ...base, cards });
+    expect(cards.map((card) => ({ due: card.due, interval: card.interval, ease: card.ease }))).toEqual(before);
+  });
+
+  it('rattache à chaque séance les cartes réelles du chapitre visé', () => {
+    const cards = cardsFor('s1', '2026-03-04T00:00:00.000Z');
+    const plan = planWeek({ ...base, cards });
+    expect(plan.sessions[0]!.cardIds.sort()).toEqual(cards.map((card) => card.id).sort());
   });
 });
