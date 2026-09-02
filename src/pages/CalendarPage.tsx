@@ -258,7 +258,9 @@ export function CalendarPage() {
     };
 
     if (editing) {
-      if (editing.seriesId) {
+      // Une occurrence de série OU la définition elle-même : dans les deux cas
+      // c'est le dépôt de séries qui sait quoi écrire selon la portée.
+      if (editing.seriesId || editing.recurrence) {
         await updateRecurringEvent(editing, common, editScope);
         notify(
           editScope === 'series'
@@ -298,6 +300,17 @@ export function CalendarPage() {
     if (!ok) return;
     await deleteEvent(entry.event.id);
     notify('Événement supprimé.', 'success');
+  };
+
+  /**
+   * Ouvrir une série depuis l'emploi du temps. La portée est « toute la
+   * série » sans avoir à la demander : c'est le motif hebdomadaire qu'on
+   * regarde, pas une occurrence précise.
+   */
+  const openSeries = (series: CalendarEvent) => {
+    setEditScope('series');
+    setEditing(series);
+    setFormOpen(true);
   };
 
   /** Suite d'une action sur un cours récurrent, une fois la portée choisie. */
@@ -488,7 +501,11 @@ export function CalendarPage() {
               Tes cours et temps pour toi récurrents, et ce qui reste libre dans tes plages déclarées.
             </p>
           </div>
-          <TimetableView lecturesByWeekday={lecturesByWeekday} availability={availability} />
+          <TimetableView
+            blocksByWeekday={lecturesByWeekday}
+            availability={availability}
+            onEditSeries={openSeries}
+          />
         </Card>
       )}
 

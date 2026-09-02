@@ -548,9 +548,16 @@ check(
 );
 await page.getByRole('tab', { name: 'Emploi du temps' }).click();
 await page.waitForTimeout(700);
+const emptyTimetable = await page.locator('[data-calendar-timetable]').innerText();
 check(
   'L’emploi du temps est vide une fois la série supprimée',
-  !/Histologie/.test(await page.locator('[data-calendar-timetable]').innerText()),
+  !/Histologie/.test(emptyTimetable),
+);
+check(
+  'Sans aucune série, il explique quoi faire au lieu d’afficher sept cartes vides',
+  /Aucun cours récurrent/.test(emptyTimetable) &&
+    (await page.locator('[data-timetable-day]').count()) === 0,
+  emptyTimetable.replace(/\n/g, ' | ').slice(0, 90),
 );
 
 // ────────────────── 13. « Temps pour soi » ──────────────────
@@ -600,6 +607,28 @@ check(
   'Il apparaît dans l’emploi du temps hebdomadaire',
   /Natation/.test(await page.locator('[data-calendar-timetable]').innerText()),
 );
+const timetableBlock = page.locator('[data-timetable-row="block"]').first();
+check(
+  'Chaque bloc de l’emploi du temps est un vrai bouton',
+  (await timetableBlock.evaluate((el) => el.tagName.toLowerCase())) === 'button',
+);
+check(
+  'Le temps libre tient sur UNE ligne par jour, pas une par créneau',
+  (await page.locator('[data-timetable-day="monday"] [data-timetable-row="free"]').count()) <= 1,
+);
+await timetableBlock.click();
+await page.waitForTimeout(700);
+check(
+  'Toucher un bloc ouvre sa série pour la modifier',
+  (await dialog.count()) === 1 && (await page.getByLabel('Titre').inputValue()) === 'Natation',
+  await page.getByLabel('Titre').inputValue(),
+);
+check(
+  'La récurrence de la série est bien rechargée dans le formulaire',
+  (await page.getByLabel('Récurrence').inputValue()) === 'weekly',
+);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(500);
 
 // Il bloque réellement : disponible 08 h–12 h uniquement, natation 08 h–12 h,
 // le planificateur ne doit rien proposer ce jour-là.
@@ -667,6 +696,43 @@ check(
   'La fenêtre ne défile que verticalement, sans rien qui dépasse',
   overflow !== null && !overflow.scrolls && overflow.overflowX === 'hidden' && overflow.outside === 0,
   JSON.stringify(overflow),
+);
+
+// Les champs d'heure sont des contrôles natifs : sans correctif ils se
+// dimensionnent sur leur contenu et se retrouvent plus étroits que les
+// champs du dessus, alors qu'ils partagent la même classe.
+await page.getByLabel('Type').selectOption('lecture');
+await page.waitForTimeout(300);
+const fieldBoxes = await page.evaluate(() => {
+  const out = {};
+  for (const label of ['Titre', 'Type', 'Date', 'Heure de début', 'Heure de fin', 'À partir du']) {
+    const node = [...document.querySelectorAll('[role="dialog"] label')].find(
+      (el) => el.textContent.trim() === label,
+    );
+    const control = node && document.getElementById(node.getAttribute('for'));
+    if (!control) continue;
+    const rect = control.getBoundingClientRect();
+    out[label] = { w: Math.round(rect.width), h: Math.round(rect.height), x: Math.round(rect.left) };
+  }
+  return out;
+});
+check(
+  'Le champ d’heure a exactement la taille des autres champs de la fenêtre',
+  fieldBoxes['Heure de début'].w === fieldBoxes.Type.w &&
+    fieldBoxes['Heure de début'].h === fieldBoxes.Type.h &&
+    fieldBoxes['Heure de fin'].w === fieldBoxes.Date.w &&
+    fieldBoxes['Heure de fin'].h === fieldBoxes.Date.h,
+  JSON.stringify(fieldBoxes),
+);
+check(
+  'Les champs d’une même ligne sont parfaitement alignés',
+  fieldBoxes['Heure de début'].x === fieldBoxes.Type.x &&
+    fieldBoxes['Heure de fin'].x === fieldBoxes.Date.x &&
+    fieldBoxes['À partir du'].h === fieldBoxes.Type.h,
+);
+check(
+  'Aucun champ ne dépasse la largeur du champ pleine largeur',
+  Object.values(fieldBoxes).every((box) => box.w <= fieldBoxes.Titre.w),
 );
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);

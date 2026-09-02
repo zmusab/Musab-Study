@@ -166,6 +166,48 @@
     font-size: 1rem;
   }
 
+  /*
+   * Champs DATE et HEURE — même gabarit que tous les autres.
+   *
+   * Safari (iOS comme macOS) traite `input[type=date]` et `[type=time]` comme
+   * des contrôles natifs : ils se dimensionnent sur leur contenu, ignorent la
+   * largeur demandée, et centrent leur valeur. Résultat, la barre de l'heure
+   * était plus étroite et décalée par rapport aux champs du dessus, alors
+   * qu'elle partage la même classe. Neutraliser l'apparence native rend la
+   * largeur et l'alignement identiques partout, sans perdre le sélecteur.
+   */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value,
+  input[type='month']::-webkit-date-and-time-value {
+    text-align: left;
+    /* Sans hauteur explicite, Safari recentre verticalement la valeur et la
+       fait flotter au-dessus de la ligne de base des autres champs. */
+    min-height: 1.5em;
+  }
+  /* L'icône du sélecteur reste cliquable, mais ne pousse plus le champ. */
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator {
+    margin-inline-start: auto;
+    opacity: 0.55;
+    cursor: pointer;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator:hover,
+  input[type='time']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
   /* Sélection au clavier visible, mais jamais au clic à la souris. */
   :focus-visible {
     outline: 2px solid var(--accent);

@@ -1,4 +1,4 @@
-import type { CalendarEvent, WeekdayId } from '@/types';
+import type { CalendarEvent, ID, WeekdayId } from '@/types';
 import { eventKindMeta } from './index';
 import {
   SLOT_ORDER,
@@ -28,6 +28,13 @@ export interface TimetableRow {
   detail: string | null;
   /** Couleur du genre — un cours et un temps pour soi ne se confondent pas. */
   color: string | null;
+  /**
+   * Événement d'origine, pour une ligne de bloc. Les lignes sont triées par
+   * heure alors que les blocs arrivent dans l'ordre d'enregistrement : sans
+   * cet identifiant, retrouver la série derrière une ligne demanderait de
+   * comparer des titres, ce qui casserait au premier doublon.
+   */
+  eventId: ID | null;
 }
 
 /** En dessous, un « créneau libre » n'est pas un créneau de travail. */
@@ -56,6 +63,7 @@ export function timetableRows(
     label: event.title,
     detail: [event.room, event.teacher].filter(Boolean).join(' · ') || null,
     color: eventKindMeta(event.kind).colorVar,
+    eventId: event.id,
   }));
 
   const day = availability[weekday];
@@ -105,5 +113,6 @@ const free = (start: number, end: number): TimetableRow => {
     label: `libre · ${hours > 0 ? `${hours} h${rest > 0 ? ` ${rest}` : ''}` : `${rest} min`}`,
     detail: null,
     color: null,
+    eventId: null,
   };
 };
