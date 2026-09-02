@@ -248,6 +248,74 @@ describe('buildQuiz — construction de QCM réels', () => {
     for (const option of question.options) expect(ch1Answers.has(option)).toBe(true);
   });
 
+  it('un quiz « par chapitre » cherche ses distracteurs dans toute la matière, pas seulement le chapitre visé', () => {
+    // ch1 (visé par le quiz) ne porte qu'une seule carte : aucun distracteur
+    // possible SANS sortir du chapitre. ch2, dans la MÊME matière, en porte
+    // trois : le correctif doit les trouver là plutôt que de sauter tout de
+    // suite vers une autre matière (ici absente).
+    const targeted = card({ id: 't1', subjectId: 's1', chapterId: 'ch1' });
+    const sameSubjectOtherChapter = [
+      card({ id: 'o1', subjectId: 's1', chapterId: 'ch2' }),
+      card({ id: 'o2', subjectId: 's1', chapterId: 'ch2' }),
+      card({ id: 'o3', subjectId: 's1', chapterId: 'ch2' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'chapter', subjectId: 's1', chapterId: 'ch1' },
+      emptyTables([targeted, ...sameSubjectOtherChapter]),
+      { count: 1, difficulty: 'mixed', now: NOW, random: seeded(10) },
+    );
+    expect(result.blocked).toBeNull();
+    const question = result.questions[0]!;
+    const sameSubjectAnswers = new Set(sameSubjectOtherChapter.map((c) => c.answer));
+    for (const option of question.options) {
+      if (option === targeted.answer) continue;
+      expect(sameSubjectAnswers.has(option)).toBe(true);
+    }
+  });
+
+  it('ne saute vers une autre matière qu’en dernier recours, quand la matière courante n’a réellement pas assez de cartes', () => {
+    const targeted = card({ id: 't1', subjectId: 's1', chapterId: 'ch1' });
+    // Une seule autre carte dans toute la matière s1 : insuffisant pour 3
+    // distracteurs sans sortir de la matière.
+    const sameSubjectOnly = card({ id: 'o1', subjectId: 's1', chapterId: 'ch2' });
+    const otherSubjectCards = [
+      card({ id: 'p1', subjectId: 's2' }),
+      card({ id: 'p2', subjectId: 's2' }),
+      card({ id: 'p3', subjectId: 's2' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables([targeted, sameSubjectOnly, ...otherSubjectCards]),
+      { count: 2, difficulty: 'mixed', now: NOW, random: seeded(11) },
+    );
+    expect(result.blocked).toBeNull();
+    const question = result.questions.find((q) => q.cardId === 't1')!;
+    // Le distracteur de la matière courante doit être utilisé...
+    expect(question.options).toContain(sameSubjectOnly.answer);
+    // ...et le dernier recours (autre matière) complète, faute de mieux.
+    const otherSubjectAnswers = new Set(otherSubjectCards.map((c) => c.answer));
+    expect(question.options.some((o) => otherSubjectAnswers.has(o))).toBe(true);
+  });
+
+  it('réduit le nombre de questions plutôt que d’imposer des réponses hors sujet quand aucune matière ne suffit', () => {
+    // Deux cartes seulement dans toute la base, réparties sur deux matières
+    // différentes : aucun distracteur pertinent ni de dernier recours
+    // suffisant (il faut 3 distracteurs, il n'y a qu'1 autre carte au
+    // total) — le quiz doit proposer moins de questions, jamais une
+    // réponse manifestement hors sujet inventée ou dupliquée.
+    const cards = [
+      card({ id: 't1', subjectId: 's1', chapterId: 'ch1' }),
+      card({ id: 'p1', subjectId: 's2' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(cards),
+      { count: 5, difficulty: 'mixed', now: NOW, random: seeded(12) },
+    );
+    expect(result.questions).toEqual([]);
+    expect(result.blocked).toMatch(/distinctes/);
+  });
+
   it('propose un indice dérivé du texte réel de la réponse', () => {
     const result = buildQuiz(
       { kind: 'subject', subjectId: 's1' },

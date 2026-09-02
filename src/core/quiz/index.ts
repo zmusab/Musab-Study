@@ -16,9 +16,14 @@ import type { Chapter, Difficulty, Flashcard, ID, ReviewLog, Subject } from '@/t
  * options d'un QCM sont des couples question/réponse RÉELS, pris tels quels
  * dans les flashcards existantes. La bonne réponse est le texte exact de la
  * carte ; les trois autres sont les réponses réelles d'autres cartes,
- * choisies d'abord dans le même chapitre, puis la même matière, puis
- * l'application entière si nécessaire — jamais inventées. Une carte sans
- * assez de distracteurs distincts disponibles n'est simplement pas utilisée.
+ * choisies STRICTEMENT dans cet ordre : (1) le même chapitre, (2) la même
+ * matière (cherchée dans TOUTE la matière, pas seulement dans le périmètre
+ * restreint du quiz — un quiz « par chapitre » ne doit pas sauter vers une
+ * autre matière alors que la matière courante a encore des cartes
+ * pertinentes ailleurs), (3) une autre matière, en dernier recours
+ * uniquement. Une carte sans 3 distracteurs distincts, même après ce
+ * dernier recours, n'est simplement pas utilisée — jamais de réponse
+ * manifestement hors sujet pour compléter un QCM.
  */
 
 export type QuizScope =
@@ -181,10 +186,15 @@ function priorityOrder(
   return ordered;
 }
 
-/** Trois distracteurs réels, cherchés du plus proche au plus large. */
+/**
+ * Trois distracteurs réels, cherchés du plus proche au plus large — jamais
+ * dans le `pool` restreint par le scope du quiz (qui peut être limité à un
+ * seul chapitre), toujours dans `allCards` (toutes les flashcards réelles de
+ * l'application), pour ne pas manquer un distracteur pertinent qui existe
+ * ailleurs dans la même matière.
+ */
 function pickDistractors(
   card: Flashcard,
-  pool: readonly Flashcard[],
   allCards: readonly Flashcard[],
   random: () => number,
 ): string[] | null {
@@ -203,11 +213,24 @@ function pickDistractors(
     }
   };
 
-  addFrom(pool.filter((other) => other.id !== card.id && other.chapterId === card.chapterId));
-  if (distractors.length < 3) {
-    addFrom(pool.filter((other) => other.id !== card.id && other.subjectId === card.subjectId));
+  // 1. Même chapitre (donc forcément même matière) — le contexte le plus pertinent.
+  if (card.chapterId !== null) {
+    addFrom(
+      allCards.filter(
+        (other) => other.id !== card.id && other.subjectId === card.subjectId && other.chapterId === card.chapterId,
+      ),
+    );
   }
-  if (distractors.length < 3) addFrom(allCards.filter((other) => other.id !== card.id));
+  // 2. Même matière, tous chapitres confondus — cherché dans l'ensemble des
+  //    flashcards de la matière, pas seulement le périmètre du quiz.
+  if (distractors.length < 3) {
+    addFrom(allCards.filter((other) => other.id !== card.id && other.subjectId === card.subjectId));
+  }
+  // 3. Dernier recours seulement : une autre matière, quand la matière
+  //    courante n'a réellement pas assez de réponses distinctes.
+  if (distractors.length < 3) {
+    addFrom(allCards.filter((other) => other.id !== card.id));
+  }
 
   return distractors.length === 3 ? distractors : null;
 }
@@ -266,7 +289,7 @@ export function buildQuiz(
   let counter = 0;
   for (const card of ordered) {
     if (questions.length >= options.count) break;
-    const distractors = pickDistractors(card, effectivePool, allCards, random);
+    const distractors = pickDistractors(card, allCards, random);
     if (!distractors) continue;
 
     const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
