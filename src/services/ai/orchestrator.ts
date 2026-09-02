@@ -182,11 +182,62 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
     return providers.some((provider) => provider.isAvailable());
   }
 
+  /**
+   * TEST DE CONNEXION RÉEL pour UN fournisseur précis.
+   *
+   * `isAvailable()` ne dit qu'une chose : « une clé est configurée ». Il ne
+   * dit pas si cette clé est acceptée, si le modèle existe, ni si le relais
+   * répond — d'où des réglages qui s'annoncent « configurés » alors que la
+   * première vraie question échoue. Cette fonction envoie donc une VRAIE
+   * requête minimale au fournisseur demandé, et renvoie ce qui s'est
+   * réellement passé. Aucune supposition, aucun résultat simulé.
+   *
+   * Elle ignore volontairement les préférences de fournisseur : on teste
+   * celui qu'on désigne, pas celui que l'orchestrateur choisirait.
+   */
+  async function testProvider(providerId: ProviderId): Promise<{ ok: boolean; message: string }> {
+    const provider = providers.find((entry) => entry.id === providerId);
+    if (!provider) return { ok: false, message: `Fournisseur « ${providerId} » inconnu.` };
+    if (!provider.isAvailable()) {
+      return { ok: false, message: `${provider.label} n'est pas configuré.` };
+    }
+
+    const startedAt = Date.now();
+    try {
+      const answer = await provider.ask({
+        system: 'Réponds exactement « OK », sans rien ajouter.',
+        prompt: 'Test de connexion.',
+        maxTokens: 16,
+      });
+      recordLog({
+        task: 'chat-course',
+        providerId,
+        durationMs: Date.now() - startedAt,
+        success: true,
+        at: new Date().toISOString(),
+      });
+      return {
+        ok: true,
+        message: `${provider.label} a répondu (${answer.trim().slice(0, 40) || 'réponse vide'}).`,
+      };
+    } catch (error) {
+      recordLog({
+        task: 'chat-course',
+        providerId,
+        durationMs: Date.now() - startedAt,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      });
+      return { ok: false, message: describeAiError(error) };
+    }
+  }
+
   function getRecentLog(): readonly AiCallLogEntry[] {
     return log;
   }
 
-  return { ask, describeAiError, hasAvailableProvider, getRecentLog };
+  return { ask, describeAiError, hasAvailableProvider, testProvider, getRecentLog };
 }
 
 export const aiOrchestrator = createOrchestrator([anthropicProvider, openaiProvider, geminiProvider]);

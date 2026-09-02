@@ -215,6 +215,51 @@ describe.each([
 });
 
 /**
+ * Le modèle par défaut de chaque relais doit appartenir au fournisseur qu'il
+ * interroge. `gemini-3.5-flash` — la valeur précédente du relais Gemini —
+ * n'a jamais existé (la gamme « 3.5 » de Google est de la transcription
+ * audio), donc aucune requête ne pouvait aboutir. Ce test vérifie ce qui
+ * part RÉELLEMENT sur le réseau, pas une constante recopiée.
+ */
+describe('api/ai/* — le modèle par défaut appartient bien au fournisseur appelé', () => {
+  it('Gemini appelle un modèle de la famille gemini-*', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    let calledUrl = '';
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      calledUrl = url;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+      } as Response);
+    }) as unknown as typeof fetch;
+
+    await geminiHandler(askRequest({ system: 's', prompt: 'p' }));
+
+    const model = decodeURIComponent(calledUrl.split('/models/')[1]?.split(':')[0] ?? '');
+    expect(model).toMatch(/^gemini-/);
+    // La gamme « transcribe » ne répond pas à generateContent.
+    expect(model).not.toContain('transcribe');
+  });
+
+  it('OpenAI appelle un modèle de la famille gpt-*', async () => {
+    process.env.OPENAI_API_KEY = 'test-key-never-real';
+    let sentModel: unknown;
+    global.fetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      sentModel = JSON.parse(String(init.body)).model;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+      } as Response);
+    }) as unknown as typeof fetch;
+
+    await openaiHandler(askRequest({ system: 's', prompt: 'p' }));
+    expect(sentModel).toMatch(/^(gpt|o\d)/);
+  });
+});
+
+/**
  * Google répond 400 (et non 401) quand la clé est invalide — d'où le
  * message « Gemini a refusé la requête (400) » observé en production, qui ne
  * disait rien d'exploitable. Le relais lit désormais le CODE de raison

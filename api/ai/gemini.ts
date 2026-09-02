@@ -19,7 +19,16 @@ export const config = { runtime: 'edge' };
  * technique correcte d'exploiter Gemini depuis Musab Study, quel que soit
  * le nom commercial de l'offre visée.
  */
-const DEFAULT_MODEL = 'gemini-3.5-flash';
+/**
+ * Vérifié sur ai.google.dev/gemini-api/docs/models (septembre 2026).
+ *
+ * Corrige un identifiant qui n'a jamais existé : `gemini-3.5-flash`. La
+ * gamme « 3.5 » de Google est de la transcription audio
+ * (`gemini-3.5-transcribe`), pas un modèle de dialogue — aucune requête
+ * envoyée sous ce nom ne pouvait aboutir. À revérifier périodiquement : le
+ * catalogue Google change plus vite que ce fichier.
+ */
+const DEFAULT_MODEL = 'gemini-3.7-flash';
 
 async function callGemini(apiKey: string, model: string, body: ProxyAskBody): Promise<Response> {
   return fetchWithTimeout(

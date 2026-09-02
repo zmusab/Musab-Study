@@ -8,6 +8,7 @@ import {
   type TaskProviderPreference,
 } from '@/services/ai/taskPreferences';
 import { proxyProviderStatus, refreshProviderStatus, type ProxyProviderId } from '@/services/ai/providerStatus';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
 import type { AITask, ProviderId } from '@/services/ai/types';
 
 /**
@@ -52,8 +53,16 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: 'Gemini',
 };
 
+interface ConnectionTestResult {
+  id: ProviderId;
+  ok: boolean;
+  message: string;
+}
+
 export function HubIaCard() {
   const [checking, setChecking] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState<ConnectionTestResult[]>([]);
   // Un simple compteur force le nouveau rendu après un rafraîchissement —
   // le cache de `providerStatus.ts` n'est pas lui-même réactif.
   const [statusVersion, setStatusVersion] = useState(0);
@@ -67,6 +76,29 @@ export function HubIaCard() {
       setStatusVersion((v) => v + 1);
     } finally {
       setChecking(false);
+    }
+  };
+
+  /**
+   * Test de connexion RÉEL : une vraie petite requête par fournisseur
+   * configuré (voir `aiOrchestrator.testProvider`). « Vérifier la
+   * configuration » ci-dessus ne fait que relire l'état des clés côté
+   * serveur — il ne peut pas dire si une clé est acceptée ni si le modèle
+   * existe. C'est ce bouton-ci qui répond à « est-ce que ça marche ? ».
+   */
+  const runConnectionTest = async () => {
+    setTesting(true);
+    setTestResults([]);
+    try {
+      await refreshProviderStatus();
+      setStatusVersion((v) => v + 1);
+      const ids: ProviderId[] = ['anthropic', 'openai', 'gemini'];
+      const results = await Promise.all(
+        ids.map(async (id) => ({ id, ...(await aiOrchestrator.testProvider(id)) })),
+      );
+      setTestResults(results);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -139,11 +171,39 @@ export function HubIaCard() {
         </p>
       </div>
 
-      <div className="mt-3.5">
+      <div className="mt-3.5 flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" loading={checking} onClick={() => void checkStatus()} data-hub-check-status>
           Vérifier la configuration
         </Button>
+        <Button size="sm" loading={testing} onClick={() => void runConnectionTest()} data-hub-test-connection>
+          Tester la connexion
+        </Button>
       </div>
+      <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+        « Vérifier la configuration » relit seulement quelles clés sont en place. « Tester la connexion » envoie une vraie
+        petite requête à chaque fournisseur et affiche ce qu’il répond réellement — c’est celui-ci qui dit si ça marche.
+      </p>
+
+      {testResults.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-2" data-hub-test-results>
+          {testResults.map((result) => (
+            <li
+              key={result.id}
+              className="rounded-[var(--radius-control)] border px-3.5 py-2.5 text-[0.8rem] leading-relaxed"
+              style={{
+                borderColor: result.ok ? 'var(--success)' : 'var(--danger)',
+                backgroundColor: result.ok ? 'var(--success-tint)' : 'var(--danger-tint)',
+              }}
+              data-hub-test-result={result.id}
+            >
+              <span className="font-medium">
+                {result.ok ? '✓' : '✕'} {PROVIDER_LABELS[result.id]}
+              </span>{' '}
+              — {result.message}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="mt-4 border-t border-[var(--line)] pt-4">
         <Select

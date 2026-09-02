@@ -21,9 +21,11 @@ import {
   AVAILABLE_MODELS,
   getApiKey,
   getModel,
+  getWorkspaceId,
   maskApiKey,
   setApiKey,
   setModel,
+  setWorkspaceId,
 } from '@/services/ai/settings';
 import { exportBackup, importBackup } from '@/services/backup';
 import { convertLegacyDump, isLegacyDump } from '@/services/legacyImport';
@@ -57,6 +59,7 @@ export function SettingsPage() {
   const [form, setForm] = useState({ name: '', university: '', section: '', program: '', goals: '' });
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [storedKey, setStoredKey] = useState<string | null>(null);
+  const [workspaceDraft, setWorkspaceDraft] = useState('');
   const [model, setModelState] = useState(getModel);
   const [busy, setBusy] = useState(false);
 
@@ -73,6 +76,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     setStoredKey(getApiKey());
+    setWorkspaceDraft(getWorkspaceId() ?? '');
   }, []);
 
   const handleSaveProfile = async () => {
@@ -288,6 +292,30 @@ export function SettingsPage() {
                   </option>
                 ))}
               </Select>
+
+              {/* Nécessaire uniquement pour une clé « liée à une identité »,
+                  qui n'appartient à aucun espace de travail : Anthropic
+                  refuse alors la requête tant que l'espace de travail n'est
+                  pas nommé. Une clé rattachée à un espace de travail
+                  fonctionne sans rien saisir ici. */}
+              <Input
+                label="Workspace ID (facultatif)"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="wrkspc_…"
+                value={workspaceDraft}
+                hint={
+                  <>
+                    À renseigner seulement si Claude répond «&nbsp;ta clé est liée à une identité&nbsp;». À copier depuis
+                    console.anthropic.com → Settings → Workspaces.
+                  </>
+                }
+                onChange={(event) => {
+                  setWorkspaceDraft(event.target.value);
+                  setWorkspaceId(event.target.value);
+                }}
+                data-anthropic-workspace-id
+              />
             </div>
           </Card>
         </StaggerItem>

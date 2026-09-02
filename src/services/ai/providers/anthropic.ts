@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getApiKey, getModel } from '../settings';
+import { getApiKey, getModel, getWorkspaceId } from '../settings';
 import { MissingApiKeyError, AiRequestError } from '../types';
 import type { AIProvider, AIProviderCapabilities, ProviderAskOptions, QualityTier } from '../types';
 
@@ -44,7 +44,16 @@ export function effortParams(
 function createClient(): Anthropic {
   const apiKey = getApiKey();
   if (!apiKey) throw new MissingApiKeyError();
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const workspaceId = getWorkspaceId();
+  return new Anthropic({
+    apiKey,
+    dangerouslyAllowBrowser: true,
+    // Requis uniquement par les clés « liées à une identité », qui
+    // n'appartiennent à aucun espace de travail — voir `getWorkspaceId`.
+    // Absent quand l'utilisateur n'a rien saisi : une clé rattachée à un
+    // espace de travail fonctionne sans cet en-tête, comme avant.
+    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
+  });
 }
 
 /** Traduit une erreur du SDK Anthropic en message actionnable, en français. */
@@ -60,6 +69,15 @@ function describeAnthropicError(error: unknown): string {
       case 429:
         return 'Limite de débit atteinte. Attends quelques secondes et réessaie.';
       case 400:
+        // Cas repéré en production : une clé « liée à une identité » exige
+        // que la requête nomme son espace de travail. Le message brut de
+        // l'API est en anglais et parle d'un en-tête HTTP — inexploitable
+        // tel quel pour savoir quoi faire. On dit où le régler.
+        if (error.message.includes('anthropic-workspace-id')) {
+          return getWorkspaceId() === null
+            ? 'Ta clé Anthropic est liée à une identité : elle exige un espace de travail. Renseigne « Workspace ID » dans Paramètres → Assistant IA (Console Anthropic → Settings → Workspaces, identifiant en wrkspc_…).'
+            : "L'espace de travail renseigné est refusé par Anthropic. Vérifie le « Workspace ID » dans Paramètres → Assistant IA.";
+        }
         return `Requête refusée : ${error.message}`;
       default:
         if (error.status && error.status >= 500) {

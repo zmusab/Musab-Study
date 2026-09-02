@@ -45,8 +45,18 @@ export interface ProxyAskBody {
   preferredModel?: string;
 }
 
-/** Délai avant abandon de l'appel sortant vers le fournisseur — distingue un timeout d'une vraie erreur réseau. */
-export const UPSTREAM_TIMEOUT_MS = 60_000;
+/**
+ * Délai avant abandon de l'appel sortant vers le fournisseur — distingue un
+ * timeout d'une vraie erreur réseau.
+ *
+ * DOIT rester sous la limite d'exécution de l'hébergeur (Vercel coupe une
+ * fonction Edge autour de 25 s). À 60 s, c'était toujours l'hébergeur qui
+ * tranchait en premier : il renvoyait sa propre page 504, sans le format
+ * d'erreur de ce dossier, et l'application n'avait plus qu'un « a renvoyé
+ * une erreur (504) » à afficher — le symptôme observé en production. À 20 s,
+ * c'est NOTRE timeout qui gagne, avec un message qui dit ce qui s'est passé.
+ */
+export const UPSTREAM_TIMEOUT_MS = 20_000;
 
 /**
  * `no-store` sur les trois routes de ce dossier (status/openai/gemini) :

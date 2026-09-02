@@ -317,6 +317,63 @@ describe('createOrchestrator — la sélection de l’utilisateur est strictemen
   });
 });
 
+/**
+ * Test de connexion RÉEL : `isAvailable()` dit seulement qu'une clé est
+ * configurée, jamais qu'elle est acceptée. `testProvider` envoie une vraie
+ * requête minimale au fournisseur DÉSIGNÉ — sans tenir compte des
+ * préférences — et rapporte ce qui s'est réellement passé.
+ */
+describe('createOrchestrator — testProvider', () => {
+  afterEach(() => {
+    setPreferredProvider('auto');
+  });
+
+  it('teste le fournisseur DÉSIGNÉ, jamais celui que la préférence choisirait', async () => {
+    setPreferredProvider('anthropic');
+    const openaiAsk = vi.fn(async () => 'OK');
+    const anthropicAsk = vi.fn(async () => 'OK');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', { ask: anthropicAsk }),
+      makeProvider('openai', { ask: openaiAsk }),
+    ]);
+
+    const result = await orchestrator.testProvider('openai');
+    expect(result.ok).toBe(true);
+    expect(openaiAsk).toHaveBeenCalledTimes(1);
+    expect(anthropicAsk).not.toHaveBeenCalled();
+  });
+
+  it('rapporte l’échec réel du fournisseur, sans jamais le maquiller en succès', async () => {
+    const orchestrator = createOrchestrator([
+      makeProvider('gemini', {
+        ask: async () => {
+          throw new AiRequestError('Gemini ne connaît pas le modèle demandé (404).');
+        },
+      }),
+    ]);
+
+    const result = await orchestrator.testProvider('gemini');
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('404');
+  });
+
+  it('un fournisseur non configuré est annoncé comme tel, sans requête envoyée', async () => {
+    const ask = vi.fn(async () => 'OK');
+    const orchestrator = createOrchestrator([makeProvider('openai', { available: false, ask })]);
+
+    const result = await orchestrator.testProvider('openai');
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/pas configuré/);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('consigne le test dans le journal, comme n’importe quel appel', async () => {
+    const orchestrator = createOrchestrator([makeProvider('anthropic')]);
+    await orchestrator.testProvider('anthropic');
+    expect(orchestrator.getRecentLog()).toHaveLength(1);
+  });
+});
+
 describe('createOrchestrator — le modèle imposé ne traverse jamais vers un autre fournisseur', () => {
   afterEach(() => {
     setPreferredProvider('auto');

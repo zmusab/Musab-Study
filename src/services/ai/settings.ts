@@ -21,6 +21,7 @@ import type { ProviderId } from './types';
 
 const KEY_STORAGE = 'musab-study:anthropic-key';
 const MODEL_STORAGE = 'musab-study:anthropic-model';
+const WORKSPACE_STORAGE = 'musab-study:anthropic-workspace-id';
 const PREFERRED_PROVIDER_STORAGE = 'musab-study:preferred-provider';
 
 /** Modèles proposés, du plus capable au plus économique. */
@@ -80,6 +81,31 @@ export function getModel(): string {
 
 export function setModel(model: string): void {
   writeStorage(MODEL_STORAGE, model);
+}
+
+/**
+ * Identifiant d'espace de travail Anthropic (`wrkspc_…`), facultatif.
+ *
+ * Anthropic distingue deux sortes de clés API. Une clé rattachée à un espace
+ * de travail précis suffit à elle seule. Une clé « liée à une identité »
+ * (identity-linked), elle, n'appartient à aucun espace de travail : l'API
+ * refuse alors la requête avec un 400 explicite — « anthropic-workspace-id is
+ * required when authenticating with an identity-linked API key » — tant que
+ * l'espace de travail dans lequel la requête agit n'est pas indiqué. Cet
+ * identifiant, quand il est renseigné, part dans l'en-tête
+ * `anthropic-workspace-id`.
+ *
+ * Ce n'est pas un secret (il identifie un espace de travail, il n'y donne pas
+ * accès sans la clé), mais il reste stocké sur cet appareil uniquement, comme
+ * la clé, et n'est pas inclus dans les sauvegardes.
+ */
+export function getWorkspaceId(): string | null {
+  const id = readStorage(WORKSPACE_STORAGE);
+  return id && id.trim().length > 0 ? id.trim() : null;
+}
+
+export function setWorkspaceId(id: string | null): void {
+  writeStorage(WORKSPACE_STORAGE, id && id.trim().length > 0 ? id.trim() : null);
 }
 
 /** Masque une clé pour l'affichage : `sk-ant-…a1b2`. */

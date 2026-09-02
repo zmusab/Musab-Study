@@ -13,7 +13,12 @@ export const config = { runtime: 'edge' };
  * change plus vite que ce fichier. Surchageable par requête
  * (`preferredModel`, voir `services/ai/settings.ts` → sélection par tâche).
  */
-const DEFAULT_MODEL = 'gpt-5.1';
+/**
+ * Vérifié sur platform.openai.com/docs/models (septembre 2026) : `gpt-5.2`
+ * est exposé tel quel par l'API Chat Completions. `gpt-5.1` — la valeur
+ * précédente — n'est plus une entrée courante du catalogue depuis mars 2026.
+ */
+const DEFAULT_MODEL = 'gpt-5.2';
 
 async function callOpenAI(apiKey: string, model: string, body: ProxyAskBody): Promise<Response> {
   return fetchWithTimeout('https://api.openai.com/v1/chat/completions', {

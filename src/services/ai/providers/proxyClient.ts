@@ -12,7 +12,8 @@ import { refreshProviderStatus, type ProxyProviderId } from '../providerStatus';
  * consomment déjà sans connaître le fournisseur — inchangé pour elles.
  */
 
-const REQUEST_TIMEOUT_MS = 65_000;
+/** Un peu au-dessus du timeout du relais (20 s, voir `api/ai/_shared.ts`) : c'est lui qui doit trancher en premier, avec son message. */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 interface ProxySuccessBody {
   text?: unknown;
@@ -71,8 +72,19 @@ export async function askViaProxy(providerId: ProxyProviderId, label: string, op
   }
 
   if (!response.ok) {
-    const message = typeof (body as ProxyErrorBody | null)?.message === 'string' ? (body as ProxyErrorBody).message : null;
-    throw new AiRequestError((message as string | null) ?? `${label} a renvoyé une erreur (${response.status}).`);
+    const raw = (body as ProxyErrorBody | null)?.message;
+    if (typeof raw === 'string' && raw.length > 0) throw new AiRequestError(raw);
+
+    // Aucun message au format de `api/ai/_shared.ts` : la réponse ne vient
+    // donc PAS de notre relais, mais de l'hébergeur lui-même (passerelle).
+    // Le dire, plutôt que d'attribuer au fournisseur une erreur qu'il n'a
+    // jamais renvoyée — c'est ce que faisait « Gemini a renvoyé une erreur
+    // (504) », alors que Gemini n'était pour rien dans ce 504.
+    throw new AiRequestError(
+      response.status === 504 || response.status === 502
+        ? `Le relais ${label} a été interrompu par l'hébergeur avant d'avoir répondu (${response.status}). La requête a probablement pris trop de temps ; réessaie, ou choisis un autre fournisseur.`
+        : `Le relais ${label} a répondu ${response.status}, dans un format inattendu.`,
+    );
   }
 
   const text = (body as ProxySuccessBody | null)?.text;
