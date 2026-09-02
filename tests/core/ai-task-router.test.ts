@@ -51,8 +51,27 @@ describe('TASK_ROUTES', () => {
   });
 
   it('impose le modèle rapide pour l’analyse podcast, comme le faisait le pipeline avant le passage par l’orchestrateur', () => {
-    expect(TASK_ROUTES['podcast-analysis'].preferredModel).toBe('claude-haiku-4-5');
+    expect(TASK_ROUTES['podcast-analysis'].preferredModel?.anthropic).toBe('claude-haiku-4-5');
     expect(TASK_ROUTES['podcast-analysis'].tier).toBe('fast');
+  });
+
+  /**
+   * Un identifiant de modèle n'a de sens que chez son propre fournisseur :
+   * envoyer « claude-haiku-4-5 » au relais Gemini ne pouvait produire qu'un
+   * refus. Chaque modèle imposé doit donc être rangé sous le fournisseur qui
+   * le publie — vérifié sur TOUTE la table, pas seulement sur podcast.
+   */
+  it('aucun modèle imposé n’est rangé sous un fournisseur qui ne le publie pas', () => {
+    const prefixes: Record<string, RegExp> = {
+      anthropic: /^claude-/,
+      openai: /^(gpt|o\d)/,
+      gemini: /^gemini-/,
+    };
+    for (const [task, route] of Object.entries(TASK_ROUTES)) {
+      for (const [providerId, model] of Object.entries(route.preferredModel ?? {})) {
+        expect(model, `${task} → ${providerId}`).toMatch(prefixes[providerId]!);
+      }
+    }
   });
 
   it('exige une capacité de recherche web pour le mode internet', () => {

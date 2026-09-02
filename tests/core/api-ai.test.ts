@@ -214,6 +214,60 @@ describe.each([
   });
 });
 
+/**
+ * Google répond 400 (et non 401) quand la clé est invalide — d'où le
+ * message « Gemini a refusé la requête (400) » observé en production, qui ne
+ * disait rien d'exploitable. Le relais lit désormais le CODE de raison
+ * structuré pour le classer correctement, sans jamais renvoyer ni le corps
+ * brut de Google ni la moindre valeur de clé.
+ */
+describe('api/ai/gemini — un 400 « clé invalide » est nommé, jamais laissé cryptique', () => {
+  const googleInvalidKeyBody = {
+    error: {
+      code: 400,
+      message: 'API key not valid. Please pass a valid API key.',
+      status: 'INVALID_ARGUMENT',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }],
+    },
+  };
+
+  it('400 + reason API_KEY_INVALID devient une erreur d’authentification explicite', async () => {
+    process.env.GEMINI_API_KEY = 'cle-invalide-jamais-reelle';
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 400, json: async () => googleInvalidKeyBody }) as unknown as typeof fetch;
+
+    const response = await geminiHandler(askRequest({ system: 's', prompt: 'p' }));
+    const body = await response.json();
+
+    expect(body.error).toBe('upstream_auth');
+    expect(body.message).toMatch(/GEMINI_API_KEY/);
+    expect(JSON.stringify(body)).not.toContain('cle-invalide-jamais-reelle');
+  });
+
+  it('un 400 sans raison connue reste signalé tel quel, jamais requalifié à tort', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { code: 400 } }) }) as unknown as typeof fetch;
+
+    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
+    expect(body.error).toBe('upstream_error');
+    expect(body.message).toContain('400');
+  });
+
+  it('un 404 (modèle inconnu) le dit, au lieu d’un refus générique', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }) as unknown as typeof fetch;
+
+    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
+    expect(body.error).toBe('upstream_error');
+    expect(body.message).toMatch(/modèle/i);
+  });
+});
+
 describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
   it('reflète fidèlement la présence/absence de chaque clé', async () => {
     process.env.OPENAI_API_KEY = 'sk-should-not-appear';

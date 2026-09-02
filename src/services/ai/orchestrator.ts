@@ -1,7 +1,7 @@
 import { anthropicProvider } from './providers/anthropic';
 import { openaiProvider } from './providers/openai';
 import { geminiProvider } from './providers/gemini';
-import { selectProviderCandidates, TASK_ROUTES } from './taskRouter';
+import { missingRequirements, selectProviderCandidates, TASK_ROUTES } from './taskRouter';
 import { getPreferredProvider } from './settings';
 import { getTaskProviderPreference } from './taskPreferences';
 import { AiRequestError, MissingApiKeyError, ProviderNotConfiguredError } from './types';
@@ -11,9 +11,15 @@ import type { AIProvider, AITask, AskOptions, ProviderId } from './types';
  * Point d'entrée UNIQUE de la couche IA — le HUB. Aucune fonctionnalité
  * (chat, flashcards, podcast, panneau IA du lecteur PDF) n'appelle plus un
  * fournisseur directement — tout passe par `ask()` ici, qui consulte le
- * routeur de tâches, applique les préférences de fournisseur (par tâche
- * puis générale, voir `reorderByPreference` ci-dessous), puis délègue au(x)
- * provider(s) candidat(s), avec repli réel si plusieurs sont disponibles.
+ * routeur de tâches puis applique la préférence de l'utilisateur.
+ *
+ * DEUX RÉGIMES, jamais mélangés :
+ *  - un fournisseur CHOISI explicitement (préférence par tâche, sinon
+ *    préférence générale) est le SEUL essayé. S'il n'est pas configuré, ou
+ *    s'il ne sait pas faire ce que la tâche exige, la demande échoue avec un
+ *    message qui le dit — jamais une bascule silencieuse vers un autre ;
+ *  - en mode « Automatique » seulement, l'orchestrateur essaie les candidats
+ *    disponibles dans l'ordre, avec repli réel si l'un échoue.
  *
  * `anthropicProvider` appelle directement api.anthropic.com depuis le
  * navigateur (Anthropic l'autorise). `openaiProvider`/`geminiProvider`
@@ -25,26 +31,29 @@ import type { AIProvider, AITask, AskOptions, ProviderId } from './types';
  * avant ce chantier.
  */
 
-/**
- * Réordonne les candidats déjà filtrés (disponibilité + capacités) selon la
- * préférence de l'utilisateur — la tâche d'abord, sinon la préférence
- * générale, sinon rien. Ne FILTRE jamais : un fournisseur préféré mais
- * indisponible reste simplement absent de `candidates`, et le repli sur un
- * autre fournisseur disponible continue de fonctionner normalement.
- *
- * Quand rien n'est configuré (les deux réglages valent `'auto'`, le défaut
- * pour tout appareil existant), cette fonction renvoie `candidates`
- * inchangés — même ordre qu'avant ce chantier, donc même comportement.
- */
-function reorderByPreference(candidates: readonly AIProvider[], task: AITask): AIProvider[] {
-  const taskPreference = getTaskProviderPreference(task);
-  const generalPreference = getPreferredProvider();
-  const preferred = taskPreference !== 'auto' ? taskPreference : generalPreference !== 'auto' ? generalPreference : null;
-  if (!preferred) return [...candidates];
+/** D'où vient le fournisseur retenu — sert au diagnostic et aux messages d'erreur. */
+export type ProviderChoiceSource = 'task' | 'general' | 'auto';
 
-  const chosen = candidates.filter((provider) => provider.id === preferred);
-  const rest = candidates.filter((provider) => provider.id !== preferred);
-  return [...chosen, ...rest];
+export interface ProviderChoice {
+  /** `null` = mode automatique : c'est l'orchestrateur qui décide. */
+  providerId: ProviderId | null;
+  source: ProviderChoiceSource;
+}
+
+/**
+ * Le fournisseur RÉELLEMENT retenu pour une tâche, et pourquoi : la
+ * préférence par tâche l'emporte sur la préférence générale, elle-même
+ * prioritaire sur le mode automatique. Exportée pour que l'interface puisse
+ * afficher exactement ce que l'orchestrateur va faire — aucun réglage caché.
+ */
+export function resolveProviderChoice(task: AITask): ProviderChoice {
+  const taskPreference = getTaskProviderPreference(task);
+  if (taskPreference !== 'auto') return { providerId: taskPreference, source: 'task' };
+
+  const generalPreference = getPreferredProvider();
+  if (generalPreference !== 'auto') return { providerId: generalPreference, source: 'general' };
+
+  return { providerId: null, source: 'auto' };
 }
 
 export interface AiCallLogEntry {
@@ -70,11 +79,50 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
     if (log.length > MAX_LOG_ENTRIES) log.shift();
   }
 
+  /**
+   * Explique, sans jamais y substituer un autre fournisseur, pourquoi CELUI
+   * que l'utilisateur a explicitement choisi ne peut pas traiter la tâche.
+   */
+  function refuseChosenProvider(providerId: ProviderId, task: AITask): never {
+    const registered = providers.find((provider) => provider.id === providerId);
+    if (!registered) throw new ProviderNotConfiguredError(providerId);
+
+    if (!registered.isAvailable()) {
+      throw new MissingApiKeyError(
+        `${registered.label} est sélectionné mais n'est pas configuré. Ouvre Paramètres → Hub IA pour vérifier sa configuration, ou choisis un autre fournisseur.`,
+      );
+    }
+
+    const missing = missingRequirements(registered.capabilities, task);
+    throw new AiRequestError(
+      missing.length > 0
+        ? `${registered.label} est sélectionné mais ne gère pas ${missing.join(' ni ')} — nécessaire pour cette fonctionnalité. Choisis un autre fournisseur dans Paramètres → Hub IA.`
+        : `${registered.label} est sélectionné mais ne peut pas traiter cette demande.`,
+    );
+  }
+
   async function ask(options: AskOptions): Promise<string> {
     const route = TASK_ROUTES[options.task];
-    const candidates = reorderByPreference(selectProviderCandidates(providers, options.task), options.task);
+    const usable = selectProviderCandidates(providers, options.task);
+    const choice = resolveProviderChoice(options.task);
 
-    if (candidates.length === 0) throw new MissingApiKeyError();
+    /**
+     * RÈGLE ABSOLUE : un fournisseur choisi explicitement (par tâche ou en
+     * réglage général) est le SEUL essayé. Aucun repli silencieux vers un
+     * autre — c'est précisément ce qui faisait qu'une question posée avec
+     * « ChatGPT » sélectionné pouvait finir chez Gemini dès que le relais
+     * OpenAI échouait, et n'afficher que l'erreur de Gemini. Le repli
+     * automatique n'existe donc plus que dans le mode « Automatique », le
+     * seul où l'utilisateur délègue effectivement ce choix.
+     */
+    const candidates = choice.providerId
+      ? usable.filter((provider) => provider.id === choice.providerId)
+      : [...usable];
+
+    if (candidates.length === 0) {
+      if (choice.providerId) refuseChosenProvider(choice.providerId, options.task);
+      throw new MissingApiKeyError();
+    }
 
     let lastError: unknown;
     for (const provider of candidates) {
@@ -88,7 +136,9 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
           signal: options.signal,
           onText: options.onText,
           tier: route.tier,
-          preferredModel: route.preferredModel,
+          // Uniquement le modèle prévu POUR CE fournisseur : un identifiant
+          // Anthropic ne doit jamais partir vers le relais OpenAI ou Gemini.
+          preferredModel: route.preferredModel?.[provider.id],
         });
         recordLog({
           task: options.task,

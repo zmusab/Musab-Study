@@ -1,4 +1,4 @@
-import type { AIProvider, AIProviderCapabilities, AITask, QualityTier } from './types';
+import type { AIProvider, AIProviderCapabilities, AITask, ProviderId, QualityTier } from './types';
 
 /**
  * Table de routage : pour chaque tâche, le niveau de qualité voulu et,
@@ -13,8 +13,20 @@ import type { AIProvider, AIProviderCapabilities, AITask, QualityTier } from './
  */
 export interface TaskRoute {
   tier?: QualityTier;
-  /** Force un modèle précis pour cette tâche, quel que soit le réglage général de l'utilisateur. */
-  preferredModel?: string;
+  /**
+   * Force un modèle précis pour cette tâche, PAR FOURNISSEUR — un
+   * identifiant de modèle n'a de sens que chez celui qui le publie.
+   *
+   * Avant, ce champ était une simple chaîne, transmise au fournisseur
+   * RÉELLEMENT retenu : `podcast-analysis` imposait `claude-haiku-4-5`, et
+   * si Gemini (ou OpenAI) traitait la tâche, cet identifiant Anthropic
+   * partait tel quel dans l'URL du relais Gemini
+   * (`…/models/claude-haiku-4-5:generateContent`) — le fournisseur ne
+   * pouvait que refuser la requête. Un modèle est désormais indexé par le
+   * fournisseur auquel il appartient : aucun identifiant ne peut plus
+   * traverser vers un autre.
+   */
+  preferredModel?: Partial<Record<ProviderId, string>>;
   /** Capacités minimales — un provider qui ne les a pas n'est pas candidat pour cette tâche. */
   requires?: Partial<Pick<AIProviderCapabilities, 'webSearch' | 'vision' | 'structuredOutput'>>;
 }
@@ -39,7 +51,7 @@ export const TASK_ROUTES: Record<AITask, TaskRoute> = {
   // que soit le modèle choisi par l'utilisateur pour la qualité du
   // dialogue — la validation après coup (validateConcepts) est le vrai
   // filet de sécurité, pas la prudence du modèle.
-  'podcast-analysis': { tier: 'fast', preferredModel: 'claude-haiku-4-5' },
+  'podcast-analysis': { tier: 'fast', preferredModel: { anthropic: 'claude-haiku-4-5' } },
   // Ici la qualité compte (c'est le contenu que l'étudiant écoute) : le
   // niveau reste néanmoins « balanced » plutôt que « deep », sans
   // dégradation notable, car la structure est déjà contrainte par les
@@ -78,4 +90,26 @@ function satisfiesRequirements(capabilities: AIProviderCapabilities, requires: T
 export function selectProviderCandidates(providers: readonly AIProvider[], task: AITask): AIProvider[] {
   const route = TASK_ROUTES[task];
   return providers.filter((provider) => provider.isAvailable() && satisfiesRequirements(provider.capabilities, route.requires));
+}
+
+type RequirementKey = 'webSearch' | 'vision' | 'structuredOutput';
+
+const REQUIREMENT_LABELS: Record<RequirementKey, string> = {
+  webSearch: 'la recherche web',
+  vision: 'l’analyse d’images',
+  structuredOutput: 'les réponses structurées',
+};
+
+/**
+ * Ce qui manque à CE fournisseur pour cette tâche, en clair — sert à
+ * expliquer honnêtement pourquoi un fournisseur explicitement choisi ne peut
+ * pas traiter une tâche, plutôt que de lui en substituer un autre en silence
+ * (voir `orchestrator.ts`).
+ */
+export function missingRequirements(capabilities: AIProviderCapabilities, task: AITask): string[] {
+  const requires = TASK_ROUTES[task].requires;
+  if (!requires) return [];
+  return (Object.keys(REQUIREMENT_LABELS) as RequirementKey[])
+    .filter((key) => requires[key] === true && capabilities[key] !== true)
+    .map((key) => REQUIREMENT_LABELS[key]);
 }

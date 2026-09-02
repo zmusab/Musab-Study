@@ -39,6 +39,28 @@ async function callGemini(apiKey: string, model: string, body: ProxyAskBody): Pr
   );
 }
 
+/**
+ * Code de raison structuré d'une erreur Google (`error.details[].reason`,
+ * ex. `API_KEY_INVALID`), ou `null`. Seul ce code — un identifiant court et
+ * public, jamais un texte libre ni une valeur de clé — est extrait : le
+ * corps de l'erreur n'est ni renvoyé au client, ni journalisé.
+ */
+async function readErrorReason(response: Response): Promise<string | null> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+  const details = (payload as { error?: { details?: unknown } } | null)?.error?.details;
+  if (!Array.isArray(details)) return null;
+  for (const detail of details) {
+    const reason = (detail as { reason?: unknown } | null)?.reason;
+    if (typeof reason === 'string' && reason.length > 0) return reason;
+  }
+  return null;
+}
+
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') return errorResponse('invalid_request', 'Méthode non autorisée.', 405);
 
@@ -69,6 +91,24 @@ export default async function handler(request: Request): Promise<Response> {
     }
     if (upstream.status >= 500) {
       return errorResponse('upstream_unavailable', 'Gemini est momentanément indisponible.', 502);
+    }
+
+    // Google, contrairement à la plupart des API, répond 400 (et NON 401)
+    // quand la clé est invalide — avec `reason: "API_KEY_INVALID"` dans le
+    // corps. Sans cette lecture, le message se réduisait à « Gemini a refusé
+    // la requête (400) », impossible à interpréter : c'est exactement le
+    // message observé en production. Seul le CODE de raison est lu, jamais
+    // le corps brut, qui n'est ni renvoyé ni journalisé.
+    const reason = await readErrorReason(upstream);
+    if (upstream.status === 400 && reason === 'API_KEY_INVALID') {
+      return errorResponse(
+        'upstream_auth',
+        'La clé Gemini configurée côté serveur est refusée par Google (clé invalide). Vérifie GEMINI_API_KEY dans les variables d’environnement du déploiement.',
+        502,
+      );
+    }
+    if (upstream.status === 404) {
+      return errorResponse('upstream_error', `Gemini ne connaît pas le modèle demandé (${upstream.status}).`, 502);
     }
     return errorResponse('upstream_error', `Gemini a refusé la requête (${upstream.status}).`, 502);
   }

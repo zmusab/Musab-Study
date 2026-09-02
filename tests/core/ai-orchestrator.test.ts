@@ -1,5 +1,5 @@
-import { afterEach, describe, it, expect } from 'vitest';
-import { createOrchestrator } from '@/services/ai/orchestrator';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { createOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider } from '@/services/ai/settings';
 import { setTaskProviderPreference } from '@/services/ai/taskPreferences';
 import { AiRequestError, MissingApiKeyError } from '@/services/ai/types';
@@ -26,12 +26,16 @@ const CAPABILITIES: AIProviderCapabilities = {
 
 function makeProvider(
   id: AIProvider['id'],
-  behavior: { available?: boolean; ask?: (options: ProviderAskOptions) => Promise<string> } = {},
+  behavior: {
+    available?: boolean;
+    ask?: (options: ProviderAskOptions) => Promise<string>;
+    capabilities?: Partial<AIProviderCapabilities>;
+  } = {},
 ): AIProvider {
   return {
     id,
     label: id,
-    capabilities: CAPABILITIES,
+    capabilities: { ...CAPABILITIES, ...behavior.capabilities },
     isAvailable: () => behavior.available ?? true,
     ask: behavior.ask ?? (async () => `réponse de ${id}`),
   };
@@ -156,25 +160,196 @@ describe('createOrchestrator — sélection du fournisseur (HUB)', () => {
     expect(await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' })).toBe('réponse de openai');
   });
 
-  it('un fournisseur préféré mais indisponible ne bloque rien : repli normal sur un autre disponible', async () => {
+  /**
+   * RÈGLE ABSOLUE (corrige le bug observé en production : « ChatGPT
+   * sélectionné, mais c'est Gemini qui répond »). Un fournisseur choisi
+   * explicitement est le SEUL essayé — ni repli, ni substitution
+   * silencieuse. Le repli automatique n'existe plus que dans le mode
+   * « Automatique ». Ces deux tests remplacent deux tests antérieurs qui
+   * décrivaient — et donc verrouillaient — exactement le comportement
+   * fautif.
+   */
+  it('un fournisseur choisi mais NON CONFIGURÉ échoue franchement, sans jamais basculer sur un autre', async () => {
     setPreferredProvider('gemini');
-    const orchestrator = createOrchestrator([
-      makeProvider('anthropic'),
-      makeProvider('gemini', { available: false }),
-    ]);
-    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+    const anthropic = makeProvider('anthropic');
+    const orchestrator = createOrchestrator([anthropic, makeProvider('gemini', { available: false })]);
+
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(MissingApiKeyError);
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(/gemini/i);
   });
 
-  it('un fournisseur préféré qui échoue retombe sur un autre disponible, sans jamais rester bloqué dessus', async () => {
+  it('un fournisseur choisi qui échoue propage SON erreur, sans jamais tenter un autre fournisseur', async () => {
     setPreferredProvider('openai');
+    const jamais = vi.fn(async () => 'réponse de anthropic');
     const orchestrator = createOrchestrator([
-      makeProvider('anthropic'),
+      makeProvider('anthropic', { ask: jamais }),
       makeProvider('openai', {
         ask: async () => {
           throw new AiRequestError('panne openai');
         },
       }),
     ]);
-    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow('panne openai');
+    expect(jamais).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Les cas explicitement demandés : chaque sélection doit envoyer la requête
+ * au fournisseur choisi, et à lui seul. Le test central est le dernier —
+ * « OpenAI sélectionné ne peut JAMAIS appeler Gemini » — c'est exactement ce
+ * qui se produisait en production.
+ */
+describe('createOrchestrator — la sélection de l’utilisateur est strictement respectée', () => {
+  afterEach(() => {
+    setPreferredProvider('auto');
+    setTaskProviderPreference('chat-course', 'auto');
+  });
+
+  /** Fabrique les trois fournisseurs, chacun traçant ses appels réels. */
+  function makeTrio() {
+    const calls: string[] = [];
+    const trace = (id: AIProvider['id']) =>
+      makeProvider(id, {
+        ask: async () => {
+          calls.push(id);
+          return `réponse de ${id}`;
+        },
+      });
+    return { calls, providers: [trace('anthropic'), trace('openai'), trace('gemini')] };
+  }
+
+  it('sélection OpenAI → OpenAI appelé, et personne d’autre', async () => {
+    setPreferredProvider('openai');
+    const { calls, providers } = makeTrio();
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de openai');
+    expect(calls).toEqual(['openai']);
+  });
+
+  it('sélection Gemini → Gemini appelé, et personne d’autre', async () => {
+    setPreferredProvider('gemini');
+    const { calls, providers } = makeTrio();
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de gemini');
+    expect(calls).toEqual(['gemini']);
+  });
+
+  it('sélection Claude → Claude appelé, et personne d’autre', async () => {
+    setPreferredProvider('anthropic');
+    const { calls, providers } = makeTrio();
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+    expect(calls).toEqual(['anthropic']);
+  });
+
+  it('mode Automatique → routage automatique, avec repli réel si le premier échoue', async () => {
+    setPreferredProvider('auto');
+    const calls: string[] = [];
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls.push('anthropic');
+          throw new AiRequestError('panne anthropic');
+        },
+      }),
+      makeProvider('openai', {
+        ask: async () => {
+          calls.push('openai');
+          return 'réponse de openai';
+        },
+      }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de openai');
+    expect(calls).toEqual(['anthropic', 'openai']);
+  });
+
+  it('OpenAI sélectionné ne peut JAMAIS finir chez Gemini, même si le relais OpenAI tombe', async () => {
+    setPreferredProvider('openai');
+    const gemini = vi.fn(async () => 'réponse de gemini');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic'),
+      makeProvider('openai', {
+        ask: async () => {
+          throw new AiRequestError('relais OpenAI injoignable');
+        },
+      }),
+      makeProvider('gemini', { ask: gemini }),
+    ]);
+
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow('relais OpenAI injoignable');
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
+  it('une préférence PAR TÂCHE périmée reste strictement appliquée, jamais mélangée au choix général', async () => {
+    // Cas réel possible : « Gemini » réglé autrefois sur une tâche, puis
+    // « ChatGPT » choisi en général. La tâche réglée garde son fournisseur —
+    // et ne peut pas non plus retomber ailleurs en silence.
+    setPreferredProvider('openai');
+    setTaskProviderPreference('chat-course', 'gemini');
+    const { calls, providers } = makeTrio();
+
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de gemini');
+    expect(calls).toEqual(['gemini']);
+    // Une tâche SANS réglage propre suit bien, elle, le choix général.
+    expect(await createOrchestrator(providers).ask({ ...BASE_OPTIONS, task: 'podcast-analysis' })).toBe('réponse de openai');
+  });
+
+  it('resolveProviderChoice dit exactement quel fournisseur sera utilisé, et d’où vient ce choix', () => {
+    expect(resolveProviderChoice('chat-course')).toEqual({ providerId: null, source: 'auto' });
+
+    setPreferredProvider('openai');
+    expect(resolveProviderChoice('chat-course')).toEqual({ providerId: 'openai', source: 'general' });
+
+    setTaskProviderPreference('chat-course', 'gemini');
+    expect(resolveProviderChoice('chat-course')).toEqual({ providerId: 'gemini', source: 'task' });
+  });
+
+  it('un fournisseur choisi qui ne sait pas faire la tâche le dit clairement, sans substitution', async () => {
+    // Mode internet : la recherche web est requise. OpenAI ne la câble pas.
+    setPreferredProvider('openai');
+    const anthropic = vi.fn(async () => 'réponse de anthropic');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', { ask: anthropic }),
+      makeProvider('openai', { capabilities: { webSearch: false } }),
+    ]);
+
+    await expect(orchestrator.ask({ ...BASE_OPTIONS, task: 'chat-internet' })).rejects.toThrow(/recherche web/);
+    expect(anthropic).not.toHaveBeenCalled();
+  });
+});
+
+describe('createOrchestrator — le modèle imposé ne traverse jamais vers un autre fournisseur', () => {
+  afterEach(() => {
+    setPreferredProvider('auto');
+    setTaskProviderPreference('podcast-analysis', 'auto');
+  });
+
+  it('le modèle Anthropic de podcast-analysis n’est transmis qu’à Anthropic', async () => {
+    setTaskProviderPreference('podcast-analysis', 'anthropic');
+    let received: string | undefined = 'jamais renseigné';
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async (options) => {
+          received = options.preferredModel;
+          return 'ok';
+        },
+      }),
+    ]);
+    await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' });
+    expect(received).toBe('claude-haiku-4-5');
+  });
+
+  it('Gemini ne reçoit AUCUN identifiant de modèle Anthropic — la cause du « Gemini a refusé la requête (400) »', async () => {
+    setTaskProviderPreference('podcast-analysis', 'gemini');
+    let received: string | undefined = 'jamais renseigné';
+    const orchestrator = createOrchestrator([
+      makeProvider('gemini', {
+        ask: async (options) => {
+          received = options.preferredModel;
+          return 'ok';
+        },
+      }),
+    ]);
+    await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' });
+    expect(received).toBeUndefined();
   });
 });

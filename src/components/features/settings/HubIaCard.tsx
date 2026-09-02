@@ -46,6 +46,12 @@ const PROVIDER_OPTIONS: { value: PreferredProvider; label: string }[] = [
   { value: 'gemini', label: 'Gemini' },
 ];
 
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  anthropic: 'Claude',
+  openai: 'ChatGPT',
+  gemini: 'Gemini',
+};
+
 export function HubIaCard() {
   const [checking, setChecking] = useState(false);
   // Un simple compteur force le nouveau rendu après un rafraîchissement —
@@ -71,6 +77,22 @@ export function HubIaCard() {
     void checkStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Tâches réglées sur un fournisseur précis : ce sont elles, et elles
+   * seules, qui peuvent contredire le choix général ci-dessus (voir
+   * `resolveProviderChoice` dans `services/ai/orchestrator.ts` — la
+   * préférence par tâche y est prioritaire).
+   */
+  const overridingTasks = CONFIGURABLE_TASKS.flatMap(({ task, label }) => {
+    const providerId = taskPreferences[task];
+    return providerId ? [{ task, label, providerId }] : [];
+  });
+
+  const resetTaskPreferences = () => {
+    for (const { task } of overridingTasks) setTaskProviderPreference(task, 'auto');
+    setTaskPreferences(getAllTaskProviderPreferences());
+  };
 
   const openai = proxyStatusDetail('openai');
   const gemini = proxyStatusDetail('gemini');
@@ -141,6 +163,29 @@ export function HubIaCard() {
             </option>
           ))}
         </Select>
+
+        {/* Un réglage par tâche l'emporte sur ce choix général : sans ce
+            rappel, une valeur réglée autrefois (« Gemini », par exemple)
+            continuait de s'appliquer en silence après avoir choisi ChatGPT
+            ici — visible seulement en dépliant la liste plus bas. */}
+        {overridingTasks.length > 0 && (
+          <div
+            className="mt-2.5 rounded-[var(--radius-control)] border border-[var(--warning)] bg-[var(--warning-tint)] px-3.5 py-3 text-[0.8rem] leading-relaxed"
+            data-hub-task-overrides
+          >
+            <p>
+              {overridingTasks.length === 1 ? 'Une fonctionnalité ignore' : `${overridingTasks.length} fonctionnalités ignorent`} ce
+              choix général, car {overridingTasks.length === 1 ? 'elle a' : 'elles ont'} un fournisseur propre :{' '}
+              {overridingTasks
+                .map(({ label, providerId }) => `${label} → ${PROVIDER_LABELS[providerId]}`)
+                .join(', ')}
+              .
+            </p>
+            <Button size="sm" variant="secondary" className="mt-2.5" onClick={resetTaskPreferences} data-hub-reset-task-preferences>
+              Tout remettre sur « Automatique »
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 border-t border-[var(--line)] pt-4">
