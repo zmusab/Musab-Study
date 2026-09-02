@@ -76,7 +76,7 @@ export function QuizSession({
           exit={reduced ? { opacity: 0 } : { opacity: 0, y: -10 }}
           transition={springSoft}
         >
-          <Card className="min-h-56">
+          <Card className="min-h-56" data-quiz-question-format={question.format}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               {question.chapterName && (
                 <p className="text-[0.78rem] text-[var(--ink-faint)]">{question.chapterName}</p>
@@ -114,7 +114,7 @@ export function QuizSession({
               })}
             </div>
 
-            {!revealed && (
+            {!revealed && question.hint && (
               <div className="mt-3">
                 {hintShown ? (
                   <p className="text-[0.8rem] leading-relaxed text-[var(--ink-faint)]" data-quiz-hint>

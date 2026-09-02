@@ -347,6 +347,89 @@ describe('buildQuiz — construction de QCM réels', () => {
   });
 });
 
+describe('buildQuiz — format Vrai/Faux', () => {
+  it('produit des affirmations Vrai/Faux à deux options, cohérentes avec les données réelles', () => {
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(),
+      { count: 6, difficulty: 'mixed', format: 'vf', now: NOW, random: seeded(20) },
+    );
+    expect(result.blocked).toBeNull();
+    expect(result.questions).toHaveLength(6);
+    for (const question of result.questions) {
+      expect(question.format).toBe('vf');
+      expect(question.options).toEqual(['Vrai', 'Faux']);
+      const realAnswer = richCards.find((c) => c.id === question.cardId)!.answer;
+      const otherAnswers = richCards.filter((c) => c.id !== question.cardId).map((c) => c.answer);
+      if (question.correctIndex === 0) {
+        // Affirmation vraie : la réponse proposée est bien celle de la carte.
+        expect(question.question).toContain(realAnswer);
+      } else {
+        // Affirmation fausse : la réponse proposée n'est JAMAIS celle de la
+        // carte, mais toujours une réponse réelle d'une autre carte.
+        expect(question.question).not.toContain(realAnswer);
+        expect(otherAnswers.some((answer) => question.question.includes(answer))).toBe(true);
+      }
+    }
+  });
+
+  it('ne propose aucun indice en Vrai/Faux — l’affirmation contient déjà la réponse proposée', () => {
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(),
+      { count: 3, difficulty: 'mixed', format: 'vf', now: NOW, random: seeded(21) },
+    );
+    for (const question of result.questions) expect(question.hint).toBe('');
+  });
+
+  it('ne se bloque jamais faute de distracteur, même avec une seule carte sur tout le périmètre', () => {
+    // Une seule carte dans tout le périmètre : impossible en QCM (voir le
+    // test équivalent ci-dessus), mais toujours constructible en Vrai/Faux —
+    // l'affirmation reste vraie plutôt que d'inventer un distracteur.
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables([card({ id: 'lonely', subjectId: 's1' })]),
+      { count: 3, difficulty: 'mixed', format: 'vf', now: NOW },
+    );
+    expect(result.blocked).toBeNull();
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.correctIndex).toBe(0);
+  });
+
+  it('format mixte : retombe sur Vrai/Faux quand le QCM est impossible, plutôt que de perdre la carte', () => {
+    // Deux cartes seulement, dans deux matières différentes : le QCM ne peut
+    // jamais aboutir ici (il faut 3 distracteurs, il n'y en a qu'1 au
+    // total), donc les deux cartes ne peuvent produire qu'un Vrai/Faux —
+    // quel que soit le tirage du format par carte.
+    const cards = [
+      card({ id: 't1', subjectId: 's1', chapterId: 'ch1' }),
+      card({ id: 'p1', subjectId: 's2' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(cards),
+      { count: 2, difficulty: 'mixed', format: 'mixed', now: NOW, random: seeded(22) },
+    );
+    expect(result.blocked).toBeNull();
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.format).toBe('vf');
+  });
+
+  it('un format QCM explicite reste bloqué comme avant — pas de repli automatique vers Vrai/Faux', () => {
+    const cards = [
+      card({ id: 't1', subjectId: 's1', chapterId: 'ch1' }),
+      card({ id: 'p1', subjectId: 's2' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(cards),
+      { count: 2, difficulty: 'mixed', format: 'qcm', now: NOW, random: seeded(23) },
+    );
+    expect(result.questions).toEqual([]);
+    expect(result.blocked).toMatch(/distinctes/);
+  });
+});
+
 describe('summarizeQuiz — résultat, sans donnée fabriquée', () => {
   const built = buildQuiz(
     { kind: 'subject', subjectId: 's1' },

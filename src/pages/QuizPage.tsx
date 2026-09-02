@@ -16,6 +16,7 @@ import {
   type QuizAnswerRecord,
   type QuizBuildResult,
   type QuizDifficulty,
+  type QuizFormat,
   type QuizResult,
   type QuizScope,
 } from '@/core/quiz';
@@ -98,10 +99,11 @@ export function QuizPage() {
     );
   }
 
-  const start = (scope: QuizScope, count: number, difficulty: QuizDifficulty) => {
+  const start = (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => {
     const generated = buildQuiz(scope, source.tables, {
       count,
       difficulty,
+      format,
       now: new Date(source.loadedAt),
     });
     if (generated.blocked) {

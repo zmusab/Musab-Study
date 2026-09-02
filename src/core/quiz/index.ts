@@ -12,18 +12,26 @@ import type { Chapter, Difficulty, Flashcard, ID, ReviewLog, Subject } from '@/t
  * de planification. Une bonne ou une mauvaise réponse au quiz ne modifie ni
  * `due`, ni `ease`, ni `interval` — voir `data/repositories/quiz.ts`.
  *
- * Aucune question n'est générée par un modèle de langage ici : les quatre
- * options d'un QCM sont des couples question/réponse RÉELS, pris tels quels
- * dans les flashcards existantes. La bonne réponse est le texte exact de la
- * carte ; les trois autres sont les réponses réelles d'autres cartes,
- * choisies STRICTEMENT dans cet ordre : (1) le même chapitre, (2) la même
- * matière (cherchée dans TOUTE la matière, pas seulement dans le périmètre
- * restreint du quiz — un quiz « par chapitre » ne doit pas sauter vers une
- * autre matière alors que la matière courante a encore des cartes
- * pertinentes ailleurs), (3) une autre matière, en dernier recours
- * uniquement. Une carte sans 3 distracteurs distincts, même après ce
- * dernier recours, n'est simplement pas utilisée — jamais de réponse
- * manifestement hors sujet pour compléter un QCM.
+ * Aucune question n'est générée par un modèle de langage ici. Deux formats,
+ * tous deux construits à partir des mêmes couples question/réponse RÉELS des
+ * flashcards existantes :
+ *
+ * - QCM : la bonne réponse est le texte exact de la carte ; les trois autres
+ *   sont les réponses réelles d'autres cartes, choisies STRICTEMENT dans cet
+ *   ordre : (1) le même chapitre, (2) la même matière (cherchée dans TOUTE la
+ *   matière, pas seulement dans le périmètre restreint du quiz — un quiz
+ *   « par chapitre » ne doit pas sauter vers une autre matière alors que la
+ *   matière courante a encore des cartes pertinentes ailleurs), (3) une autre
+ *   matière, en dernier recours uniquement. Une carte sans 3 distracteurs
+ *   distincts, même après ce dernier recours, n'est simplement pas utilisée
+ *   — jamais de réponse manifestement hors sujet pour compléter un QCM.
+ * - Vrai/Faux : l'affirmation associe la question réelle de la carte à une
+ *   réponse réelle — la sienne (affirmation vraie) ou, avec la même
+ *   priorité chapitre → matière → dernier recours qu'un distracteur de QCM,
+ *   la réponse réelle d'une autre carte (affirmation fausse). Quand aucune
+ *   autre réponse distincte n'existe nulle part, l'affirmation reste vraie
+ *   plutôt que de fabriquer une fausse affirmation hors sujet — ce format ne
+ *   se bloque donc jamais faute de distracteur.
  */
 
 export type QuizScope =
@@ -38,6 +46,16 @@ export type QuizScope =
   | { kind: 'exam'; subjectId: ID };
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
+
+/**
+ * `'qcm'` : choix multiple à 4 propositions. `'vf'` : affirmation à évaluer,
+ * vraie ou fausse. `'mixed'` : chaque question tire son propre format —
+ * un QCM impossible à compléter (pas assez de distracteurs) retombe alors
+ * sur un vrai/faux plutôt que d'être perdu, puisque ce dernier se construit
+ * toujours avec les mêmes données réelles.
+ */
+export type QuizFormat = 'qcm' | 'vf' | 'mixed';
+type ResolvedQuizFormat = Exclude<QuizFormat, 'mixed'>;
 
 const DIFFICULTY_VALUE: Record<Exclude<QuizDifficulty, 'mixed'>, Difficulty> = {
   easy: 1,
@@ -60,12 +78,18 @@ export interface QuizQuestionInstance {
   subjectName: string;
   chapterId: ID | null;
   chapterName: string | null;
+  format: ResolvedQuizFormat;
+  /** QCM : la question de la carte. Vrai/Faux : l'affirmation complète à évaluer. */
   question: string;
-  /** Quatre propositions, dans un ordre mélangé. */
+  /** QCM : quatre propositions mélangées. Vrai/Faux : toujours `['Vrai', 'Faux']`. */
   options: string[];
   correctIndex: number;
   difficulty: Difficulty;
-  /** Indice dérivé du texte réel de la réponse — jamais un contenu inventé. */
+  /**
+   * Indice dérivé du texte réel de la réponse — jamais un contenu inventé.
+   * Vide en Vrai/Faux : l'affirmation contient déjà la réponse proposée, un
+   * indice supplémentaire la révélerait directement.
+   */
   hint: string;
   /**
    * Contexte affiché après la réponse : l'état de maîtrise RÉEL de cette
@@ -85,6 +109,8 @@ export interface QuizBuildResult {
 export interface QuizBuildOptions {
   count: number;
   difficulty: QuizDifficulty;
+  /** Défaut `'qcm'` — inchangé pour les appelants existants. */
+  format?: QuizFormat;
   now?: Date;
   random?: () => number;
 }
@@ -187,29 +213,32 @@ function priorityOrder(
 }
 
 /**
- * Trois distracteurs réels, cherchés du plus proche au plus large — jamais
- * dans le `pool` restreint par le scope du quiz (qui peut être limité à un
- * seul chapitre), toujours dans `allCards` (toutes les flashcards réelles de
- * l'application), pour ne pas manquer un distracteur pertinent qui existe
- * ailleurs dans la même matière.
+ * Jusqu'à `needed` réponses réelles d'AUTRES cartes, distinctes entre elles
+ * et de celle de `card`, cherchées du contexte le plus proche au plus large
+ * — jamais dans le `pool` restreint par le scope du quiz (qui peut être
+ * limité à un seul chapitre), toujours dans `allCards` (toutes les
+ * flashcards réelles de l'application), pour ne pas manquer une réponse
+ * pertinente qui existe ailleurs dans la même matière. Peut renvoyer moins
+ * de `needed` éléments — jamais plus, jamais une réponse fabriquée.
  */
-function pickDistractors(
+function pickRelevantAnswers(
   card: Flashcard,
   allCards: readonly Flashcard[],
+  needed: number,
   random: () => number,
-): string[] | null {
+): string[] {
   const correct = normalize(card.answer);
   const seen = new Set([correct]);
-  const distractors: string[] = [];
+  const picked: string[] = [];
 
   const addFrom = (candidates: readonly Flashcard[]) => {
     for (const other of shuffle(candidates, random)) {
-      if (distractors.length >= 3) break;
+      if (picked.length >= needed) break;
       const text = other.answer.trim();
       const key = normalize(text);
       if (key === '' || seen.has(key)) continue;
       seen.add(key);
-      distractors.push(text);
+      picked.push(text);
     }
   };
 
@@ -223,16 +252,22 @@ function pickDistractors(
   }
   // 2. Même matière, tous chapitres confondus — cherché dans l'ensemble des
   //    flashcards de la matière, pas seulement le périmètre du quiz.
-  if (distractors.length < 3) {
+  if (picked.length < needed) {
     addFrom(allCards.filter((other) => other.id !== card.id && other.subjectId === card.subjectId));
   }
   // 3. Dernier recours seulement : une autre matière, quand la matière
   //    courante n'a réellement pas assez de réponses distinctes.
-  if (distractors.length < 3) {
+  if (picked.length < needed) {
     addFrom(allCards.filter((other) => other.id !== card.id));
   }
 
-  return distractors.length === 3 ? distractors : null;
+  return picked;
+}
+
+/** Trois distracteurs de QCM — `null` si les données réelles n'en fournissent pas assez. */
+function pickDistractors(card: Flashcard, allCards: readonly Flashcard[], random: () => number): string[] | null {
+  const picked = pickRelevantAnswers(card, allCards, 3, random);
+  return picked.length === 3 ? picked : null;
 }
 
 function buildHint(answer: string): string {
@@ -245,6 +280,53 @@ function buildMasteryContext(card: Flashcard): string {
   if (card.reps === 0) return 'Cette carte n’a encore jamais été révisée dans tes flashcards.';
   const pct = masteryPct(card);
   return `Maîtrise actuelle de cette carte dans tes flashcards : ${pct} % (${card.reps} révision${card.reps > 1 ? 's' : ''}).`;
+}
+
+/** Le contenu propre au format d'une question — le reste (matière, chapitre, maîtrise…) est commun. */
+interface QuestionContent {
+  format: ResolvedQuizFormat;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  hint: string;
+}
+
+/** QCM : `null` si les données réelles ne fournissent pas 3 distracteurs distincts. */
+function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number): QuestionContent | null {
+  const distractors = pickDistractors(card, allCards, random);
+  if (!distractors) return null;
+  const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
+  return {
+    format: 'qcm',
+    question: card.question,
+    options: optionTexts,
+    correctIndex: optionTexts.indexOf(card.answer.trim()),
+    hint: buildHint(card.answer),
+  };
+}
+
+/**
+ * Vrai/Faux : toujours constructible avec les données réelles. Un tirage
+ * décide si l'affirmation proposée doit être vraie ou fausse ; si aucune
+ * autre réponse distincte n'existe nulle part pour bâtir une affirmation
+ * fausse honnête, l'affirmation reste vraie plutôt que d'en fabriquer une.
+ */
+function buildVfContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number): QuestionContent {
+  const wantsFalse = random() < 0.5;
+  const falseAnswer = wantsFalse ? pickRelevantAnswers(card, allCards, 1, random)[0] : undefined;
+  const isTrue = falseAnswer === undefined;
+  const statementAnswer = isTrue ? card.answer.trim() : falseAnswer;
+  return {
+    format: 'vf',
+    question: `Vrai ou faux : la réponse à « ${card.question} » est « ${statementAnswer} ».`,
+    options: ['Vrai', 'Faux'],
+    correctIndex: isTrue ? 0 : 1,
+    hint: '',
+  };
+}
+
+function resolveFormat(format: QuizFormat, random: () => number): ResolvedQuizFormat {
+  return format === 'mixed' ? (random() < 0.5 ? 'qcm' : 'vf') : format;
 }
 
 /**
@@ -284,15 +366,19 @@ export function buildQuiz(
   const chapterName = new Map(tables.chapters.map((c) => [c.id, c.name]));
   const allCards = tables.cards;
 
+  const requestedFormat = options.format ?? 'qcm';
   const ordered = priorityOrder(scope, effectivePool, tables, random);
   const questions: QuizQuestionInstance[] = [];
   let counter = 0;
   for (const card of ordered) {
     if (questions.length >= options.count) break;
-    const distractors = pickDistractors(card, allCards, random);
-    if (!distractors) continue;
+    const chosenFormat = resolveFormat(requestedFormat, random);
+    let content = chosenFormat === 'qcm' ? buildQcmContent(card, allCards, random) : buildVfContent(card, allCards, random);
+    // En format mixte, un QCM impossible à compléter ne fait pas perdre la
+    // carte : le vrai/faux se construit toujours avec les mêmes données.
+    if (!content && requestedFormat === 'mixed') content = buildVfContent(card, allCards, random);
+    if (!content) continue;
 
-    const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
     counter += 1;
     questions.push({
       id: `quiz_${card.id}_${counter}`,
@@ -301,12 +387,9 @@ export function buildQuiz(
       subjectName: subjectName.get(card.subjectId) ?? 'Matière',
       chapterId: card.chapterId,
       chapterName: card.chapterId ? (chapterName.get(card.chapterId) ?? null) : null,
-      question: card.question,
-      options: optionTexts,
-      correctIndex: optionTexts.indexOf(card.answer.trim()),
       difficulty: card.difficulty,
-      hint: buildHint(card.answer),
       masteryContext: buildMasteryContext(card),
+      ...content,
     });
   }
 

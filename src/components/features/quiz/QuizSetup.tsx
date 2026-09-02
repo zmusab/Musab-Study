@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button, Card, Select, Swatch } from '@/components/ui';
-import type { QuizDifficulty, QuizScope } from '@/core/quiz';
+import type { QuizDifficulty, QuizFormat, QuizScope } from '@/core/quiz';
 import type { Evaluation } from '@/core/progress/exam';
 import type { Chapter, ID, Subject } from '@/types';
 
@@ -32,6 +32,11 @@ const DIFFICULTY_OPTIONS: { value: QuizDifficulty; label: string }[] = [
   { value: 'medium', label: 'Moyen' },
   { value: 'hard', label: 'Difficile' },
 ];
+const FORMAT_OPTIONS: { value: QuizFormat; label: string }[] = [
+  { value: 'qcm', label: 'QCM' },
+  { value: 'vf', label: 'Vrai ou faux' },
+  { value: 'mixed', label: 'QCM + Vrai/Faux' },
+];
 
 export function QuizSetup({
   subjects,
@@ -49,7 +54,7 @@ export function QuizSetup({
   dueCardCount: number;
   /** Une entrée par matière ayant au moins une évaluation à venir. */
   examEvaluations: { subjectId: ID; subjectName: string; evaluation: Evaluation }[];
-  onStart: (scope: QuizScope, count: number, difficulty: QuizDifficulty) => void;
+  onStart: (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => void;
 }) {
   const [scopeId, setScopeId] = useState<ScopeId>('subject');
   const [subjectId, setSubjectId] = useState<ID | null>(subjects[0]?.id ?? null);
@@ -58,6 +63,7 @@ export function QuizSetup({
   const [examSubjectId, setExamSubjectId] = useState<ID | null>(examEvaluations[0]?.subjectId ?? null);
   const [count, setCount] = useState(10);
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('mixed');
+  const [format, setFormat] = useState<QuizFormat>('qcm');
 
   const subjectChapters = useMemo(
     () => chapters.filter((chapter) => chapter.subjectId === subjectId),
@@ -222,8 +228,8 @@ export function QuizSetup({
         </section>
       )}
 
-      {/* ── Nombre de questions et difficulté ── */}
-      <section className="grid gap-4 sm:grid-cols-2">
+      {/* ── Nombre de questions, difficulté et format ── */}
+      <section className="grid gap-4 sm:grid-cols-3">
         <Select label="Nombre de questions" value={String(count)} onChange={(event) => setCount(Number(event.target.value))}>
           {COUNT_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -242,14 +248,32 @@ export function QuizSetup({
             </option>
           ))}
         </Select>
+        <Select
+          label="Format"
+          value={format}
+          onChange={(event) => setFormat(event.target.value as QuizFormat)}
+          data-quiz-format
+        >
+          {FORMAT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
       </section>
 
       <Card className="flex flex-wrap items-center justify-between gap-3 border-[var(--accent)]/30">
         <p className="text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
-          Les questions viennent de tes flashcards réelles : la bonne réponse et les trois autres sont des réponses
-          existantes, jamais inventées.
+          {format === 'vf'
+            ? 'Chaque affirmation associe une question réelle de tes flashcards à une réponse réelle — la sienne, ou celle d’une autre carte.'
+            : 'Les questions viennent de tes flashcards réelles : la bonne réponse et les trois autres sont des réponses existantes, jamais inventées.'}
         </p>
-        <Button size="lg" disabled={scope === null} onClick={() => scope && onStart(scope, count, difficulty)} data-quiz-start>
+        <Button
+          size="lg"
+          disabled={scope === null}
+          onClick={() => scope && onStart(scope, count, difficulty, format)}
+          data-quiz-start
+        >
           Commencer
         </Button>
       </Card>

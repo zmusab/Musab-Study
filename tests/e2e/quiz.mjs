@@ -423,6 +423,77 @@ check(
 );
 check('On revient à l’écran de configuration', await page.locator('[data-quiz-setup]').isVisible());
 
+// ────────────────── 13. Format Vrai/Faux ──────────────────
+await goQuiz();
+await resetToSetup();
+await page.waitForTimeout(300);
+await page.locator('[data-quiz-scope="subject"]').click();
+await page.waitForTimeout(200);
+await selectSubject(page.getByLabel('Matière'), 'Anatomie');
+await page.getByLabel('Nombre de questions').selectOption('5');
+await page.getByLabel('Format').selectOption('vf');
+const beforeVf = await dbSnapshot();
+await page.locator('[data-quiz-start]').click();
+await page.waitForTimeout(700);
+
+check('Le quiz Vrai/Faux démarre', await page.locator('[data-quiz-session]').isVisible());
+check(
+  'La question affiche exactement deux options : Vrai et Faux',
+  JSON.stringify((await page.locator('[data-quiz-option]').allInnerTexts()).sort()) ===
+    JSON.stringify(['Faux', 'Vrai']),
+);
+check(
+  'La carte de question porte le format vrai/faux',
+  (await page.locator('[data-quiz-question-format="vf"]').count()) === 1,
+);
+check(
+  'Aucun indice n’est proposé en Vrai/Faux (l’affirmation contient déjà la réponse)',
+  (await page.locator('[data-quiz-hint-toggle]').count()) === 0,
+);
+
+await answerAll();
+await page.waitForTimeout(500);
+check('Le résultat du quiz Vrai/Faux s’affiche', await page.locator('[data-quiz-results]').isVisible());
+
+const afterVf = await dbSnapshot();
+check(
+  'Les flashcards ne sont jamais modifiées par un quiz Vrai/Faux',
+  JSON.stringify(beforeVf.cards) === JSON.stringify(afterVf.cards),
+);
+check(
+  'Les réponses Vrai/Faux sont journalisées comme les QCM (itemKind: quiz, rating: null)',
+  afterVf.logs.filter((l) => l.itemKind === 'quiz').length === beforeVf.logs.filter((l) => l.itemKind === 'quiz').length + 5 &&
+    afterVf.logs.slice(-5).every((l) => l.itemKind === 'quiz' && l.rating === null),
+);
+
+// Format mixte : la session peut alterner QCM (4 options) et Vrai/Faux (2).
+await resetToSetup();
+await page.waitForTimeout(300);
+await page.locator('[data-quiz-scope="subject"]').click();
+await page.waitForTimeout(200);
+await selectSubject(page.getByLabel('Matière'), 'Anatomie');
+await page.getByLabel('Nombre de questions').selectOption('5');
+await page.getByLabel('Format').selectOption('mixed');
+await page.locator('[data-quiz-start]').click();
+await page.waitForTimeout(700);
+let sawQcm = false;
+let sawVf = false;
+for (let i = 0; i < 5; i += 1) {
+  const count = await page.locator('[data-quiz-option]').count();
+  if (count === 4) sawQcm = true;
+  if (count === 2) sawVf = true;
+  await page.locator('[data-quiz-option]').first().click();
+  await page.waitForTimeout(250);
+  const next = page.locator('[data-quiz-next]');
+  if (!(await next.count())) break;
+  await next.click();
+  await page.waitForTimeout(350);
+}
+check(
+  'Le format mixte construit des questions valides (QCM et/ou Vrai/Faux, jamais autre chose)',
+  sawQcm || sawVf,
+);
+
 console.log('\n--- Erreurs console ---');
 console.log(errors.length ? errors.join('\n') : 'aucune');
 
