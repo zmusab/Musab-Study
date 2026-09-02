@@ -108,8 +108,29 @@ check(
   (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'gemini' &&
     (await page.locator('[data-hub-preferred-provider]').inputValue()) === 'auto',
 );
-await page.locator('[data-hub-task-preference="flashcards-generate"]').selectOption({ label: 'Automatique' });
-await page.waitForTimeout(200);
+// Un réglage par tâche l'emporte sur le choix général : il doit se VOIR,
+// sinon un ancien « Gemini » continue de s'appliquer en silence après avoir
+// choisi ChatGPT — exactement le scénario du bug de routage corrigé.
+const overrideNotice = page.locator('[data-hub-task-overrides]');
+check('Un réglage par tâche qui contredit le choix général est signalé, jamais silencieux', await overrideNotice.isVisible());
+check(
+  'Le signalement nomme la fonctionnalité concernée et son fournisseur',
+  /Génération de flashcards\s*→\s*Gemini/.test(await overrideNotice.innerText()),
+);
+
+await page.locator('[data-hub-reset-task-preferences]').click();
+await page.waitForTimeout(300);
+check(
+  '« Tout remettre sur Automatique » efface réellement les réglages par tâche',
+  (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'auto' &&
+    (await overrideNotice.count()) === 0,
+);
+await page.reload({ waitUntil: 'networkidle' });
+await goSettings();
+check(
+  'La remise à zéro survit à un rechargement — plus aucun ancien choix ne traîne',
+  (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'auto',
+);
 
 // ────────────────── 5. Export NotebookLM depuis une matière — manuel, réel ──────────────────
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
