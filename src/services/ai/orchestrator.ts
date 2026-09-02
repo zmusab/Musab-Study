@@ -2,22 +2,50 @@ import { anthropicProvider } from './providers/anthropic';
 import { openaiProvider } from './providers/openai';
 import { geminiProvider } from './providers/gemini';
 import { selectProviderCandidates, TASK_ROUTES } from './taskRouter';
+import { getPreferredProvider } from './settings';
+import { getTaskProviderPreference } from './taskPreferences';
 import { AiRequestError, MissingApiKeyError, ProviderNotConfiguredError } from './types';
 import type { AIProvider, AITask, AskOptions, ProviderId } from './types';
 
 /**
- * Point d'entrée UNIQUE de la couche IA. Aucune fonctionnalité (chat,
- * flashcards, podcast, panneau IA du lecteur PDF) n'appelle plus un
+ * Point d'entrée UNIQUE de la couche IA — le HUB. Aucune fonctionnalité
+ * (chat, flashcards, podcast, panneau IA du lecteur PDF) n'appelle plus un
  * fournisseur directement — tout passe par `ask()` ici, qui consulte le
- * routeur de tâches puis délègue au(x) provider(s) candidat(s), avec repli
- * réel si plusieurs sont disponibles.
+ * routeur de tâches, applique les préférences de fournisseur (par tâche
+ * puis générale, voir `reorderByPreference` ci-dessous), puis délègue au(x)
+ * provider(s) candidat(s), avec repli réel si plusieurs sont disponibles.
  *
- * Aujourd'hui, un seul provider (`anthropicProvider`) est réellement
- * disponible — `openaiProvider` et `geminiProvider` sont des squelettes dont
- * `isAvailable()` renvoie toujours faux, donc jamais sélectionnés. Le
- * mécanisme de repli est néanmoins réel et actif dès qu'un second provider
- * aura une vraie clé.
+ * `anthropicProvider` appelle directement api.anthropic.com depuis le
+ * navigateur (Anthropic l'autorise). `openaiProvider`/`geminiProvider`
+ * passent par un relais serveur (`api/ai/openai`, `api/ai/gemini`) — ni
+ * OpenAI ni Gemini n'autorisent l'appel direct navigateur (CORS refusé,
+ * vérifié). Sans ce relais configuré (hébergement statique pur, ou clés
+ * serveur absentes), `isAvailable()` reste honnêtement faux pour ces deux
+ * — Musab Study continue de fonctionner avec Claude seul, exactement comme
+ * avant ce chantier.
  */
+
+/**
+ * Réordonne les candidats déjà filtrés (disponibilité + capacités) selon la
+ * préférence de l'utilisateur — la tâche d'abord, sinon la préférence
+ * générale, sinon rien. Ne FILTRE jamais : un fournisseur préféré mais
+ * indisponible reste simplement absent de `candidates`, et le repli sur un
+ * autre fournisseur disponible continue de fonctionner normalement.
+ *
+ * Quand rien n'est configuré (les deux réglages valent `'auto'`, le défaut
+ * pour tout appareil existant), cette fonction renvoie `candidates`
+ * inchangés — même ordre qu'avant ce chantier, donc même comportement.
+ */
+function reorderByPreference(candidates: readonly AIProvider[], task: AITask): AIProvider[] {
+  const taskPreference = getTaskProviderPreference(task);
+  const generalPreference = getPreferredProvider();
+  const preferred = taskPreference !== 'auto' ? taskPreference : generalPreference !== 'auto' ? generalPreference : null;
+  if (!preferred) return [...candidates];
+
+  const chosen = candidates.filter((provider) => provider.id === preferred);
+  const rest = candidates.filter((provider) => provider.id !== preferred);
+  return [...chosen, ...rest];
+}
 
 export interface AiCallLogEntry {
   task: AITask;
@@ -44,7 +72,7 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
 
   async function ask(options: AskOptions): Promise<string> {
     const route = TASK_ROUTES[options.task];
-    const candidates = selectProviderCandidates(providers, options.task);
+    const candidates = reorderByPreference(selectProviderCandidates(providers, options.task), options.task);
 
     if (candidates.length === 0) throw new MissingApiKeyError();
 

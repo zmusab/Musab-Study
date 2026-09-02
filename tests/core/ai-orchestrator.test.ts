@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { createOrchestrator } from '@/services/ai/orchestrator';
+import { getPreferredProvider, setPreferredProvider } from '@/services/ai/settings';
+import { setTaskProviderPreference } from '@/services/ai/taskPreferences';
 import { AiRequestError, MissingApiKeyError } from '@/services/ai/types';
 import type { AIProvider, AIProviderCapabilities, ProviderAskOptions } from '@/services/ai/types';
 
@@ -119,5 +121,60 @@ describe('createOrchestrator', () => {
     expect(orchestrator.describeAiError(new MissingApiKeyError())).toContain('clé API');
     expect(orchestrator.describeAiError(new AiRequestError('détail précis'))).toBe('détail précis');
     expect(orchestrator.describeAiError(new Error('inconnu'))).toBe("L'IA n'a pas pu répondre. Réessaie.");
+  });
+});
+
+describe('createOrchestrator — sélection du fournisseur (HUB)', () => {
+  afterEach(() => {
+    // Les préférences vivent dans localStorage (jsdom) : jamais de fuite d'un test à l'autre.
+    setPreferredProvider('auto');
+    setTaskProviderPreference('chat-course', 'auto');
+    setTaskProviderPreference('podcast-analysis', 'auto');
+  });
+
+  it('en mode « auto » par défaut (aucun réglage touché), l’ordre reste exactement celui d’enregistrement', async () => {
+    expect(getPreferredProvider()).toBe('auto');
+    const order: string[] = [];
+    const record = (id: string) => makeProvider(id as AIProvider['id'], { ask: async () => { order.push(id); return `réponse de ${id}`; } });
+    const orchestrator = createOrchestrator([record('anthropic'), record('openai')]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+    expect(order).toEqual(['anthropic']);
+  });
+
+  it('un fournisseur préféré (réglage général) est essayé en premier', async () => {
+    setPreferredProvider('openai');
+    const orchestrator = createOrchestrator([makeProvider('anthropic'), makeProvider('openai')]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de openai');
+  });
+
+  it('une préférence PAR TÂCHE l’emporte sur la préférence générale', async () => {
+    setPreferredProvider('openai');
+    setTaskProviderPreference('chat-course', 'anthropic');
+    const orchestrator = createOrchestrator([makeProvider('anthropic'), makeProvider('openai')]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+    // Une autre tâche, sans préférence propre, retombe sur la préférence générale.
+    expect(await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' })).toBe('réponse de openai');
+  });
+
+  it('un fournisseur préféré mais indisponible ne bloque rien : repli normal sur un autre disponible', async () => {
+    setPreferredProvider('gemini');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic'),
+      makeProvider('gemini', { available: false }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+  });
+
+  it('un fournisseur préféré qui échoue retombe sur un autre disponible, sans jamais rester bloqué dessus', async () => {
+    setPreferredProvider('openai');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic'),
+      makeProvider('openai', {
+        ask: async () => {
+          throw new AiRequestError('panne openai');
+        },
+      }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
   });
 });

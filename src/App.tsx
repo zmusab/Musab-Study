@@ -1,9 +1,10 @@
 import { AnimatePresence } from 'motion/react';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { ConfirmProvider, ToastProvider, Spinner } from '@/components/ui';
 import { ThemeProvider } from '@/hooks/useTheme';
+import { refreshProviderStatus } from '@/services/ai/providerStatus';
 import { MorePage } from '@/pages/MorePage';
 
 /**
@@ -95,6 +96,14 @@ function AnimatedRoutes() {
 }
 
 export function App() {
+  // Vérifie une fois, au démarrage, si un relais serveur IA (OpenAI/Gemini)
+  // est configuré — voir `services/ai/providerStatus.ts`. Sur un
+  // hébergement statique pur (GitHub Pages, aperçu local), l'appel échoue
+  // silencieusement et les deux restent indisponibles, sans rien casser.
+  useEffect(() => {
+    void refreshProviderStatus();
+  }, []);
+
   return (
     <ThemeProvider>
       <ToastProvider>

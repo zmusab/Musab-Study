@@ -1,26 +1,32 @@
-import { ProviderNotConfiguredError } from '../types';
+import { isProxyProviderAvailable } from '../providerStatus';
+import { askViaProxy } from './proxyClient';
 import type { AIProvider, AIProviderCapabilities } from '../types';
 
 /**
- * Squelette du fournisseur Google Gemini — même principe que openai.ts :
- * interface prête, rien de câblé, `isAvailable()` toujours faux tant
- * qu'aucune vraie intégration n'existe. Voir openai.ts pour le détail du
- * raisonnement.
+ * Fournisseur Google Gemini — réellement câblé, via le relais serveur
+ * `api/ai/gemini.ts` : même raison qu'OpenAI (CORS refusé par
+ * generativelanguage.googleapis.com pour un appel direct navigateur,
+ * vérifié avant ce chantier). `isAvailable()` reflète l'état réel constaté
+ * côté serveur, jamais une supposition.
  *
- * Capacités indicatives (famille Gemini, connaissance publique au moment de
- * l'écriture) — à vérifier et ajuster lors de la véritable intégration.
- * Gemini est notamment connu pour un contexte particulièrement long, ce qui
- * en ferait un candidat naturel pour `pdf-summarize-chapter` une fois
- * réellement branché.
+ * « Gemini Education » ne correspond à aucune API distincte pour une
+ * intégration tierce — c'est une offre de licence/produit (Workspace for
+ * Education, Gemini Advanced étudiant), pas un point d'accès développeur
+ * séparé. CE fournisseur, sur l'API Gemini standard, couvre donc déjà tout
+ * besoin « Gemini », quel que soit le nom commercial visé.
+ *
+ * Capacités décrites ici = ce que CE relais fait réellement (texte en
+ * entrée, texte en sortie) — ni vision, ni fichiers, ni recherche web, ni
+ * outils ne sont câblés, même si l'API Gemini les permettrait en général.
  */
 const CAPABILITIES: AIProviderCapabilities = {
-  reasoning: 'good',
+  reasoning: 'excellent',
   contextWindowTokens: 1_000_000,
   structuredOutput: true,
-  vision: true,
-  fileInput: true,
-  toolUse: true,
-  webSearch: true,
+  vision: false,
+  fileInput: false,
+  toolUse: false,
+  webSearch: false,
   speed: 'fast',
   reliability: 'stable',
 };
@@ -29,8 +35,6 @@ export const geminiProvider: AIProvider = {
   id: 'gemini',
   label: 'Google Gemini',
   capabilities: CAPABILITIES,
-  isAvailable: () => false,
-  ask: async () => {
-    throw new ProviderNotConfiguredError('gemini');
-  },
+  isAvailable: () => isProxyProviderAvailable('gemini'),
+  ask: (options) => askViaProxy('gemini', 'Gemini', options),
 };

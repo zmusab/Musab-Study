@@ -13,6 +13,7 @@ import {
   useConfirm,
   useToast,
 } from '@/components/ui';
+import { HubIaCard } from '@/components/features/settings/HubIaCard';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
 import { useTheme } from '@/hooks/useTheme';
@@ -289,6 +290,10 @@ export function SettingsPage() {
               </Select>
             </div>
           </Card>
+        </StaggerItem>
+
+        <StaggerItem>
+          <HubIaCard />
         </StaggerItem>
 
         <StaggerItem>
