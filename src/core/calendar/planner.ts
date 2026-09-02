@@ -1,7 +1,13 @@
 import type { CalendarEvent, DayKey, ID } from '@/types';
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { dayLoad, eventMinutes, type DayLoad } from './load';
-import { firstFreeWindow, toMinutes, type Availability, type TimeRange } from './availability';
+import {
+  availabilityFor,
+  firstFreeWindow,
+  toMinutes,
+  type TimeRange,
+  type WeeklyAvailability,
+} from './availability';
 
 /**
  * MOTEUR DE PLANIFICATION — il place des séances, il ne prescrit rien.
@@ -17,10 +23,14 @@ import { firstFreeWindow, toMinutes, type Availability, type TimeRange } from '.
  *    disponibles ;
  *  - quand une séance ne peut pas être placée, elle est rendue en clair avec
  *    sa raison, au lieu d'être glissée quelque part par défaut.
+ *
+ * Il tient compte du travail DÉJÀ FAIT : une journée où trois heures de
+ * révision ont été menées à bien est une journée chargée, même si sa file de
+ * tâches est vide. Le planificateur y ajoute donc moins volontiers qu'ailleurs.
  */
 
 export interface SchedulingConfig {
-  /** Séances planifiées au maximum sur une même journée. */
+  /** Séances au maximum sur une même journée — terminées comprises. */
   maxSessionsPerDay: number;
   /** Part de la capacité quotidienne qu'un plan s'autorise à occuper. */
   maxDayFill: number;
@@ -32,6 +42,13 @@ export interface SchedulingConfig {
   eveOfOwnExamPenalty: number;
   /** Par séance déjà posée la veille ou le lendemain — favorise l'espacement. */
   adjacencyPenalty: number;
+  /**
+   * Pénalité maximale pour une journée dont la capacité a déjà été
+   * TRAVAILLÉE. Appliquée au prorata : une journée à moitié travaillée en
+   * reçoit la moitié. C'est ce qui pousse le plan vers les jours réellement
+   * disponibles plutôt que vers celui qu'on vient de remplir.
+   */
+  workedPenalty: number;
   /** Durée au-delà de laquelle une séance est considérée « grosse ». */
   longSessionMinutes: number;
 }
@@ -43,6 +60,7 @@ export const DEFAULT_SCHEDULING_CONFIG: SchedulingConfig = {
   eveOfOtherExamPenalty: 70,
   eveOfOwnExamPenalty: 25,
   adjacencyPenalty: 12,
+  workedPenalty: 45,
   longSessionMinutes: 45,
 };
 
@@ -100,7 +118,7 @@ export interface ScheduleResult {
 export function scheduleSessions(
   requests: readonly SessionRequest[],
   events: readonly CalendarEvent[],
-  availability: Availability,
+  availability: WeeklyAvailability,
   options: { now?: Date; horizonDays?: number; config?: Partial<SchedulingConfig> } = {},
 ): ScheduleResult {
   const now = options.now ?? new Date();
@@ -156,14 +174,26 @@ export function scheduleSessions(
         lastRefusal = 'Aucune plage horaire déclarée disponible.';
         return;
       }
-      if (load.sessions + extra.sessions >= config.maxSessionsPerDay) return;
+      // Une séance terminée compte dans le quota : la journée a bien été
+      // travaillée, même s'il n'y reste rien à faire.
+      if (load.sessions + load.doneSessions + extra.sessions >= config.maxSessionsPerDay) return;
       if (load.minutes + extra.minutes + request.minutes > load.capacity * config.maxDayFill) return;
 
-      const slot = firstFreeWindow(availability, [...load.busy, ...extra.busy], request.minutes);
+      const slot = firstFreeWindow(
+        availabilityFor(availability, day),
+        [...load.busy, ...extra.busy],
+        request.minutes,
+      );
       if (!slot) return;
 
       let score = config.loadPenalty[load.level];
       score += Math.abs(dayIndex - idealIndex) * 3;
+
+      // Travail déjà accompli ce jour-là : on préfère une journée encore
+      // fraîche à une journée dont on a déjà tiré l'essentiel.
+      if (load.capacity > 0) {
+        score += Math.round(Math.min(1, load.workedMinutes / load.capacity) * config.workedPenalty);
+      }
 
       // Veille d'évaluation : on ne pose pas une grosse séance devant un examen.
       if (load.eveOfEvaluationFor.length > 0) {
@@ -217,11 +247,18 @@ export function scheduleSessions(
   return { sessions, unplaced, loads: days.map((day) => loads.get(day)!) };
 }
 
-/** Minutes déjà engagées sur une semaine — sert au budget hebdomadaire. */
+/**
+ * Minutes déjà engagées sur une semaine — sert au budget hebdomadaire.
+ *
+ * Le travail terminé compte : l'objectif hebdomadaire porte sur des minutes
+ * de travail, et une séance faite en fait partie. Sans cela, une semaine
+ * entièrement travaillée paraîtrait vide et le planificateur en proposerait
+ * autant une deuxième fois.
+ */
 export function committedMinutes(events: readonly CalendarEvent[], days: readonly DayKey[]): number {
   const wanted = new Set(days);
   return events
-    .filter((event) => wanted.has(event.day) && !event.done)
+    .filter((event) => wanted.has(event.day))
     .reduce((total, event) => total + eventMinutes(event), 0);
 }
 

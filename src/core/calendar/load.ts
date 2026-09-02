@@ -2,11 +2,12 @@ import type { CalendarEvent, DayKey, ID } from '@/types';
 import { addDays, dayKey, parseDayKey } from '@/lib/date';
 import { eventKindMeta, isStudySession } from './index';
 import {
+  availabilityFor,
   availableMinutes,
   busyRanges,
   toMinutes,
-  type Availability,
   type TimeRange,
+  type WeeklyAvailability,
 } from './availability';
 
 /**
@@ -19,17 +20,29 @@ import {
  *
  * Une journée d'évaluation est toujours considérée chargée : on n'y ajoute
  * pas une séance de révision d'une autre matière.
+ *
+ * Le travail DÉJÀ FAIT compte. Une séance terminée n'est plus une tâche à
+ * effectuer, mais elle a bien occupé la journée : l'oublier ferait passer une
+ * journée de quatre heures de révision pour une journée libre, et le
+ * planificateur y empilerait de nouvelles séances. Les deux notions sont donc
+ * séparées ici — `minutes` (tout ce qui a occupé le jour) d'un côté,
+ * `sessions` (ce qu'il reste à faire) de l'autre.
  */
 
 export type LoadLevel = 'light' | 'medium' | 'heavy';
 
 export interface DayLoad {
   day: DayKey;
-  /** Minutes déjà engagées par des événements existants. */
+  /** Minutes engagées par les événements du jour — travail terminé COMPRIS. */
   minutes: number;
-  /** Minutes disponibles selon les plages déclarées. */
+  /** Part de `minutes` déjà réellement travaillée (séances et tâches terminées). */
+  workedMinutes: number;
+  /** Minutes disponibles selon les plages déclarées de CE jour de la semaine. */
   capacity: number;
+  /** Séances d'étude encore à faire — c'est la file de travail du jour. */
   sessions: number;
+  /** Séances d'étude déjà terminées : elles pèsent, mais ne sont plus à faire. */
+  doneSessions: number;
   evaluations: number;
   /** Matières évaluées LE LENDEMAIN — une veille d'examen se ménage. */
   eveOfEvaluationFor: ID[];
@@ -60,17 +73,24 @@ export function eventMinutes(event: CalendarEvent): number {
 export function dayLoad(
   day: DayKey,
   events: readonly CalendarEvent[],
-  availability: Availability,
+  availability: WeeklyAvailability,
 ): DayLoad {
-  const sameDay = events.filter((event) => event.day === day && !event.done);
+  const sameDay = events.filter((event) => event.day === day);
+  const todo = sameDay.filter((event) => !event.done);
+  const done = sameDay.filter((event) => event.done);
   const nextDay = dayKey(addDays(parseDayKey(day), 1));
+  // Une évaluation cochée « faite » ne ménage plus la veille : ce qui compte
+  // ici, c'est ce qui reste à passer.
   const evaluationsTomorrow = events.filter(
     (event) => event.day === nextDay && eventKindMeta(event.kind).family === 'evaluation' && !event.done,
   );
 
-  const minutes = sameDay.reduce((total, event) => total + eventMinutes(event), 0);
-  const capacity = availableMinutes(availability);
-  const evaluations = sameDay.filter((event) => eventKindMeta(event.kind).family === 'evaluation').length;
+  const total = (list: readonly CalendarEvent[]) =>
+    list.reduce((sum, event) => sum + eventMinutes(event), 0);
+  const minutes = total(sameDay);
+  const workedMinutes = total(done);
+  const capacity = availableMinutes(availabilityFor(availability, day));
+  const evaluations = todo.filter((event) => eventKindMeta(event.kind).family === 'evaluation').length;
 
   const ratio = capacity > 0 ? minutes / capacity : 1;
   const level: LoadLevel =
@@ -86,11 +106,15 @@ export function dayLoad(
     day,
     minutes,
     capacity,
-    sessions: sameDay.filter(isStudySession).length,
+    workedMinutes,
+    sessions: todo.filter(isStudySession).length,
+    doneSessions: done.filter(isStudySession).length,
     evaluations,
     eveOfEvaluationFor: evaluationsTomorrow
       .map((event) => event.subjectId)
       .filter((id): id is ID => id !== null),
+    // Un créneau déjà travaillé reste occupé : on ne repose pas une séance
+    // par-dessus une séance terminée.
     busy: busyRanges(sameDay, day),
     level,
   };

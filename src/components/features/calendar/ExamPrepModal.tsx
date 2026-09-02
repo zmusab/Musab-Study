@@ -4,7 +4,7 @@ import { Button, Modal, Select } from '@/components/ui';
 import { formatDayLong, planStudySessions, type ExamBrief, type PlannedSession } from '@/core/calendar';
 import { examReadiness, readinessLevel } from '@/core/progress/exam';
 import type { CalendarEvent, Chapter, Flashcard, ReviewLog } from '@/types';
-import type { Availability } from '@/core/calendar/availability';
+import type { WeeklyAvailability } from '@/core/calendar/availability';
 
 /**
  * PRÉPARATION D'UNE ÉVALUATION — l'état réel, puis un plan proposé.
@@ -41,7 +41,7 @@ export function ExamPrepModal({
   logs: ReviewLog[];
   /** Événements existants : le plan évite les créneaux et les jours chargés. */
   events: CalendarEvent[];
-  availability: Availability;
+  availability: WeeklyAvailability;
   sessionMinutes: number;
   now: Date;
   onClose: () => void;

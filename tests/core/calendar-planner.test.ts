@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_AVAILABILITY,
+  DEFAULT_DAY_AVAILABILITY,
+  WEEKDAY_ORDER,
+  availabilityFor,
   availableMinutes,
   busyRanges,
   firstFreeWindow,
   normalizeAvailability,
+  serializeAvailability,
   toMinutes,
-  type Availability,
+  weekdayOf,
+  weeklyAvailableMinutes,
+  type DayAvailability,
+  type WeeklyAvailability,
 } from '@/core/calendar/availability';
 import { LOAD_THRESHOLDS, dayLoad, eventMinutes } from '@/core/calendar/load';
 import { DEFAULT_SCHEDULING_CONFIG, committedMinutes, scheduleSessions, type SessionRequest } from '@/core/calendar/planner';
@@ -111,50 +118,61 @@ const request = (overrides: Partial<SessionRequest> = {}): SessionRequest => ({
   ...overrides,
 });
 
-/** Une seule plage, courte : facilite le raisonnement dans les tests. */
-const oneSlot = (start: string, end: string): Availability =>
+/**
+ * Une seule plage, courte, IDENTIQUE tous les jours : facilite le
+ * raisonnement dans les tests qui ne portent pas sur le jour de la semaine.
+ */
+const oneSlot = (start: string, end: string): WeeklyAvailability =>
   normalizeAvailability({
     morning: { enabled: false },
     afternoon: { enabled: true, start, end },
     evening: { enabled: false },
   });
 
+/** Plages d'un seul jour, pour les fonctions qui raisonnent sur une journée. */
+const daySlot = (start: string, end: string): DayAvailability => oneSlot(start, end).monday;
+
+/** Aucune plage nulle part. */
+const noSlot = (): WeeklyAvailability =>
+  normalizeAvailability({
+    morning: { enabled: false },
+    afternoon: { enabled: false },
+    evening: { enabled: false },
+  });
+
 describe('plages disponibles', () => {
   it('ne suppose jamais la journée entière libre', () => {
     // Par défaut : après-midi et soir seulement, pas 24 h.
-    expect(availableMinutes(DEFAULT_AVAILABILITY)).toBeLessThan(24 * 60);
-    expect(DEFAULT_AVAILABILITY.morning.enabled).toBe(false);
+    expect(availableMinutes(DEFAULT_DAY_AVAILABILITY)).toBeLessThan(24 * 60);
+    expect(DEFAULT_DAY_AVAILABILITY.morning.enabled).toBe(false);
+    for (const id of WEEKDAY_ORDER) expect(DEFAULT_AVAILABILITY[id].morning.enabled).toBe(false);
   });
 
   it('ne compte que les plages activées', () => {
-    const only = oneSlot('14:00', '16:00');
-    expect(availableMinutes(only)).toBe(120);
+    expect(availableMinutes(daySlot('14:00', '16:00'))).toBe(120);
   });
 
   it('renvoie zéro minute quand rien n’est coché', () => {
-    const none = normalizeAvailability({
-      morning: { enabled: false },
-      afternoon: { enabled: false },
-      evening: { enabled: false },
-    });
-    expect(availableMinutes(none)).toBe(0);
-    expect(firstFreeWindow(none, [], 30)).toBeNull();
+    const none = noSlot();
+    expect(availableMinutes(none.monday)).toBe(0);
+    expect(weeklyAvailableMinutes(none)).toBe(0);
+    expect(firstFreeWindow(none.monday, [], 30)).toBeNull();
   });
 
   it('trouve le premier trou libre après un créneau occupé', () => {
-    const slot = oneSlot('14:00', '18:00');
+    const slot = daySlot('14:00', '18:00');
     const window = firstFreeWindow(slot, [{ start: '14:00', end: '15:00' }], 60);
     expect(window).toEqual({ start: '15:00', end: '16:00' });
   });
 
   it('utilise un trou AVANT un créneau occupé quand il est assez large', () => {
-    const slot = oneSlot('14:00', '18:00');
+    const slot = daySlot('14:00', '18:00');
     const window = firstFreeWindow(slot, [{ start: '15:30', end: '17:00' }], 60);
     expect(window).toEqual({ start: '14:00', end: '15:00' });
   });
 
   it('refuse quand aucun trou n’atteint la durée demandée', () => {
-    const slot = oneSlot('14:00', '15:00');
+    const slot = daySlot('14:00', '15:00');
     expect(firstFreeWindow(slot, [{ start: '14:00', end: '14:45' }], 45)).toBeNull();
   });
 
@@ -311,12 +329,7 @@ describe('placement des séances', () => {
   });
 
   it('rend compte de ce qu’il n’a pas pu placer, au lieu de le glisser ailleurs', () => {
-    const none = normalizeAvailability({
-      morning: { enabled: false },
-      afternoon: { enabled: false },
-      evening: { enabled: false },
-    });
-    const result = scheduleSessions([request()], [], none, { now: NOW });
+    const result = scheduleSessions([request()], [], noSlot(), { now: NOW });
     expect(result.sessions).toEqual([]);
     expect(result.unplaced[0]!.reason).toMatch(/plage/i);
   });
@@ -464,5 +477,260 @@ describe('plan de la semaine', () => {
     // purement descriptive, et les événements d'entrée ne sont pas modifiés.
     expect(Object.isFrozen(plan.sessions)).toBe(false);
     expect(plan.sessions.every((session) => typeof session.day === 'string')).toBe(true);
+  });
+});
+
+// ────────────────────── Disponibilités par jour de la semaine ──────────────────────
+
+/**
+ * Un lundi de cours et un samedi n'ont pas la même tête. Ces tests vérifient
+ * que le planificateur lit les plages DU JOUR qu'il envisage — et pas une
+ * moyenne, ni celles d'aujourd'hui appliquées à toute la semaine.
+ */
+describe('disponibilités jour par jour', () => {
+  // NOW est un mercredi : la fenêtre des jours suivants parcourt donc toute
+  // la semaine, ce qui rend les cas ci-dessous réellement discriminants.
+  it('associe chaque date au bon jour de la semaine', () => {
+    expect(weekdayOf('2026-03-18')).toBe('wednesday');
+    expect(weekdayOf('2026-03-21')).toBe('saturday');
+    expect(weekdayOf('2026-03-22')).toBe('sunday');
+  });
+
+  it('laisse régler chaque jour indépendamment', () => {
+    const availability = normalizeAvailability({
+      monday: { morning: { enabled: false }, afternoon: { enabled: false }, evening: { enabled: true, start: '17:00', end: '21:00' } },
+      saturday: { morning: { enabled: true, start: '10:00', end: '18:00' }, afternoon: { enabled: false }, evening: { enabled: false } },
+    });
+    expect(availableMinutes(availability.monday)).toBe(240);
+    expect(availableMinutes(availability.saturday)).toBe(480);
+    // Un jour non mentionné garde les valeurs par défaut, il n'est pas vidé.
+    expect(availableMinutes(availability.tuesday)).toBe(availableMinutes(DEFAULT_DAY_AVAILABILITY));
+  });
+
+  it('résout les plages qui s’appliquent réellement à une date', () => {
+    const availability = normalizeAvailability({
+      wednesday: { morning: { enabled: false }, afternoon: { enabled: true, start: '14:00', end: '21:00' }, evening: { enabled: false } },
+    });
+    expect(availableMinutes(availabilityFor(availability, '2026-03-18'))).toBe(420); // mercredi
+    expect(availableMinutes(availabilityFor(availability, '2026-03-19'))).not.toBe(420); // jeudi
+  });
+
+  it('cumule plusieurs plages dans une même journée', () => {
+    const availability = normalizeAvailability({
+      thursday: {
+        morning: { enabled: true, start: '09:00', end: '11:00' },
+        afternoon: { enabled: true, start: '14:00', end: '16:00' },
+        evening: { enabled: true, start: '20:00', end: '21:00' },
+      },
+    });
+    expect(availableMinutes(availability.thursday)).toBe(300);
+    // La première fenêtre libre est cherchée dans l'ordre matin → soir.
+    expect(firstFreeWindow(availability.thursday, [{ start: '09:00', end: '10:45' }], 60)).toEqual({
+      start: '14:00',
+      end: '15:00',
+    });
+  });
+
+  it('ne propose rien un jour entièrement désactivé, et le dit', () => {
+    // Tout coupé le samedi et le dimanche : un plan de deux séances doit se
+    // placer en semaine, jamais le week-end.
+    const closed = { morning: { enabled: false }, afternoon: { enabled: false }, evening: { enabled: false } };
+    const availability = normalizeAvailability({
+      morning: { enabled: false },
+      afternoon: { enabled: true, start: '14:00', end: '18:00' },
+      evening: { enabled: false },
+      saturday: closed,
+      sunday: closed,
+    });
+    expect(availableMinutes(availability.saturday)).toBe(0);
+
+    const result = scheduleSessions([request({ chapterId: 'a' }), request({ chapterId: 'b' })], [], availability, {
+      now: NOW,
+      horizonDays: 7,
+    });
+    expect(result.sessions.length).toBe(2);
+    for (const session of result.sessions) {
+      expect(['2026-03-21', '2026-03-22']).not.toContain(session.day);
+    }
+  });
+
+  it('refuse une séance qui ne tient dans aucune plage du jour', () => {
+    const availability = normalizeAvailability({
+      morning: { enabled: false },
+      afternoon: { enabled: true, start: '14:00', end: '14:30' },
+      evening: { enabled: false },
+    });
+    const result = scheduleSessions([request({ minutes: 90 })], [], availability, {
+      now: NOW,
+      horizonDays: 7,
+    });
+    expect(result.sessions).toEqual([]);
+    expect(result.unplaced).toHaveLength(1);
+  });
+
+  it('place chaque séance dans les plages DU jour retenu', () => {
+    // Semaine : 18 h–20 h. Week-end : 10 h–12 h. Aucune séance ne doit
+    // atterrir à 18 h un samedi.
+    const week = { morning: { enabled: false }, afternoon: { enabled: false }, evening: { enabled: true, start: '18:00', end: '20:00' } };
+    const weekend = { morning: { enabled: true, start: '10:00', end: '12:00' }, afternoon: { enabled: false }, evening: { enabled: false } };
+    const availability = normalizeAvailability({
+      ...week,
+      saturday: weekend,
+      sunday: weekend,
+    });
+    const result = scheduleSessions(
+      Array.from({ length: 5 }, (_, i) => request({ chapterId: `ch${i}` })),
+      [],
+      availability,
+      { now: NOW, horizonDays: 7 },
+    );
+    expect(result.sessions.length).toBeGreaterThan(0);
+    for (const session of result.sessions) {
+      const weekendDay = ['2026-03-21', '2026-03-22'].includes(session.day);
+      expect(toMinutes(session.startTime!)).toBeGreaterThanOrEqual(weekendDay ? 600 : 1080);
+      expect(toMinutes(session.endTime!)).toBeLessThanOrEqual(weekendDay ? 720 : 1200);
+    }
+  });
+});
+
+// ────────────────────── Compatibilité des profils enregistrés ──────────────────────
+
+describe('migration des disponibilités', () => {
+  it('lit un ANCIEN profil sans rien perdre : les plages valent pour les sept jours', () => {
+    const legacy = normalizeAvailability({
+      morning: { enabled: true, start: '08:00', end: '10:00' },
+      afternoon: { enabled: false, start: '14:00', end: '18:00' },
+      evening: { enabled: true, start: '19:00', end: '22:00' },
+    });
+    for (const id of WEEKDAY_ORDER) {
+      expect(legacy[id].morning).toMatchObject({ enabled: true, start: '08:00', end: '10:00' });
+      expect(legacy[id].afternoon.enabled).toBe(false);
+      expect(legacy[id].evening).toMatchObject({ enabled: true, start: '19:00', end: '22:00' });
+    }
+    expect(weeklyAvailableMinutes(legacy)).toBe(7 * (120 + 180));
+  });
+
+  it('accepte un profil mixte : l’ancien format sert de base, le jour précis l’emporte', () => {
+    const mixed = normalizeAvailability({
+      morning: { enabled: false },
+      afternoon: { enabled: true, start: '14:00', end: '18:00' },
+      evening: { enabled: false },
+      sunday: { afternoon: { enabled: false } },
+    });
+    expect(availableMinutes(mixed.monday)).toBe(240);
+    expect(availableMinutes(mixed.sunday)).toBe(0);
+  });
+
+  it('accepte un profil vide sans rien inventer d’exotique', () => {
+    const empty = normalizeAvailability(undefined);
+    for (const id of WEEKDAY_ORDER) expect(empty[id]).toEqual(DEFAULT_DAY_AVAILABILITY);
+  });
+
+  it('réécrit au NOUVEAU format, relisible à l’identique', () => {
+    const configured = normalizeAvailability({
+      monday: { morning: { enabled: false }, afternoon: { enabled: false }, evening: { enabled: true, start: '17:00', end: '21:00' } },
+      saturday: { morning: { enabled: true, start: '10:00', end: '18:00' }, afternoon: { enabled: false }, evening: { enabled: false } },
+    });
+    const stored = serializeAvailability(configured);
+    // Les sept jours sont écrits en clair, et l'ancien format n'est plus produit.
+    for (const id of WEEKDAY_ORDER) expect(stored[id]).toBeDefined();
+    expect(stored.morning).toBeUndefined();
+    // Aller-retour sans perte.
+    expect(normalizeAvailability(stored)).toEqual(configured);
+  });
+});
+
+// ────────────────────── Le travail déjà fait pèse sur la journée ──────────────────────
+
+/**
+ * Une séance terminée n'est plus une tâche, mais elle a bien occupé la
+ * journée. La confondre avec du vide ferait empiler de nouvelles séances sur
+ * une journée déjà pleinement travaillée.
+ */
+describe('charge et travail déjà réalisé', () => {
+  const availability = oneSlot('14:00', '20:00'); // 360 min
+  const doneSession = (id: string, day: string, start: string, end: string) =>
+    event({ id, day, kind: 'review', startTime: start, endTime: end, done: true, status: 'done' });
+
+  it('compte une séance terminée dans les minutes de la journée', () => {
+    const load = dayLoad(TODAY, [doneSession('a', TODAY, '14:00', '15:30')], availability);
+    expect(load.minutes).toBe(90);
+    expect(load.workedMinutes).toBe(90);
+  });
+
+  it('ne la compte plus comme une séance à faire', () => {
+    const load = dayLoad(TODAY, [doneSession('a', TODAY, '14:00', '15:30')], availability);
+    expect(load.sessions).toBe(0);
+    expect(load.doneSessions).toBe(1);
+  });
+
+  it('additionne plusieurs séances terminées le même jour', () => {
+    // L'exemple du cahier des charges : 1 h 30 + 1 h terminées, 1 h prévue,
+    // sur une journée de 4 h déclarées — 3 h 30 engagées, la journée est pleine.
+    const load = dayLoad(
+      TODAY,
+      [
+        doneSession('a', TODAY, '14:00', '15:30'),
+        doneSession('b', TODAY, '15:30', '16:30'),
+        event({ id: 'c', day: TODAY, kind: 'review', startTime: '17:00', endTime: '18:00' }),
+      ],
+      oneSlot('14:00', '18:00'),
+    );
+    expect(load.workedMinutes).toBe(150);
+    expect(load.minutes).toBe(210);
+    expect(load.sessions).toBe(1);
+    expect(load.doneSessions).toBe(2);
+    expect(load.level).toBe('heavy');
+  });
+
+  it('garde le créneau d’une séance terminée occupé', () => {
+    const load = dayLoad(TODAY, [doneSession('a', TODAY, '14:00', '16:00')], availability);
+    expect(load.busy).toEqual([{ start: '14:00', end: '16:00' }]);
+  });
+
+  it('préfère une journée peu travaillée à une journée déjà bien remplie', () => {
+    const tomorrow = '2026-03-19';
+    const result = scheduleSessions([request()], [doneSession('a', TODAY, '14:00', '17:00')], availability, {
+      now: NOW,
+      horizonDays: 3,
+    });
+    expect(result.sessions[0]!.day).toBe(tomorrow);
+  });
+
+  it('n’empile pas de nouvelles séances sur une journée déjà pleinement travaillée', () => {
+    const events = [
+      doneSession('a', TODAY, '14:00', '15:30'),
+      doneSession('b', TODAY, '15:30', '16:30'),
+      event({ id: 'c', day: TODAY, kind: 'review', startTime: '17:00', endTime: '18:00' }),
+    ];
+    const result = scheduleSessions(
+      Array.from({ length: 3 }, (_, i) => request({ chapterId: `ch${i}` })),
+      events,
+      availability,
+      { now: NOW, horizonDays: 5 },
+    );
+    for (const session of result.sessions) expect(session.day).not.toBe(TODAY);
+  });
+
+  it('compte le travail terminé dans les minutes engagées de la semaine', () => {
+    const days = [TODAY, '2026-03-19'];
+    const events = [
+      doneSession('a', TODAY, '14:00', '15:00'),
+      event({ id: 'b', day: '2026-03-19', startTime: '14:00', endTime: '14:30' }),
+    ];
+    expect(committedMinutes(events, days)).toBe(90);
+  });
+
+  it('n’interdit rien : une journée chargée reste modifiable à la main', () => {
+    // Le planificateur AUTOMATIQUE s'abstient, mais `dayLoad` ne renvoie
+    // aucun verrou — rien dans le modèle n'empêche d'ajouter un événement.
+    const load = dayLoad(
+      TODAY,
+      [doneSession('a', TODAY, '14:00', '20:00')],
+      availability,
+    );
+    expect(load.level).toBe('heavy');
+    expect(load.capacity).toBeGreaterThan(0);
+    expect(Object.keys(load)).not.toContain('locked');
   });
 });

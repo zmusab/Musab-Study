@@ -15,13 +15,10 @@ export const DEFAULT_PROFILE: Profile = {
   // des mesures — ils n'entrent dans aucune statistique.
   weeklyStudyMinutesGoal: 300,
   weeklyReviewGoal: 150,
-  // Après-midi et soir activés par défaut : un repère raisonnable pour un
-  // étudiant en cours la journée, modifiable depuis le calendrier.
-  availability: {
-    morning: { enabled: false, start: '09:00', end: '12:00' },
-    afternoon: { enabled: true, start: '14:00', end: '18:00' },
-    evening: { enabled: true, start: '20:00', end: '22:00' },
-  },
+  // `availability` reste absent : les plages par défaut sont définies une
+  // seule fois, dans `core/calendar/availability.ts`, et appliquées à la
+  // lecture par `normalizeAvailability()`. Les dupliquer ici ferait diverger
+  // deux valeurs par défaut au premier changement.
   sessionMinutes: 45,
 };
 

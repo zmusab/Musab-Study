@@ -43,13 +43,46 @@ export interface Profile {
    * aucune migration Dexie. Le planificateur ne suppose jamais qu'une journée
    * entière est libre — sans plage activée, il ne propose rien.
    */
-  availability?: {
-    morning?: { enabled?: boolean; start?: string; end?: string };
-    afternoon?: { enabled?: boolean; start?: string; end?: string };
-    evening?: { enabled?: boolean; start?: string; end?: string };
-  };
+  availability?: StoredAvailability;
   /** Durée par défaut d'une séance planifiée, en minutes. */
   sessionMinutes?: number;
+}
+
+/** Une plage horaire telle qu'elle est ENREGISTRÉE : tout est facultatif. */
+export interface StoredAvailabilitySlot {
+  enabled?: boolean;
+  /** « HH:MM » locales. */
+  start?: string;
+  end?: string;
+}
+
+export interface StoredDayAvailability {
+  morning?: StoredAvailabilitySlot;
+  afternoon?: StoredAvailabilitySlot;
+  evening?: StoredAvailabilitySlot;
+}
+
+/**
+ * Disponibilités enregistrées dans le profil.
+ *
+ * Deux formats sont acceptés à la LECTURE, et c'est délibéré :
+ *  - l'ANCIEN, trois plages à la racine valables tous les jours — c'est ce
+ *    qu'ont les profils écrits avant les disponibilités par jour ;
+ *  - le NOUVEAU, une entrée par jour de la semaine.
+ *
+ * Les deux peuvent cohabiter : les plages à la racine servent alors de base
+ * aux jours que le nouveau format ne mentionne pas. Rien n'est effacé à la
+ * lecture (voir `normalizeAvailability`), et seul un enregistrement explicite
+ * de l'utilisateur réécrit la ligne au nouveau format.
+ */
+export interface StoredAvailability extends StoredDayAvailability {
+  monday?: StoredDayAvailability;
+  tuesday?: StoredDayAvailability;
+  wednesday?: StoredDayAvailability;
+  thursday?: StoredDayAvailability;
+  friday?: StoredDayAvailability;
+  saturday?: StoredDayAvailability;
+  sunday?: StoredDayAvailability;
 }
 
 // ────────────────────────── Cours & documents ──────────────────────────

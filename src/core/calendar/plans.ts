@@ -2,7 +2,12 @@ import type { CalendarEvent, Chapter, DayKey, Flashcard, ID, Subject } from '@/t
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { chapterProgress } from '@/core/progress';
 import { eventKindMeta } from './index';
-import { firstFreeWindow, DEFAULT_AVAILABILITY, type Availability } from './availability';
+import {
+  availabilityFor,
+  firstFreeWindow,
+  DEFAULT_AVAILABILITY,
+  type WeeklyAvailability,
+} from './availability';
 import {
   committedMinutes,
   scheduleSessions,
@@ -31,7 +36,7 @@ type Logs = Parameters<typeof chapterProgress>[3];
 export interface PlanOptions {
   minutesPerSession?: number;
   maxSessions?: number;
-  availability?: Availability;
+  availability?: WeeklyAvailability;
   events?: readonly CalendarEvent[];
   config?: Partial<SchedulingConfig>;
 }
@@ -154,7 +159,7 @@ export function planStudySessions(
   // c'est la seule séance dont la date est imposée par sa nature.
   if (available.length > 1) {
     const eveSlot = firstFreeWindow(
-      availability,
+      availabilityFor(availability, generalDay),
       events.filter((event) => event.day === generalDay && event.startTime).map((event) => ({
         start: event.startTime!,
         end: event.endTime ?? event.startTime!,
@@ -188,7 +193,7 @@ export interface WeekPlanInput {
   chapters: readonly Chapter[];
   cards: readonly Flashcard[];
   logs: Logs;
-  availability: Availability;
+  availability: WeeklyAvailability;
   /** Objectif hebdomadaire de minutes, lu dans le profil. */
   weeklyGoalMinutes: number;
   minutesPerSession?: number;

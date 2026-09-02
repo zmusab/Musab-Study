@@ -13,7 +13,11 @@ import { AvailabilityModal } from '@/components/features/calendar/AvailabilityMo
 import { useCalendar } from '@/hooks/useCalendar';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
-import { normalizeAvailability, type Availability } from '@/core/calendar/availability';
+import {
+  normalizeAvailability,
+  serializeAvailability,
+  type WeeklyAvailability,
+} from '@/core/calendar/availability';
 import { planWeek } from '@/core/calendar/plans';
 import { dayLoad, LOAD_COLORS, LOAD_LABELS } from '@/core/calendar/load';
 import {
@@ -77,7 +81,7 @@ export function CalendarPage() {
   const [weekPlanOpen, setWeekPlanOpen] = useState(false);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
 
-  const availability = useMemo<Availability>(
+  const availability = useMemo<WeeklyAvailability>(
     () => normalizeAvailability(profile.availability),
     [profile.availability],
   );
@@ -410,8 +414,13 @@ export function CalendarPage() {
                 style={{ backgroundColor: LOAD_COLORS[selectedLoad.level] }}
               />
               <span style={{ color: LOAD_COLORS[selectedLoad.level] }}>{LOAD_LABELS[selectedLoad.level]}</span>
-              <span className="text-[var(--ink-faint)]">
-                {selectedLoad.minutes} min engagées sur {selectedLoad.capacity} disponibles
+              <span className="text-[var(--ink-faint)]" data-load-detail>
+                {selectedLoad.capacity === 0
+                  ? 'Aucune plage déclarée ce jour-là'
+                  : `${selectedLoad.minutes} min engagées sur ${selectedLoad.capacity} disponibles`}
+                {/* Le travail fait reste visible : c'est ce qui explique
+                    pourquoi le planificateur évite cette journée. */}
+                {selectedLoad.workedMinutes > 0 && ` · ${selectedLoad.workedMinutes} min déjà travaillées`}
               </span>
             </p>
           )}
@@ -466,7 +475,7 @@ export function CalendarPage() {
         sessionMinutes={sessionMinutes}
         onClose={() => setAvailabilityOpen(false)}
         onSave={async (next, minutes) => {
-          await saveProfile({ availability: next, sessionMinutes: minutes });
+          await saveProfile({ availability: serializeAvailability(next), sessionMinutes: minutes });
           setAvailabilityOpen(false);
           notify('Disponibilités enregistrées.', 'success');
         }}

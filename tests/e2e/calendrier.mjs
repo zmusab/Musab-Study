@@ -30,6 +30,23 @@ function check(name, ok, detail = '') {
 
 const isoDay = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const TODAY = isoDay(0);
+/** 0 = dimanche, comme `Date.getDay()`. */
+const weekday = (day) => new Date(`${day}T12:00:00`).getDay();
+/**
+ * Les plages configurées au §3 : 14 h–18 h du lundi au vendredi, 10 h–12 h le
+ * samedi, rien le dimanche. Sert à vérifier que le planificateur lit bien les
+ * plages DU JOUR qu'il retient.
+ */
+const declaredSlot = (day) => {
+  const id = weekday(day);
+  if (id === 0) return null;
+  return id === 6 ? [600, 720] : [840, 1080];
+};
+const withinDeclaredSlots = ({ day, time }) => {
+  const range = declaredSlot(day);
+  if (range === null || time === '') return false;
+  return minutes(time) >= range[0] && minutes(time) < range[1];
+};
 /** Minutes depuis minuit, pour comparer des heures sans dépendre du fuseau. */
 const minutes = (time) => {
   const [h, m] = time.split(':').map(Number);
@@ -145,26 +162,37 @@ check(
   ),
 );
 
-// ────────────────── 3. Mes plages disponibles ──────────────────
-// « Ne jamais supposer que je suis disponible toute la journée » : le
-// planificateur ne travaille que dans les plages réellement cochées.
+// ────────────────── 3. Mes plages disponibles, jour par jour ──────────────────
+// « Ne jamais supposer que je suis disponible toute la journée » — ni que
+// tous les jours se ressemblent : chaque jour porte ses propres plages.
 await page.locator('[data-calendar-availability]').click();
 await page.waitForTimeout(500);
 check('La fenêtre des disponibilités s’ouvre', await page.locator('[data-availability-form]').isVisible());
 check(
-  'Les trois plages de la journée sont proposées',
+  'Les sept jours de la semaine sont réglables',
+  (await page.locator('[data-availability-day]').count()) === 7,
+);
+check(
+  'Les trois plages du jour sélectionné sont proposées',
   (await page.locator('[data-availability-slot]').count()) === 3,
 );
 
+// Tout couper, partout : le planificateur doit alors se taire.
 for (const label of ['Matin', 'Après-midi', 'Soir']) {
-  const box = page.getByLabel(`Disponible : ${label}`);
+  const box = page.getByLabel(`Disponible le lundi : ${label}`);
   if (await box.isChecked()) await box.uncheck();
 }
 await page.waitForTimeout(200);
 check(
-  'Tout décocher est un choix valide, annoncé honnêtement',
-  /Aucune plage active/.test(await page.locator('[data-availability-total]').innerText()),
+  'Tout décocher un jour est un choix valide, annoncé honnêtement',
+  /Aucune plage active le lundi/.test(await page.locator('[data-availability-total]').innerText()),
 );
+check(
+  'Une journée sans plage n’interdit pas d’y ajouter une séance à la main',
+  /à la main/.test(await page.locator('[data-availability-total]').innerText()),
+);
+await page.locator('[data-availability-apply-all]').click();
+await page.waitForTimeout(200);
 await page.locator('[data-availability-save]').click();
 await page.waitForTimeout(900);
 
@@ -186,19 +214,50 @@ check(
 await page.locator('[data-plan-refuse]').click();
 await page.waitForTimeout(500);
 
-// On déclare une seule plage : l'après-midi 14 h–18 h.
+// Une semaine réellement irrégulière : 14 h–18 h du lundi au vendredi,
+// 10 h–12 h le samedi, rien le dimanche.
 await page.locator('[data-calendar-availability]').click();
 await page.waitForTimeout(500);
-await page.getByLabel('Disponible : Après-midi').check();
-const afternoon = page.locator('[data-availability-slot="afternoon"]');
-await afternoon.getByLabel('De').fill('14:00');
-await afternoon.getByLabel('À').fill('18:00');
+const slot = (id) => page.locator(`[data-availability-slot="${id}"]`);
+
+await page.getByLabel('Disponible le lundi : Après-midi').check();
+await slot('afternoon').getByLabel('De').fill('14:00');
+await slot('afternoon').getByLabel('À').fill('18:00');
 await page.getByLabel('Durée d’une séance planifiée').selectOption('45');
 await page.waitForTimeout(200);
 check(
-  'Le total disponible est calculé sur les plages réellement cochées',
-  /4 h 00 disponibles/.test(await page.locator('[data-availability-total]').innerText()),
-  (await page.locator('[data-availability-total]').innerText()).slice(0, 60),
+  'Le total du jour est calculé sur ses plages réellement cochées',
+  /4 h disponibles le lundi/.test(await page.locator('[data-availability-total]').innerText()),
+  (await page.locator('[data-availability-total]').innerText()).slice(0, 70),
+);
+await page.locator('[data-availability-apply-all]').click();
+await page.waitForTimeout(300);
+check(
+  '« Appliquer à tous les jours » remplit la semaine d’un geste',
+  /28 h sur la semaine/.test(await page.locator('[data-availability-total]').innerText()),
+  (await page.locator('[data-availability-total]').innerText()).slice(0, 90),
+);
+
+await page.locator('[data-availability-day="saturday"]').click();
+await page.waitForTimeout(250);
+await page.getByLabel('Disponible le samedi : Après-midi').uncheck();
+await page.getByLabel('Disponible le samedi : Matin').check();
+await slot('morning').getByLabel('De').fill('10:00');
+await slot('morning').getByLabel('À').fill('12:00');
+await page.waitForTimeout(200);
+check(
+  'Un jour peut avoir des plages différentes des autres',
+  /2 h disponibles le samedi/.test(await page.locator('[data-availability-total]').innerText()),
+  (await page.locator('[data-availability-total]').innerText()).slice(0, 70),
+);
+
+await page.locator('[data-availability-day="sunday"]').click();
+await page.waitForTimeout(250);
+await page.getByLabel('Disponible le dimanche : Après-midi').uncheck();
+await page.waitForTimeout(200);
+check(
+  'Un jour peut être entièrement indisponible',
+  /Aucune plage active le dimanche/.test(await page.locator('[data-availability-total]').innerText()),
 );
 await page.locator('[data-availability-save]').click();
 await page.waitForTimeout(900);
@@ -207,11 +266,24 @@ await page.reload({ waitUntil: 'networkidle' });
 await goCalendar();
 await page.locator('[data-calendar-availability]').click();
 await page.waitForTimeout(600);
+const mondayKept =
+  (await page.getByLabel('Disponible le lundi : Après-midi').isChecked()) &&
+  (await slot('afternoon').getByLabel('De').inputValue()) === '14:00';
+await page.locator('[data-availability-day="saturday"]').click();
+await page.waitForTimeout(250);
+const saturdayKept =
+  (await page.getByLabel('Disponible le samedi : Matin').isChecked()) &&
+  !(await page.getByLabel('Disponible le samedi : Après-midi').isChecked()) &&
+  (await slot('morning').getByLabel('De').inputValue()) === '10:00';
+await page.locator('[data-availability-day="sunday"]').click();
+await page.waitForTimeout(250);
+const sundayKept = /Aucune plage active le dimanche/.test(
+  await page.locator('[data-availability-total]').innerText(),
+);
 check(
-  'Les disponibilités survivent à un rechargement',
-  (await page.getByLabel('Disponible : Après-midi').isChecked()) &&
-    !(await page.getByLabel('Disponible : Soir').isChecked()) &&
-    (await afternoon.getByLabel('De').inputValue()) === '14:00',
+  'Les disponibilités de CHAQUE jour survivent à un rechargement',
+  mondayKept && saturdayKept && sundayKept,
+  `lundi=${mondayKept} samedi=${saturdayKept} dimanche=${sundayKept}`,
 );
 await dialog.getByRole('button', { name: 'Annuler' }).click();
 await page.waitForTimeout(400);
@@ -224,14 +296,20 @@ await page.locator('[data-calendar-plan-week]').click();
 await page.waitForTimeout(800);
 const proposed = await page.locator('[data-plan-session]').count();
 check('Une proposition de semaine est construite depuis les données réelles', proposed >= 1, `${proposed} séance(s)`);
-const proposedTimes = await page
-  .locator('[data-plan-sessions] input[type="time"]')
-  .evaluateAll((inputs) => inputs.map((input) => input.value));
+const proposedRows = await page.locator('[data-plan-session]').evaluateAll((items) =>
+  items.map((item) => ({
+    day: item.querySelector('input[type="date"]').value,
+    time: item.querySelector('input[type="time"]').value,
+  })),
+);
 check(
-  'Chaque séance proposée reçoit un vrai créneau, dans les plages déclarées',
-  proposedTimes.length === proposed &&
-    proposedTimes.every((time) => time !== '' && minutes(time) >= 840 && minutes(time) < 1080),
-  proposedTimes.join(', '),
+  'Chaque séance proposée tombe dans les plages déclarées DE SON JOUR',
+  proposedRows.length === proposed && proposedRows.every(withinDeclaredSlots),
+  proposedRows.map((row) => `${row.day} ${row.time}`).join(', '),
+);
+check(
+  'Aucune séance n’est proposée le jour déclaré indisponible',
+  proposedRows.every((row) => weekday(row.day) !== 0),
 );
 
 await page.screenshot({ path: `${SHOT}/calendrier-plan-semaine.png` });
@@ -340,9 +418,13 @@ check(
   new Set(planRows.map((row) => row.day)).size === planRows.length,
 );
 check(
-  'Chaque séance du plan reçoit un créneau réel dans les plages déclarées',
-  planRows.every((row) => row.time !== '' && minutes(row.time) >= 840 && minutes(row.time) < 1080),
+  'Chaque séance du plan reçoit un créneau réel dans les plages de SON jour',
+  planRows.every(withinDeclaredSlots),
   planRows.map((row) => `${row.day} ${row.time}`).join(', '),
+);
+check(
+  'Le plan saute le jour déclaré indisponible',
+  planRows.every((row) => weekday(row.day) !== 0),
 );
 check(
   'Aucune séance n’est posée le jour même de l’évaluation',
@@ -405,11 +487,33 @@ check('La séance terminée apparaît dans l’activité récente', /1 séance/.
 const periodTotal = await page.locator('[data-progress-period-total]').innerText();
 check('Le temps de la séance est réellement enregistré', !/^—$/.test(periodTotal.trim()), periodTotal);
 
-// ────────────────── 9. Journée chargée, conflit, examen d'une autre matière ──────────────────
+// ────────────────── 9. Le travail déjà fait continue de peser ──────────────────
 await goCalendar();
+await page.getByRole('button', { name: 'Aujourd’hui' }).click();
+await page.waitForTimeout(600);
+const workedLoad = await page.locator('[data-calendar-load]').innerText();
+check(
+  'Une séance terminée reste comptée dans la charge de la journée',
+  /déjà travaillées/.test(workedLoad),
+  workedLoad.replace(/\n/g, ' '),
+);
+check(
+  'Elle n’est plus une séance à faire',
+  (await page.locator('[data-calendar-session][data-session-state="done"]').count()) >= 1 &&
+    (await page.locator('[data-calendar-session][data-session-state="planned"]').count()) === 0,
+);
+check(
+  'Créer un événement à la main reste possible sur une journée travaillée',
+  await page.getByRole('button', { name: 'Nouvel événement' }).isEnabled(),
+);
 
-// Une journée entièrement occupée : 14 h–18 h, soit toute la plage déclarée.
-const busyDay = isoDay(3);
+// ────────────────── 10. Journée chargée, conflit, examen d'une autre matière ──────────────────
+
+// Une journée entièrement occupée : 14 h–18 h, soit toute la plage déclarée
+// d'un jour ouvré. On saute le week-end, dont les plages sont différentes.
+let busyOffset = 3;
+while (weekday(isoDay(busyOffset)) % 6 === 0) busyOffset += 1; // ni samedi ni dimanche
+const busyDay = isoDay(busyOffset);
 await page.getByRole('button', { name: 'Nouvel événement' }).click();
 await page.waitForTimeout(400);
 await page.getByLabel('Titre').fill('Stage clinique');
@@ -436,7 +540,10 @@ await page.getByRole('button', { name: 'Créer', exact: true }).click();
 await page.waitForTimeout(800);
 
 await goCalendar();
-const otherExamDay = isoDay(5);
+let examOffset = busyOffset + 1;
+while (weekday(isoDay(examOffset)) === 0) examOffset += 1; // pas le dimanche fermé
+const otherExamDay = isoDay(examOffset);
+const otherExamEve = isoDay(examOffset - 1);
 await page.getByRole('button', { name: 'Nouvel événement' }).click();
 await page.waitForTimeout(400);
 await page.getByLabel('Titre').fill('Partiel de physiologie');
@@ -461,14 +568,19 @@ const replanned = await dialog
   .evaluateAll((items) => items.map((item) => ({ day: item.dataset.planDay, time: item.dataset.planTime })));
 check('Un plan reste proposé malgré les contraintes', replanned.length >= 1, `${replanned.length} séances`);
 check(
+  'Chaque séance replanifiée respecte encore les plages de son jour',
+  replanned.every(withinDeclaredSlots),
+  replanned.map((row) => `${row.day} ${row.time}`).join(', '),
+);
+check(
   'Aucune séance n’est posée sur une journée déjà pleine',
   replanned.every((row) => row.day !== busyDay),
   replanned.map((row) => row.day).join(', '),
 );
 check(
   'Aucune séance n’est posée la veille de l’examen d’une autre matière',
-  replanned.every((row) => row.day !== isoDay(4)),
-  `veille = ${isoDay(4)}`,
+  replanned.every((row) => row.day !== otherExamEve),
+  `veille = ${otherExamEve}`,
 );
 
 // Aucune séance ne doit chevaucher un créneau déjà occupé.
@@ -491,7 +603,7 @@ check(
 await dialog.getByRole('button', { name: 'Fermer' }).click();
 await page.waitForTimeout(500);
 
-// ────────────────── 10. Modification et suppression ──────────────────
+// ────────────────── 11. Modification et suppression ──────────────────
 await page
   .locator('[data-calendar-upcoming] button')
   .filter({ hasText: /anatomie/i })
@@ -521,7 +633,7 @@ check(
   remaining.replace(/\n/g, ' | '),
 );
 
-// ────────────────── 11. Vues et navigation ──────────────────
+// ────────────────── 12. Vues et navigation ──────────────────
 await page.getByRole('tab', { name: 'Semaine' }).click();
 await page.waitForTimeout(600);
 check('La vue Semaine affiche sept jours', (await page.locator('[data-calendar-week] button').count()) === 7);
@@ -555,7 +667,7 @@ check(
   (await page.locator('[data-calendar-title]').innerText()) !== otherMonth,
 );
 
-// ────────────────── 12. Responsive ──────────────────
+// ────────────────── 13. Responsive ──────────────────
 for (const [name, viewport] of [
   ['paysage', { width: 1194, height: 834 }],
   ['portrait', { width: 834, height: 1194 }],
