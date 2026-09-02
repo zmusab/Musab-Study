@@ -118,7 +118,9 @@ export function bucketByDay(logs: readonly ReviewLog[], days: readonly DayKey[])
   for (const log of logs) {
     const bucket = byDay.get(log.day);
     if (!bucket) continue;
+    // Le TEMPS compte les séances ; le nombre de RÉPONSES, non.
     bucket.ms += log.elapsedMs;
+    if (log.itemKind === 'session') continue;
     bucket.reviews += 1;
     if (log.correct) bucket.correct += 1;
   }
@@ -187,12 +189,21 @@ export interface AnswerStats {
   successRate: number | null;
 }
 
+/**
+ * Volume et réussite des RÉPONSES.
+ *
+ * Les séances d'étude chronométrées (`itemKind: 'session'`) sont exclues :
+ * elles mesurent du temps, pas des réponses, et les compter gonflerait le
+ * volume tout en faussant le taux de réussite. Le temps, lui, les compte —
+ * voir `studyTime`.
+ */
 export function answerStats(logs: readonly ReviewLog[]): AnswerStats {
-  const correct = logs.filter((log) => log.correct).length;
+  const answers = logs.filter((log) => log.itemKind !== 'session');
+  const correct = answers.filter((log) => log.correct).length;
   return {
-    total: logs.length,
+    total: answers.length,
     correct,
-    successRate: logs.length >= MIN_REVIEWS_FOR_RATE ? correct / logs.length : null,
+    successRate: answers.length >= MIN_REVIEWS_FOR_RATE ? correct / answers.length : null,
   };
 }
 
@@ -442,6 +453,8 @@ export interface ActivitySession {
   subjectName: string;
   reviews: number;
   correct: number;
+  /** Séances planifiées terminées ce jour-là — comptées à part des réponses. */
+  plannedSessions: number;
   ms: number;
   at: ISODateTime;
 }
@@ -449,7 +462,11 @@ export interface ActivitySession {
 /**
  * Sessions réelles, reconstruites en regroupant le journal par jour et par
  * matière. Un « regroupement » n'invente rien : chaque session compte
- * exactement les réponses enregistrées ce jour-là dans cette matière.
+ * exactement ce qui a été enregistré ce jour-là dans cette matière.
+ *
+ * Une séance planifiée et chronométrée depuis le calendrier apporte son TEMPS
+ * mais aucune réponse : `plannedSessions` la compte à part, pour que la ligne
+ * puisse dire « 12 réponses et 1 séance » sans mélanger les deux.
  */
 export function recentActivity(
   logs: readonly ReviewLog[],
@@ -460,11 +477,15 @@ export function recentActivity(
   const sessions = new Map<string, ActivitySession>();
 
   for (const log of logs) {
+    const isSession = log.itemKind === 'session';
     const key = `${log.day}|${log.subjectId}`;
     const existing = sessions.get(key);
     if (existing) {
-      existing.reviews += 1;
-      existing.correct += log.correct ? 1 : 0;
+      if (isSession) existing.plannedSessions += 1;
+      else {
+        existing.reviews += 1;
+        existing.correct += log.correct ? 1 : 0;
+      }
       existing.ms += log.elapsedMs;
       if (log.at > existing.at) existing.at = log.at;
       continue;
@@ -474,8 +495,9 @@ export function recentActivity(
       day: log.day,
       subjectId: log.subjectId,
       subjectName: subjectName.get(log.subjectId) ?? 'Matière supprimée',
-      reviews: 1,
-      correct: log.correct ? 1 : 0,
+      reviews: isSession ? 0 : 1,
+      correct: isSession ? 0 : log.correct ? 1 : 0,
+      plannedSessions: isSession ? 1 : 0,
       ms: log.elapsedMs,
       at: log.at,
     });

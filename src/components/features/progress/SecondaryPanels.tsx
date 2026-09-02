@@ -111,8 +111,22 @@ export function SecondaryPanels({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[0.88rem] font-medium">{session.subjectName}</span>
                     <span className="mt-0.5 block text-[0.78rem] text-[var(--ink-soft)]">
-                      {session.reviews} réponse{session.reviews > 1 ? 's' : ''} ·{' '}
-                      {Math.round((session.correct / session.reviews) * 100)} % · {formatDuration(session.ms)}
+                      {/* Une journée peut ne contenir qu'une séance chronométrée,
+                          sans aucune réponse : afficher « 0 % » serait faux. */}
+                      {session.reviews > 0 && (
+                        <>
+                          {session.reviews} réponse{session.reviews > 1 ? 's' : ''} ·{' '}
+                          {Math.round((session.correct / session.reviews) * 100)} %
+                          {' · '}
+                        </>
+                      )}
+                      {session.plannedSessions > 0 && (
+                        <>
+                          {session.plannedSessions} séance{session.plannedSessions > 1 ? 's' : ''}
+                          {' · '}
+                        </>
+                      )}
+                      {formatDuration(session.ms)}
                     </span>
                   </span>
                   <Icon name="chevronRight" size={14} className="shrink-0 text-[var(--ink-faint)]" />

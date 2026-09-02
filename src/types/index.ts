@@ -187,7 +187,13 @@ export interface QuizQuestion {
 
 // ─────────────────────── Historique de révision ───────────────────────
 
-export type ReviewItemKind = 'card' | 'quiz';
+/**
+ * `'session'` : une séance d'étude planifiée dans le calendrier, chronométrée
+ * par l'application entre « Commencer » et « Terminer ». Ce n'est PAS une
+ * réponse : les statistiques de volume et de réussite l'excluent, celles de
+ * temps et de régularité l'incluent.
+ */
+export type ReviewItemKind = 'card' | 'quiz' | 'session';
 export type Confidence = 'low' | 'medium' | 'high';
 /** 0 = Encore, 1 = Difficile, 2 = Bien, 3 = Facile. */
 export type Rating = 0 | 1 | 2 | 3;
@@ -237,6 +243,17 @@ export interface Note {
  */
 export type CalendarEventKind = 'exam' | 'midterm' | 'final' | 'course' | 'task' | 'review';
 
+/**
+ * Cycle de vie d'une SÉANCE planifiée. `done` reste le champ historique et
+ * garde sa signification (« c'est fait ») ; `status` le précise sans le
+ * contredire — les deux sont écrits ensemble par le dépôt.
+ *
+ * `missed` n'est jamais stocké : une séance manquée est simplement une séance
+ * `planned` dont le jour est passé. Le déduire évite d'avoir à faire tourner
+ * une tâche de fond pour périmer les lignes.
+ */
+export type StudySessionStatus = 'planned' | 'started' | 'done';
+
 export interface CalendarEvent {
   id: ID;
   title: string;
@@ -250,6 +267,21 @@ export interface CalendarEvent {
   notes: string;
   done: boolean;
   createdAt: ISODateTime;
+
+  /**
+   * Champs AJOUTÉS pour la page Calendrier. Tous additifs et non indexés :
+   * aucune migration Dexie nécessaire (règle documentée dans `db.ts`), et les
+   * événements enregistrés avant leur ajout restent valides — le code les lit
+   * avec une valeur par défaut.
+   */
+  chapterId?: ID | null;
+  importance?: Importance;
+  status?: StudySessionStatus;
+  /** Horodatage réel du « Commencer » — sert à mesurer la durée d'une séance. */
+  startedAt?: ISODateTime | null;
+  completedAt?: ISODateTime | null;
+  /** Séances issues d'un plan de révision : identifiant de l'examen visé. */
+  planForEventId?: ID | null;
 }
 
 // ───────────────────────────── Anatomie ─────────────────────────────

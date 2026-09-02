@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { Button, Card, Icon, Input, Modal, Select, useToast } from '@/components/ui';
-import { createEvaluation, deleteEvaluation } from '@/data/repositories/calendar';
+import { createEvent, deleteEvent } from '@/data/repositories/calendar';
 import { dayKey, parseDayKey } from '@/lib/date';
 import type { CalendarEventKind, Subject } from '@/types';
 import { EVALUATION_KIND_LABELS, type Evaluation } from '@/core/progress/exam';
@@ -92,7 +92,7 @@ export function EvaluationsCard({
                   aria-label={`Supprimer ${evaluation.event.title}`}
                   data-touch-target
                   onClick={async () => {
-                    await deleteEvaluation(evaluation.event.id);
+                    await deleteEvent(evaluation.event.id);
                     notify('Évaluation supprimée.', 'success');
                     onChanged?.();
                   }}
@@ -163,7 +163,7 @@ function EvaluationModal({
     if (title.trim().length === 0 || saving) return;
     setSaving(true);
     try {
-      await createEvaluation({
+      await createEvent({
         title,
         kind,
         day,

@@ -50,6 +50,7 @@ const AnatomyPage = lazy(() => import('@/pages/AnatomyPage').then((m) => ({ defa
 const ProgressionPage = lazy(() =>
   import('@/pages/ProgressionPage').then((m) => ({ default: m.ProgressionPage })),
 );
+const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 
 function RouteFallback() {
   return (
@@ -90,17 +91,7 @@ function AnimatedRoutes() {
           <Route path="/podcast/:episodeId" element={<PodcastEpisodePage />} />
           <Route path="/progression" element={<ProgressionPage />} />
           <Route path="/anatomie" element={<AnatomyPage />} />
-          <Route
-            path="/calendrier"
-            element={
-              <PlaceholderPage
-                title="Calendrier"
-                icon="📅"
-                phase="Phase 8"
-                description="Vues jour, semaine et mois, plan de révision avant examen, et export .ics vers Apple Calendar."
-              />
-            }
-          />
+          <Route path="/calendrier" element={<CalendarPage />} />
           <Route
             path="/notes"
             element={
