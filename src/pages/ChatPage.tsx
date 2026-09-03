@@ -20,7 +20,8 @@ import {
   verifyInternetAnswer,
 } from '@/services/ai/tutor';
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
-import { getPreferredProvider, hasApiKey, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
+import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
+import { findLocalAnswer } from '@/services/local/localAnswer';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
 
@@ -45,12 +46,26 @@ const INTENTS: { category: AssistantCategory; label: string; icon: string }[] = 
   { category: 'examen', label: "Préparer l'examen", icon: '🎯' },
 ];
 
+/**
+ * « Automatique » ne veut plus dire « choisir une API automatiquement » —
+ * ambigu, c'est exactement ce qui provoquait un appel réseau (et son échec
+ * possible, ex. Gemini indisponible) sans que l'étudiant l'ait demandé. En
+ * mode « Mes cours », l'IA n'est JAMAIS appelée automatiquement, quel que
+ * soit ce réglage : voir `respond()`, qui tente toujours le moteur local
+ * d'abord et n'appelle un fournisseur que via l'action explicite
+ * « Répondre avec l'IA ». Ce réglage ne fait que choisir QUEL fournisseur
+ * répond une fois cette action déclenchée.
+ */
 const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
-  { value: 'auto', label: 'Automatique' },
+  { value: 'auto', label: 'Automatique (local d’abord)' },
   { value: 'anthropic', label: 'Claude' },
   { value: 'openai', label: 'ChatGPT' },
   { value: 'gemini', label: 'Gemini' },
 ];
+
+const INSUFFICIENT_LOCAL_TEXT =
+  'Je ne peux pas répondre de manière fiable à cette question uniquement à partir de tes cours. ' +
+  'Tu peux activer un assistant IA pour obtenir une explication approfondie.';
 
 export function ChatPage() {
   const subjects = useSubjects();
@@ -67,6 +82,9 @@ export function ChatPage() {
   const [streamed, setStreamed] = useState('');
   const [assistant, setAssistant] = useState<PreferredProvider>(getPreferredProvider);
   const [sheet, setSheet] = useState<AssistantCategory | null>(null);
+  /** Question en attente d'un choix explicite « Répondre avec l'IA » — jamais déclenché automatiquement. */
+  const [awaitingAiChoice, setAwaitingAiChoice] = useState<string | null>(null);
+  const [aiRequested, setAiRequested] = useState(false);
 
   const chapters = useChapters(subjectId || undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -90,6 +108,13 @@ export function ChatPage() {
   useEffect(() => {
     setChapterId('all');
   }, [subjectId]);
+
+  // Une question en attente d'un choix IA ne concerne que sa propre
+  // réponse — changer de portée ou de mode l'invalide plutôt que de la
+  // laisser proposer un appel IA sur un contexte qui a changé entre-temps.
+  useEffect(() => {
+    setAwaitingAiChoice(null);
+  }, [subjectId, chapterId, mode]);
 
   const messages = useLiveQuery(async () => {
     if (!subjectId) return [] as ChatMessage[];
@@ -120,20 +145,15 @@ export function ChatPage() {
     return `${label} ne sait pas chercher sur le web. Choisis Claude ou Automatique pour ce mode.`;
   }, [mode, assistant]);
 
-  const handleSend = async (overrideText?: string) => {
-    const trimmed = (overrideText ?? question).trim();
-    if (trimmed.length === 0 || !subjectId || pending) return;
-
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour utiliser l’assistant.', 'error');
-      return;
-    }
-
-    if (!overrideText) setQuestion('');
-    setStreamed('');
-    setPending(trimmed);
-    await appendChatMessage({ subjectId, role: 'user', text: trimmed });
-
+  /**
+   * Répond à `trimmed` — jamais un second message utilisateur, ce texte est
+   * déjà affiché. `forceAi` n'est vrai que sur l'action explicite
+   * « Répondre avec l'IA » (ou en mode Internet, qui n'a pas d'équivalent
+   * local) : c'est la SEULE façon d'atteindre `aiOrchestrator.ask()` — un
+   * fournisseur externe indisponible (Gemini, OpenAI, Claude) ne peut donc
+   * jamais empêcher une question « Mes cours » d'obtenir une réponse locale.
+   */
+  const respond = async (trimmed: string, options: { forceAi: boolean }) => {
     try {
       const chunks = await listChunks({
         subjectId,
@@ -153,8 +173,9 @@ export function ChatPage() {
       };
       const context = buildContext(scored, lookup);
 
-      // Sans le moindre extrait pertinent, interroger le modèle ne pourrait
-      // produire qu'une réponse invérifiable : on économise l'appel.
+      // Sans le moindre extrait pertinent, ni le moteur local ni l'IA ne
+      // pourraient produire une réponse vérifiable : on économise l'appel,
+      // local comme externe.
       if (mode === 'cours' && context.sources.length === 0) {
         await appendChatMessage({
           subjectId,
@@ -163,6 +184,48 @@ export function ChatPage() {
             '⚠️ Aucun passage de tes cours ne correspond à cette question.\n\n' +
             `Portée interrogée : ${scopeLabel}. Essaie d’élargir à toute la matière, de reformuler avec les termes du cours, ou d’importer le document concerné.`,
           provenance: 'insufficient',
+        });
+        setAwaitingAiChoice(null);
+        return;
+      }
+
+      // ── Mode « Mes cours », sans demande explicite d'IA : moteur local
+      //    d'abord (même moteur que les flashcards/notions locales), jamais
+      //    d'appel réseau tant que l'étudiant ne l'a pas demandé lui-même. ──
+      if (mode === 'cours' && !options.forceAi) {
+        const local = findLocalAnswer(trimmed, scored, lookup);
+        if (local) {
+          await appendChatMessage({
+            subjectId,
+            role: 'assistant',
+            text: local.text,
+            provenance: 'course-local',
+            citations: local.citations,
+          });
+          setAwaitingAiChoice(null);
+          return;
+        }
+
+        await appendChatMessage({
+          subjectId,
+          role: 'assistant',
+          text: INSUFFICIENT_LOCAL_TEXT,
+          provenance: 'insufficient',
+        });
+        // Reste affiché tant qu'une nouvelle question n'a pas été envoyée —
+        // propose le bouton « Répondre avec l'IA » sous ce message précis.
+        setAwaitingAiChoice(trimmed);
+        return;
+      }
+
+      // ── Appel IA réel : mode Internet (jamais de version locale), ou
+      //    « Répondre avec l'IA » explicitement cliqué en mode Mes cours. ──
+      if (!aiOrchestrator.hasAvailableProvider()) {
+        await appendChatMessage({
+          subjectId,
+          role: 'assistant',
+          text: 'Ajoute une clé API dans Paramètres pour utiliser un assistant IA.',
+          provenance: 'error',
         });
         return;
       }
@@ -189,13 +252,21 @@ export function ChatPage() {
         );
       }
 
+      // Le fournisseur RÉELLEMENT utilisé (utile en mode « Automatique », où
+      // un repli a pu changer celui essayé en premier) — jamais deviné.
+      const recentLog = aiOrchestrator.getRecentLog();
+      const task = mode === 'cours' ? 'chat-course' : 'chat-internet';
+      const lastSuccess = [...recentLog].reverse().find((entry) => entry.task === task && entry.success);
+
       await appendChatMessage({
         subjectId,
         role: 'assistant',
         text: verified.text,
         provenance: verified.provenance,
         citations: verified.citations,
+        providerId: lastSuccess?.providerId ?? null,
       });
+      setAwaitingAiChoice(null);
     } catch (error) {
       await appendChatMessage({
         subjectId,
@@ -206,7 +277,29 @@ export function ChatPage() {
     } finally {
       setPending(null);
       setStreamed('');
+      setAiRequested(false);
     }
+  };
+
+  const handleSend = async (overrideText?: string) => {
+    const trimmed = (overrideText ?? question).trim();
+    if (trimmed.length === 0 || !subjectId || pending) return;
+
+    if (!overrideText) setQuestion('');
+    setStreamed('');
+    setPending(trimmed);
+    setAwaitingAiChoice(null);
+    await appendChatMessage({ subjectId, role: 'user', text: trimmed });
+    await respond(trimmed, { forceAi: false });
+  };
+
+  /** Déclenchée UNIQUEMENT par le bouton « Répondre avec l'IA » — jamais automatiquement. */
+  const handleAskAiExplicitly = async () => {
+    if (!awaitingAiChoice || pending) return;
+    const trimmed = awaitingAiChoice;
+    setPending(trimmed);
+    setAiRequested(true);
+    await respond(trimmed, { forceAi: true });
   };
 
   /**
@@ -351,10 +444,29 @@ export function ChatPage() {
                 ) : (
                   <span className="flex items-center gap-2 text-[var(--ink-soft)]">
                     <Spinner size={14} />
-                    {mode === 'internet' ? 'Recherche internet…' : 'Lecture de tes cours…'}
+                    {mode === 'internet'
+                      ? 'Recherche internet…'
+                      : aiRequested
+                        ? 'Interrogation de l’IA…'
+                        : 'Lecture de tes cours…'}
                   </span>
                 )}
               </div>
+            </FadeUp>
+          )}
+
+          {/* Jamais déclenché automatiquement — le seul chemin vers un appel
+              IA en mode « Mes cours » quand le moteur local n'a pas suffi. */}
+          {awaitingAiChoice && !pending && (
+            <FadeUp className="max-w-[94%]">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleAskAiExplicitly()}
+                data-ai-answer-with-ai
+              >
+                🤖 Répondre avec l’IA
+              </Button>
             </FadeUp>
           )}
 

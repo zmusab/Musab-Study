@@ -118,6 +118,73 @@ check('Le bouton « Envoyer » est immédiatement visible', await page.getByRole
 check('La source (Mes cours / Internet) est proposée', await page.locator('[data-ai-source="cours"]').isVisible());
 check('L’assistant se choisit discrètement, sans envahir l’écran', await page.locator('[data-ai-assistant]').isVisible());
 
+// ────────────────── 1bis. Mes cours + Automatique : LOCAL d'abord, jamais un appel réseau silencieux ──────────────────
+// Reproduit exactement le signalement utilisateur : mode « Mes cours »,
+// assistant « Automatique », une question dont la réponse existe dans le
+// document réellement importé plus haut — ne doit JAMAIS déclencher de
+// requête vers un fournisseur IA (aucune clé n'est configurée dans cet
+// environnement de test, donc la moindre tentative échouerait comme dans
+// le signalement : « Gemini est momentanément indisponible »).
+const aiNetworkCalls = [];
+page.on('request', (request) => {
+  const url = request.url();
+  if (url.includes('anthropic.com') || url.includes('/api/ai/')) aiNetworkCalls.push(url);
+});
+
+check('Assistant « Automatique » sélectionné par défaut', (await page.locator('[data-ai-assistant]').inputValue()) === 'auto');
+await page.locator('[data-ai-question]').fill('Je ne comprends pas les nerfs trijumeau');
+await page.getByRole('button', { name: 'Envoyer' }).click();
+await page.waitForTimeout(1200);
+check(
+  'La réponse est générée localement — badge honnête, aucun appel IA',
+  await page.getByText(/aucun appel IA/).isVisible(),
+);
+check('Le contenu réel du cours apparaît dans la réponse locale', await main.getByText(/trois branches/).isVisible());
+check(
+  'Aucune requête réseau vers un fournisseur IA n’a été émise pour cette question',
+  aiNetworkCalls.length === 0,
+  aiNetworkCalls.join(', '),
+);
+
+// ────────────────── 1ter. Question hors de portée locale : refus honnête, jamais d'invention ──────────────────
+// Partage du vocabulaire avec le document importé (« territoires »,
+// « différents » — présents dans la phrase d'avertissement, écartée par le
+// moteur local) : la recherche BM25 trouve donc bien un passage, mais aucun
+// fait extrait n'en couvre le sujet — exactement le cas « rien de fiable à
+// répondre localement », distinct du cas « rien de pertinent trouvé ».
+await page.locator('[data-ai-question]').fill('Quels sont les territoires différents mentionnés ?');
+await page.getByRole('button', { name: 'Envoyer' }).click();
+await page.waitForTimeout(1200);
+check(
+  'Sans réponse locale fiable, un message honnête est affiché plutôt qu’une invention',
+  await page.getByText(/Tu peux activer un assistant IA/).isVisible(),
+);
+check('Le bouton « Répondre avec l’IA » est proposé — jamais déclenché tout seul', await page.locator('[data-ai-answer-with-ai]').isVisible());
+check(
+  'Toujours aucun appel réseau vers un fournisseur IA à ce stade',
+  aiNetworkCalls.length === 0,
+  aiNetworkCalls.join(', '),
+);
+
+// L'action reste explicite : cliquer le bouton tente RÉELLEMENT l'IA (et
+// échoue proprement, sans clé configurée) — sans jamais casser le reste de
+// l'application.
+await page.locator('[data-ai-answer-with-ai]').click();
+await page.waitForTimeout(1200);
+check(
+  'Cliquer « Répondre avec l’IA » échoue honnêtement sans clé configurée, sans crasher l’application',
+  await page.getByText(/clé API/).isVisible(),
+);
+
+// L'application reste pleinement utilisable après cet échec explicite.
+await page.locator('[data-ai-question]').fill('nerf facial');
+await page.getByRole('button', { name: 'Envoyer' }).click();
+await page.waitForTimeout(1200);
+check(
+  'Après un échec IA explicite, une nouvelle question locale fonctionne toujours normalement',
+  await page.getByText(/aucun appel IA/).last().isVisible(),
+);
+
 // Quatre intentions seulement — le reste des actions vit derrière elles.
 check('Exactement quatre intentions sont affichées', (await page.locator('[data-ai-intent]').count()) === 4);
 check('Aucune feuille d’actions n’est ouverte au départ', (await sheet().count()) === 0);
@@ -129,14 +196,19 @@ for (const label of ['Comprendre', 'Étudier', 'Mémoriser', "Préparer l'examen
 }
 
 // ────────────────── 2. Comprendre — construit une question, réutilise le chat ──────────────────
+// « Comprendre » n'a AUCUN circuit IA propre : elle écrit une question et la
+// transmet au chat existant (`onAskChat` → `ChatPage.handleSend`), qui
+// applique désormais le même moteur local en premier — la réponse arrive
+// donc ici aussi sans clé API, pour la même raison que dans la conversation
+// directe testée plus haut.
 await category('Comprendre').click();
 await page.waitForTimeout(300);
 await page.locator('[data-assistant-comprehend-notion]').fill('le nerf trijumeau');
 await page.locator('[data-assistant-comprehend-ask]').click();
-await page.waitForTimeout(500);
+await page.waitForTimeout(1200);
 check(
-  'Sans clé API, « Comprendre » affiche le même message honnête que le chat — aucun système IA parallèle',
-  /Ajoute ta clé API/.test(await toast()),
+  '« Comprendre » réutilise le même pipeline que le chat — réponse locale, aucun système IA parallèle',
+  await page.getByText(/aucun appel IA/).last().isVisible(),
 );
 
 // Lancer une action REFERME la feuille — la conversation reprend la main.

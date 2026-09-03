@@ -17,10 +17,26 @@ import type { ChatMessage } from '@/types';
 
 const PROVENANCE_BADGE = {
   course: { label: 'Trouvé dans tes cours', icon: '📚', color: 'var(--success)' },
+  'course-local': { label: 'Généré à partir de tes cours — aucun appel IA', icon: '⚙️', color: 'var(--success)' },
   internet: { label: 'Complété par internet', icon: '🌐', color: 'var(--accent)' },
   insufficient: { label: 'Absent de tes cours', icon: '⚠️', color: 'var(--warning)' },
   error: { label: 'Erreur', icon: '✕', color: 'var(--danger)' },
 } as const;
+
+const PROVIDER_LABEL: Record<'anthropic' | 'openai' | 'gemini', string> = {
+  anthropic: 'Claude',
+  openai: 'ChatGPT',
+  gemini: 'Gemini',
+};
+
+/** Le badge nomme le fournisseur réel quand on le connaît — jamais un « IA » générique s'il est évitable. */
+function badgeLabel(message: ChatMessage): string {
+  const base = message.provenance ? PROVENANCE_BADGE[message.provenance].label : '';
+  if ((message.provenance === 'course' || message.provenance === 'internet') && message.providerId) {
+    return `Généré avec ${PROVIDER_LABEL[message.providerId]} — ${base.toLowerCase()}`;
+  }
+  return base;
+}
 
 export interface AnswerAction {
   label: string;
@@ -47,7 +63,7 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
         <div className="mb-2">
           <Chip color={badge.color}>
             <span aria-hidden>{badge.icon}</span>
-            {badge.label}
+            {badgeLabel(message)}
           </Chip>
         </div>
       )}
@@ -66,7 +82,10 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
       {/* Actions proposées seulement sous une VRAIE réponse — jamais sous une
           erreur ni sous un « absent de tes cours », où elles n'auraient rien
           à reprendre. */}
-      {actions && (message.provenance === 'course' || message.provenance === 'internet') && (
+      {actions &&
+        (message.provenance === 'course' ||
+          message.provenance === 'course-local' ||
+          message.provenance === 'internet') && (
         <div className="mt-2 flex flex-wrap gap-2" data-answer-actions>
           {actions.map((action) => (
             <button

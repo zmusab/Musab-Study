@@ -450,8 +450,13 @@ export interface Citation {
   page: number | null;
 }
 
-/** Provenance d'une réponse de l'assistant — jamais devinée, toujours calculée. */
-export type AnswerProvenance = 'course' | 'internet' | 'insufficient' | 'error';
+/**
+ * Provenance d'une réponse de l'assistant — jamais devinée, toujours
+ * calculée. `'course-local'` : assemblée par le moteur local
+ * (`services/local/localAnswer.ts`), aucun appel IA — distincte de
+ * `'course'`, qui reste une réponse vérifiée après un vrai appel IA.
+ */
+export type AnswerProvenance = 'course' | 'course-local' | 'internet' | 'insufficient' | 'error';
 
 export interface ChatMessage {
   id: ID;
@@ -461,6 +466,8 @@ export interface ChatMessage {
   provenance: AnswerProvenance | null;
   citations: Citation[];
   at: ISODateTime;
+  /** Fournisseur ayant réellement répondu — seulement pour `provenance: 'course' | 'internet'`. Additif, non indexé : aucune migration Dexie nécessaire (voir `db.ts`). */
+  providerId?: 'anthropic' | 'openai' | 'gemini' | null;
 }
 
 // ──────────────────────── Podcast d'étude ────────────────────────

@@ -14,6 +14,7 @@ export async function appendChatMessage(input: {
   text: string;
   provenance?: AnswerProvenance | null;
   citations?: Citation[];
+  providerId?: ChatMessage['providerId'];
 }): Promise<ChatMessage> {
   const message: ChatMessage = {
     id: uid('msg'),
@@ -23,6 +24,7 @@ export async function appendChatMessage(input: {
     provenance: input.provenance ?? null,
     citations: input.citations ?? [],
     at: nowISO(),
+    providerId: input.providerId ?? null,
   };
   await db.chatMessages.add(message);
   return message;

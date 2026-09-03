@@ -92,7 +92,7 @@ const RULES: { predicate: FactPredicate; regex: RegExp }[] = [
   },
   {
     predicate: 'function',
-    regex: /^(.{2,60}?)\s+(?:donne|produit|permet de|permet|assure|joue le rôle de)\s+(.{3,300})$/i,
+    regex: /^(.{2,60}?)\s+(?:donne|produit|permet de|permet|assure|commande|contrôle|joue le rôle de)\s+(.{3,300})$/i,
   },
   {
     predicate: 'location',

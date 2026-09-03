@@ -2,8 +2,10 @@ import { chromium, devices } from 'playwright';
 
 /**
  * Parcours réel : créer une matière, un chapitre, importer un document par
- * collage, vérifier qu'il est indexé pour l'IA, puis contrôler que l'assistant
- * refuse proprement de travailler sans clé API.
+ * collage, vérifier qu'il est indexé pour l'IA, puis contrôler que
+ * l'assistant répond honnêtement à une question que le moteur local ne peut
+ * pas couvrir avec assez de confiance — jamais un échec silencieux ni une
+ * invention, et jamais besoin de clé API pour l'obtenir.
  *
  * Prérequis : `npm run build` puis `npm run preview`.
  */
@@ -125,8 +127,10 @@ check('L’assistant s’ouvre sur la matière importée',
 await page.getByPlaceholder(/question sur tes cours/).fill('Innervation du masséter ?');
 await page.getByRole('button', { name: 'Envoyer' }).click();
 await page.waitForTimeout(900);
-check('Sans clé API, l’application le dit clairement au lieu d’échouer en silence',
-  await page.getByText(/clé API dans Paramètres/).isVisible());
+check('Sans réponse locale assez fiable, un message honnête est affiché — jamais un échec silencieux, jamais d’invention',
+  await page.getByText(/Tu peux activer un assistant IA/).isVisible());
+check('Le bouton « Répondre avec l’IA » propose l’IA en option explicite, jamais imposée',
+  await page.locator('[data-ai-answer-with-ai]').isVisible());
 
 await page.screenshot({
   path: `${process.env.SCREENSHOT_DIR ?? './dist-screenshots'}/ipad-cours.png`,
