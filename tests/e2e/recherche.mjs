@@ -45,6 +45,8 @@ await page.waitForTimeout(500);
 
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(500);
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quelle est l’innervation du muscle masséter ?');
 await page.getByLabel('Réponse').fill('Le nerf massétérique, branche du nerf trijumeau.');
 await page.getByRole('button', { name: 'Ajouter la carte' }).click();

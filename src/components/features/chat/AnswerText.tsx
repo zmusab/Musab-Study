@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
 /**
  * Mise en forme des réponses de l'assistant.
@@ -87,43 +88,64 @@ export function parseAnswerBlocks(text: string): Block[] {
   return blocks;
 }
 
+function renderBlock(block: Block, index: number): ReactNode {
+  if (block.kind === 'heading') {
+    return (
+      <h3 className="mt-1 text-[0.95rem] font-semibold">
+        {inline(block.text, `h-${index}`)}
+      </h3>
+    );
+  }
+  if (block.kind === 'bullets') {
+    return (
+      <ul className="flex list-disc flex-col gap-1 pl-5">
+        {block.items.map((item, itemIndex) => (
+          <li key={itemIndex}>{inline(item, `b-${index}-${itemIndex}`)}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (block.kind === 'numbers') {
+    return (
+      <ol className="flex list-decimal flex-col gap-1 pl-5">
+        {block.items.map((item, itemIndex) => (
+          <li key={itemIndex}>{inline(item, `n-${index}-${itemIndex}`)}</li>
+        ))}
+      </ol>
+    );
+  }
+  return <p className="whitespace-pre-wrap">{inline(block.text, `p-${index}`)}</p>;
+}
+
+/** Au-delà, un délai supplémentaire ne se voit plus et ralentirait pour rien une longue réponse. */
+const MAX_STAGGER_BLOCKS = 8;
+const STAGGER_STEP_S = 0.05;
+
+/**
+ * Chaque bloc (titre, paragraphe, liste) apparaît avec un léger décalage en
+ * cascade plutôt que tous d'un coup — une réponse longue se lit alors comme
+ * en train de « se composer », sans dépendre d'une diffusion réelle du
+ * fournisseur (voir `services/ai/orchestrator.ts` : seul Claude, en mode
+ * cours, diffuse token par token ; OpenAI et Gemini livrent leur réponse en
+ * un seul bloc, qui a donc besoin de cette apparition progressive après
+ * réception complète).
+ */
 export function AnswerText({ text }: { text: string }) {
   const blocks = parseAnswerBlocks(text);
+  const reduced = useReducedMotion();
 
   return (
     <div className="flex flex-col gap-2.5 text-[0.92rem] leading-relaxed">
-      {blocks.map((block, index) => {
-        if (block.kind === 'heading') {
-          return (
-            <h3 key={index} className="mt-1 text-[0.95rem] font-semibold">
-              {inline(block.text, `h-${index}`)}
-            </h3>
-          );
-        }
-        if (block.kind === 'bullets') {
-          return (
-            <ul key={index} className="flex list-disc flex-col gap-1 pl-5">
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{inline(item, `b-${index}-${itemIndex}`)}</li>
-              ))}
-            </ul>
-          );
-        }
-        if (block.kind === 'numbers') {
-          return (
-            <ol key={index} className="flex list-decimal flex-col gap-1 pl-5">
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{inline(item, `n-${index}-${itemIndex}`)}</li>
-              ))}
-            </ol>
-          );
-        }
-        return (
-          <p key={index} className="whitespace-pre-wrap">
-            {inline(block.text, `p-${index}`)}
-          </p>
-        );
-      })}
+      {blocks.map((block, index) => (
+        <motion.div
+          key={index}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: reduced ? 0 : Math.min(index, MAX_STAGGER_BLOCKS) * STAGGER_STEP_S }}
+        >
+          {renderBlock(block, index)}
+        </motion.div>
+      ))}
     </div>
   );
 }

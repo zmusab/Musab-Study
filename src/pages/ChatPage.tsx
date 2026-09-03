@@ -308,110 +308,6 @@ export function ChatPage() {
           ))}
         </div>
 
-        {/* Le champ de question, toujours au même endroit, jamais à chercher. */}
-        <div className="mt-4 flex gap-2">
-          <Input
-            value={question}
-            placeholder={mode === 'cours' ? 'Une question sur tes cours…' : 'Une question, cours + internet…'}
-            className="flex-1"
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void handleSend();
-              }
-            }}
-            data-ai-question
-          />
-          <Button loading={pending !== null} disabled={question.trim().length === 0} onClick={() => void handleSend()}>
-            Envoyer
-          </Button>
-        </div>
-
-        {/* Source, portée, assistant : une seule ligne, volontairement sobre. */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--line)] pt-3 text-[0.82rem]">
-          <div className="flex gap-1" role="group" aria-label="Source des réponses">
-            {(['cours', 'internet'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                aria-pressed={mode === value}
-                data-touch-target
-                data-ai-source={value}
-                className={cn(
-                  'rounded-full px-3 py-1.5 font-medium transition-colors [-webkit-tap-highlight-color:transparent]',
-                  mode === value
-                    ? 'bg-[var(--accent)] text-white'
-                    : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
-                )}
-              >
-                {value === 'cours' ? '📚 Mes cours' : '🌐 Internet'}
-              </button>
-            ))}
-          </div>
-
-          <span className="text-[var(--ink-faint)]" aria-hidden>
-            ·
-          </span>
-
-          <select
-            value={subjectId}
-            onChange={(event) => setSubjectId(event.target.value)}
-            aria-label="Matière"
-            data-ai-subject
-            className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
-          >
-            {(subjects ?? []).map((subject) => (
-              <option key={subject.id} value={subject.id}>
-                {subject.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={chapterId}
-            onChange={(event) => setChapterId(event.target.value as ID | 'all')}
-            aria-label="Portée"
-            data-ai-scope
-            className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
-          >
-            <option value="all">Toute la matière</option>
-            {(chapters ?? []).map((chapter) => (
-              <option key={chapter.id} value={chapter.id}>
-                {chapter.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={assistant}
-            onChange={(event) => {
-              const value = event.target.value as PreferredProvider;
-              setAssistant(value);
-              setPreferredProvider(value);
-            }}
-            aria-label="Assistant"
-            data-ai-assistant
-            className="ml-auto bg-transparent text-[var(--ink-soft)] outline-none"
-          >
-            {ASSISTANT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                Assistant : {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {internetBlocked && (
-          <p
-            className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning)] bg-[var(--warning-tint)] px-3.5 py-2.5 text-[0.8rem] leading-relaxed"
-            data-ai-internet-blocked
-          >
-            {internetBlocked}
-          </p>
-        )}
-
         {/* ────────────── La conversation ────────────── */}
         <div className="mt-6 flex flex-col gap-4">
           {!conversationEmpty && (
@@ -471,6 +367,120 @@ export function ChatPage() {
           )}
 
           <div ref={bottomRef} />
+        </div>
+
+        {/* Question et réglages, COLLÉS EN BAS — comme une conversation
+            normale, jamais un formulaire à chercher en haut de page pendant
+            que la réponse est arrivée tout en bas. */}
+        <div
+          className="sticky bottom-[4.75rem] z-10 mt-4 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--bg-elevated)]/95 p-3 shadow-lg backdrop-blur-xl md:bottom-3"
+          data-ai-composer
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[0.82rem]">
+            <div className="flex gap-1" role="group" aria-label="Source des réponses">
+              {(['cours', 'internet'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  aria-pressed={mode === value}
+                  data-touch-target
+                  data-ai-source={value}
+                  className={cn(
+                    'rounded-full px-3 py-1.5 font-medium transition-colors [-webkit-tap-highlight-color:transparent]',
+                    mode === value
+                      ? 'bg-[var(--accent)] text-white'
+                      : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
+                  )}
+                >
+                  {value === 'cours' ? '📚 Mes cours' : '🌐 Internet'}
+                </button>
+              ))}
+            </div>
+
+            <span className="text-[var(--ink-faint)]" aria-hidden>
+              ·
+            </span>
+
+            <select
+              value={subjectId}
+              onChange={(event) => setSubjectId(event.target.value)}
+              aria-label="Matière"
+              data-ai-subject
+              className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
+            >
+              {(subjects ?? []).map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={chapterId}
+              onChange={(event) => setChapterId(event.target.value as ID | 'all')}
+              aria-label="Portée"
+              data-ai-scope
+              className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
+            >
+              <option value="all">Toute la matière</option>
+              {(chapters ?? []).map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={assistant}
+              onChange={(event) => {
+                const value = event.target.value as PreferredProvider;
+                setAssistant(value);
+                setPreferredProvider(value);
+              }}
+              aria-label="Assistant"
+              data-ai-assistant
+              className="ml-auto bg-transparent text-[var(--ink-soft)] outline-none"
+            >
+              {ASSISTANT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  Assistant : {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {internetBlocked && (
+            <p
+              className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning)] bg-[var(--warning-tint)] px-3.5 py-2.5 text-[0.8rem] leading-relaxed"
+              data-ai-internet-blocked
+            >
+              {internetBlocked}
+            </p>
+          )}
+
+          <div className="mt-2.5 flex gap-2">
+            <Input
+              value={question}
+              placeholder={mode === 'cours' ? 'Une question sur tes cours…' : 'Une question, cours + internet…'}
+              className="flex-1"
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSend();
+                }
+              }}
+              data-ai-question
+            />
+            <Button
+              loading={pending !== null}
+              disabled={question.trim().length === 0 || internetBlocked !== null}
+              onClick={() => void handleSend()}
+            >
+              Envoyer
+            </Button>
+          </div>
         </div>
       </div>
 

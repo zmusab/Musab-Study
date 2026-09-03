@@ -49,6 +49,10 @@ check('L’écran Flashcards s’ouvre sur la matière importée',
   await page.getByRole('heading', { name: 'Flashcards' }).isVisible());
 
 // ---------- Création manuelle ----------
+check('Le formulaire IA est affiché par défaut, jamais les deux formulaires ensemble',
+  (await page.getByLabel('Question').count()) === 0);
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quelle est la fréquence cardiaque normale au repos ?');
 await page.getByLabel('Réponse').fill('Entre 60 et 100 battements par minute.');
 await page.getByRole('button', { name: 'Ajouter la carte' }).click();
@@ -100,6 +104,8 @@ check('La modification de la question est bien persistée après rechargement',
   await main.locator('input[value="Fréquence cardiaque au repos — adulte sain ?"]').isVisible());
 
 // ---------- Génération IA sans clé ----------
+await page.getByRole('tab', { name: '✨ Générer avec l’IA' }).click();
+await page.waitForTimeout(300);
 await page.getByRole('button', { name: /Générer \d+ cartes/ }).click();
 await page.waitForTimeout(900);
 check('Sans clé API, l’échec de génération est signalé clairement',

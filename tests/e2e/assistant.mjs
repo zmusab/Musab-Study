@@ -76,6 +76,8 @@ await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
 await page.waitForTimeout(700);
 
 await goFlashcards();
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 for (const [q, a] of [
   ['Combien de nerfs crâniens ?', 'Douze paires.'],
   ['Quel nerf innerve le masséter ?', 'Le nerf trijumeau (V3).'],

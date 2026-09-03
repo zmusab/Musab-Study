@@ -44,6 +44,8 @@ await page.waitForTimeout(500);
 
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(500);
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quelle est la longueur de travail moyenne d’une incisive centrale ?');
 await page.getByLabel('Réponse').fill('Environ 22 mm.');
 await page.getByRole('button', { name: 'Ajouter la carte' }).click();

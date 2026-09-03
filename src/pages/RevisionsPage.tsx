@@ -11,6 +11,7 @@ import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/c
 import { db } from '@/data/db';
 import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
+import { compareAttempt, type AttemptComparison } from '@/core/revisions/compareAttempt';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 
 /**
@@ -41,6 +42,12 @@ const CONFIDENCE_SEGMENTS = [
   { value: 'high' as const, label: 'Sûr' },
 ];
 
+const COMPARISON_LABEL: Record<AttemptComparison, { text: string; color: string }> = {
+  close: { text: '✓ Ta réponse semble correspondre', color: 'var(--success)' },
+  partial: { text: '≈ Partiellement — vérifie les détails', color: 'var(--warning)' },
+  different: { text: '✕ Assez différente de la réponse attendue', color: 'var(--ink-soft)' },
+};
+
 interface SessionSummary {
   reviewed: number;
   correct: number;
@@ -67,6 +74,7 @@ function ReviewSession({
 
   const current = queue[0];
   const progressPct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
+  const comparison = current ? compareAttempt(attempt, current.answer) : null;
 
   const handleRate = async (rating: Rating) => {
     if (!current) return;
@@ -130,9 +138,20 @@ function ReviewSession({
                 >
                   {attempt.trim().length > 0 && (
                     <div className="mt-4 border-t border-[var(--line)] pt-4">
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
-                        Ta réponse
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
+                          Ta réponse
+                        </p>
+                        {comparison && (
+                          <span
+                            className="text-[0.74rem] font-medium"
+                            style={{ color: COMPARISON_LABEL[comparison].color }}
+                            data-review-comparison={comparison}
+                          >
+                            {COMPARISON_LABEL[comparison].text}
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-1 text-[0.9rem] leading-relaxed text-[var(--ink-soft)]" data-review-your-answer>
                         {attempt}
                       </p>
@@ -174,12 +193,17 @@ function ReviewSession({
         </div>
       ) : (
         <div className="mt-4 flex flex-col gap-3">
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-2 text-center">
             <span className="text-[0.78rem] text-[var(--ink-faint)]">
-              {attempt.trim().length > 0 ? 'Comparée à la réponse attendue, ta réponse était…' : 'Avant de voir la réponse, tu étais…'}
+              {attempt.trim().length > 0
+                ? 'La comparaison ci-dessus n’est qu’un indice approximatif — c’est à toi de juger : ta réponse correspondait-elle vraiment ?'
+                : 'Avant de voir la réponse, tu étais…'}
             </span>
             <SegmentedControl segments={CONFIDENCE_SEGMENTS} value={confidence} onChange={setConfidence} size="sm" />
           </div>
+          <p className="text-center text-[0.78rem] font-medium text-[var(--ink-soft)]">
+            Choisis honnêtement : c’est CE choix, pas la comparaison ci-dessus, qui programme ta prochaine révision.
+          </p>
           <div className="grid grid-cols-4 gap-2">
             <Button variant="danger" onClick={() => void handleRate(0)}>
               {RATING_LABELS[0]}

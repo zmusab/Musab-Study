@@ -214,6 +214,8 @@ const CARDS = [
   ['Combien de dents compte la denture permanente ?', '32 dents.'],
   ['Quel muscle élève la mandibule principalement ?', 'Le muscle masséter.'],
 ];
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 for (const [q, a] of CARDS) {
   await page.getByLabel('Question').fill(q);
   await page.getByLabel('Réponse').fill(a);
@@ -373,6 +375,8 @@ for (let attempt = 0; attempt < 3; attempt += 1) {
 // Physiologie n'a aucune flashcard : on en ajoute pour pouvoir la rater.
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(700);
+await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.waitForTimeout(300);
 const subjectPicker = page.locator('select').first();
 if (await subjectPicker.count()) {
   await selectSubject(subjectPicker, 'Physiologie').catch(() => {});

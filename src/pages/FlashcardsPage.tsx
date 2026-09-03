@@ -54,6 +54,7 @@ export function FlashcardsPage() {
   const [manualChapterId, setManualChapterId] = useState<ID | ''>('');
   const [search, setSearch] = useState('');
   const [originFilter, setOriginFilter] = useState<'all' | 'ai' | 'manual'>('all');
+  const [creationMode, setCreationMode] = useState<'ai' | 'manual'>('ai');
 
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
@@ -246,131 +247,144 @@ export function FlashcardsPage() {
       </div>
 
       <Card className="mb-6">
-        <h2 className="mb-4 text-[1.05rem]">✨ Générer avec l’IA</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Select
-            label="Nombre"
-            value={count}
-            onChange={(e) =>
-              setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])
-            }
-          >
-            {COUNT_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n} cartes
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Importance"
-            value={importance}
-            onChange={(e) => setImportance(Number(e.target.value) as Importance)}
-          >
-            <option value={1}>Normale</option>
-            <option value={2}>Importante</option>
-            <option value={3}>Examen</option>
-          </Select>
-          <Select
-            label="Difficulté"
-            value={difficulty}
-            onChange={(e) => setDifficulty(Number(e.target.value) as Difficulty)}
-          >
-            <option value={1}>Facile</option>
-            <option value={2}>Moyenne</option>
-            <option value={3}>Difficile</option>
-          </Select>
-        </div>
-        <Button className="mt-4" loading={generating} onClick={handleGenerate} block>
-          {generating ? 'Analyse du cours et génération des cartes…' : `✨ Générer ${count} cartes`}
-        </Button>
+        {/* Un seul formulaire de création à la fois — jamais « Générer » et
+            « Créer manuellement » empilés l'un sur l'autre, qui donnaient
+            l'impression de deux systèmes distincts. */}
+        <SegmentedControl
+          className="mb-4"
+          segments={[
+            { value: 'ai', label: '✨ Générer avec l’IA' },
+            { value: 'manual', label: '✍️ Créer manuellement' },
+          ]}
+          value={creationMode}
+          onChange={setCreationMode}
+        />
 
-        <AnimatePresence mode="wait">
-          {currentDraft && (
-            <motion.div
-              key={draftIndex}
-              initial={reduced ? { opacity: 0 } : { opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={reduced ? { opacity: 0 } : { opacity: 0, x: -16 }}
-              transition={springSoft}
-              className="mt-5 rounded-[var(--radius-card)] border border-[var(--accent)] bg-[var(--accent-tint)] p-4"
+        {creationMode === 'ai' ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Select
+                label="Nombre"
+                value={count}
+                onChange={(e) =>
+                  setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])
+                }
+              >
+                {COUNT_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} cartes
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Importance"
+                value={importance}
+                onChange={(e) => setImportance(Number(e.target.value) as Importance)}
+              >
+                <option value={1}>Normale</option>
+                <option value={2}>Importante</option>
+                <option value={3}>Examen</option>
+              </Select>
+              <Select
+                label="Difficulté"
+                value={difficulty}
+                onChange={(e) => setDifficulty(Number(e.target.value) as Difficulty)}
+              >
+                <option value={1}>Facile</option>
+                <option value={2}>Moyenne</option>
+                <option value={3}>Difficile</option>
+              </Select>
+            </div>
+            <Button className="mt-4" loading={generating} onClick={handleGenerate} block>
+              {generating ? 'Analyse du cours et génération des cartes…' : `✨ Générer ${count} cartes`}
+            </Button>
+
+            <AnimatePresence mode="wait">
+              {currentDraft && (
+                <motion.div
+                  key={draftIndex}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, x: 16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={reduced ? { opacity: 0 } : { opacity: 0, x: -16 }}
+                  transition={springSoft}
+                  className="mt-5 rounded-[var(--radius-card)] border border-[var(--accent)] bg-[var(--accent-tint)] p-4"
+                >
+                  <Chip>
+                    Carte {draftIndex + 1}/{drafts.length}
+                  </Chip>
+                  <input
+                    className="mt-2 w-full bg-transparent text-[0.98rem] font-semibold outline-none"
+                    value={currentDraft.question}
+                    onChange={(e) =>
+                      setDrafts((list) =>
+                        list.map((d, i) => (i === draftIndex ? { ...d, question: e.target.value } : d)),
+                      )
+                    }
+                  />
+                  <textarea
+                    className="mt-2 w-full resize-y bg-transparent text-[0.9rem] leading-relaxed outline-none"
+                    rows={3}
+                    value={currentDraft.answer}
+                    onChange={(e) =>
+                      setDrafts((list) =>
+                        list.map((d, i) => (i === draftIndex ? { ...d, answer: e.target.value } : d)),
+                      )
+                    }
+                  />
+                  <p className="mt-2 text-[0.74rem] text-[var(--ink-faint)]">
+                    📚 {currentDraft.citations[0]?.documentName}
+                    {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
+                      ? ` — page ${currentDraft.citations[0].page}`
+                      : ''}
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Button size="sm" onClick={handleAcceptDraft}>
+                      ✅ Accepter
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={handleRejectDraft}>
+                      ❌ Supprimer
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {drafts.length > 0 && draftIndex >= drafts.length && (
+              <FadeUp className="mt-4 text-center text-[0.85rem] text-[var(--ink-soft)]">
+                Toutes les cartes proposées ont été traitées.
+              </FadeUp>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Input
+              label="Question"
+              value={manualQuestion}
+              onChange={(e) => setManualQuestion(e.target.value)}
+            />
+            <Textarea
+              label="Réponse"
+              rows={3}
+              value={manualAnswer}
+              onChange={(e) => setManualAnswer(e.target.value)}
+            />
+            <Select
+              label="Chapitre"
+              value={manualChapterId}
+              onChange={(e) => setManualChapterId(e.target.value)}
             >
-              <Chip>
-                Carte {draftIndex + 1}/{drafts.length}
-              </Chip>
-              <input
-                className="mt-2 w-full bg-transparent text-[0.98rem] font-semibold outline-none"
-                value={currentDraft.question}
-                onChange={(e) =>
-                  setDrafts((list) =>
-                    list.map((d, i) => (i === draftIndex ? { ...d, question: e.target.value } : d)),
-                  )
-                }
-              />
-              <textarea
-                className="mt-2 w-full resize-y bg-transparent text-[0.9rem] leading-relaxed outline-none"
-                rows={3}
-                value={currentDraft.answer}
-                onChange={(e) =>
-                  setDrafts((list) =>
-                    list.map((d, i) => (i === draftIndex ? { ...d, answer: e.target.value } : d)),
-                  )
-                }
-              />
-              <p className="mt-2 text-[0.74rem] text-[var(--ink-faint)]">
-                📚 {currentDraft.citations[0]?.documentName}
-                {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
-                  ? ` — page ${currentDraft.citations[0].page}`
-                  : ''}
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" onClick={handleAcceptDraft}>
-                  ✅ Accepter
-                </Button>
-                <Button size="sm" variant="ghost" onClick={handleRejectDraft}>
-                  ❌ Supprimer
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {drafts.length > 0 && draftIndex >= drafts.length && (
-          <FadeUp className="mt-4 text-center text-[0.85rem] text-[var(--ink-soft)]">
-            Toutes les cartes proposées ont été traitées.
-          </FadeUp>
+              <option value="">Aucun</option>
+              {(chapters ?? []).map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.name}
+                </option>
+              ))}
+            </Select>
+            <Button variant="secondary" onClick={handleManualCreate}>
+              Ajouter la carte
+            </Button>
+          </div>
         )}
-      </Card>
-
-      <Card className="mb-6">
-        <h2 className="mb-4 text-[1.05rem]">Créer une carte manuellement</h2>
-        <div className="flex flex-col gap-3">
-          <Input
-            label="Question"
-            value={manualQuestion}
-            onChange={(e) => setManualQuestion(e.target.value)}
-          />
-          <Textarea
-            label="Réponse"
-            rows={3}
-            value={manualAnswer}
-            onChange={(e) => setManualAnswer(e.target.value)}
-          />
-          <Select
-            label="Chapitre"
-            value={manualChapterId}
-            onChange={(e) => setManualChapterId(e.target.value)}
-          >
-            <option value="">Aucun</option>
-            {(chapters ?? []).map((chapter) => (
-              <option key={chapter.id} value={chapter.id}>
-                {chapter.name}
-              </option>
-            ))}
-          </Select>
-          <Button variant="secondary" onClick={handleManualCreate}>
-            Ajouter la carte
-          </Button>
-        </div>
       </Card>
 
       <Card>
