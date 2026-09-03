@@ -24,7 +24,6 @@ import { DocumentThumbnail } from '@/components/features/courses/DocumentThumbna
 import { DocumentFileSize } from '@/components/features/courses/DocumentFileSize';
 import { NotionsTab } from '@/components/features/courses/NotionsTab';
 import { NoteEditorModal } from '@/components/features/notes/NoteEditorModal';
-import { buildNotebookLmExportText, downloadNotebookLmExport } from '@/services/notebooklm/export';
 import {
   useChapters,
   useSubject,
@@ -92,7 +91,6 @@ export function SubjectDetailPage() {
   const [renamingChapter, setRenamingChapter] = useState<Chapter | null>(null);
   const [chapterNameDraft, setChapterNameDraft] = useState('');
   const [creatingNote, setCreatingNote] = useState(false);
-  const [exportingNotebookLm, setExportingNotebookLm] = useState(false);
 
   if (subject === null) {
     return (
@@ -171,39 +169,6 @@ export function SubjectDetailPage() {
     await deleteSubject(subjectId);
     notify(`« ${subject.name} » supprimée.`, 'info');
     navigate('/cours');
-  };
-
-  /**
-   * NotebookLM n'a pas d'API accessible pour un usage personnel (vérifié —
-   * voir `services/notebooklm/export.ts`) : ceci assemble le contenu RÉEL
-   * de la matière (documents déjà importés, notes déjà écrites) en un seul
-   * fichier texte, à importer manuellement comme source sur
-   * notebooklm.google.com.
-   */
-  const handleExportNotebookLm = async () => {
-    if (!subjectId) return;
-    setExportingNotebookLm(true);
-    try {
-      const documentRows = await db.documents.where('subjectId').equals(subjectId).toArray();
-      const notesToExport = notes ?? [];
-      // `buildNotebookLmExportText` inclut toujours l'en-tête (nom de la
-      // matière) : sa longueur ne dit donc jamais si un vrai contenu existe
-      // — on le vérifie ici, sur les données réelles, avant d'assembler quoi que ce soit.
-      if (documentRows.length === 0 && notesToExport.length === 0) {
-        notify('Rien à exporter pour l’instant : ajoute un document ou une note.', 'error');
-        return;
-      }
-      const text = buildNotebookLmExportText({
-        subject,
-        chapters: chapters ?? [],
-        documents: documentRows,
-        notes: notesToExport,
-      });
-      downloadNotebookLmExport(subject.name, text);
-      notify('Fichier prêt — importe-le manuellement dans NotebookLM.', 'success');
-    } finally {
-      setExportingNotebookLm(false);
-    }
   };
 
   const handleDeleteDocument = async (id: ID, name: string) => {
@@ -432,14 +397,6 @@ export function SubjectDetailPage() {
             <div className="mt-4 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setAddingChapter(true)}>
                 Ajouter un chapitre
-              </Button>
-              <Button
-                variant="secondary"
-                loading={exportingNotebookLm}
-                onClick={() => void handleExportNotebookLm()}
-                data-export-notebooklm
-              >
-                Exporter pour NotebookLM
               </Button>
               <Button variant="danger" onClick={handleDeleteSubject}>
                 Supprimer la matière

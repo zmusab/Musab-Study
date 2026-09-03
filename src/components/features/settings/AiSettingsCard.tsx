@@ -385,9 +385,8 @@ export function AiSettingsCard() {
               signale plutôt que de faire croire à une recherche qui n’a pas eu lieu.
             </p>
             <p className="mt-2">
-              <strong>NotebookLM</strong> n’a pas d’API en libre-service : chaque matière propose un export manuel
-              (onglet Documents). <strong>Gemini Education</strong> est une offre de licence, pas une API distincte —
-              le fournisseur Gemini ci-dessus la couvre.
+              <strong>Gemini Education</strong> est une offre de licence, pas une API distincte — le fournisseur
+              Gemini ci-dessus la couvre.
             </p>
           </div>
         </div>

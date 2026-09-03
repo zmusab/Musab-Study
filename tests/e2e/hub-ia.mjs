@@ -2,8 +2,8 @@ import { mkdir } from 'node:fs/promises';
 import { chromium, devices } from 'playwright';
 
 /**
- * HUB IA — vue d'ensemble des fournisseurs, sélection de fournisseur (par
- * tâche et générale), et export manuel NotebookLM depuis une matière.
+ * HUB IA — vue d'ensemble des fournisseurs et sélection de fournisseur (par
+ * tâche et générale).
  *
  * Cet environnement de test n'exécute aucune fonction serveur Vercel :
  * OpenAI et Gemini y sont donc, à raison, TOUJOURS annoncés indisponibles
@@ -113,7 +113,6 @@ check('« Avancé » contient la clé Claude, jamais demandée pour les autres',
 check('« Avancé » contient « Vérifier la configuration »', await page.locator('[data-hub-check-status]').isVisible());
 
 const avance = await page.locator('[data-ai-advanced]').innerText();
-check('NotebookLM explique l’absence d’API accessible, sans simuler une intégration', /NotebookLM[\s\S]{0,80}pas d’API en libre-service/.test(avance));
 check('Gemini Education est rattaché à Gemini, jamais présenté comme une API distincte', /Gemini Education[\s\S]{0,80}offre de licence/.test(avance));
 check('La recherche web est annoncée pour ce qu’elle est réellement', /seul Claude la pratique réellement/.test(avance));
 
@@ -138,7 +137,8 @@ check('« Tout remettre sur Automatique » efface réellement ces réglages',
   (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'auto' &&
     (await overrideNotice.count()) === 0);
 
-// ────────────────── 5. Export NotebookLM depuis une matière — manuel, réel ──────────────────
+// ────────────────── 5. iPad portrait/paysage, sans débordement ──────────────────
+// Une matière réelle, nécessaire pour vérifier la page « matière » ci-dessous.
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
 await page.waitForTimeout(500);
 await page.getByRole('button', { name: 'Créer ma première matière' }).click();
@@ -154,44 +154,6 @@ await page.getByLabel('Nom du chapitre').fill('Nerfs crâniens');
 await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
 await page.waitForTimeout(700);
 
-const exportButton = page.locator('[data-export-notebooklm]');
-check('Le bouton « Exporter pour NotebookLM » est proposé depuis la matière', await exportButton.isVisible());
-
-// Sans document ni note : un message honnête plutôt qu'un fichier vide.
-await exportButton.click();
-await page.waitForTimeout(500);
-const emptyToast = await page.locator('[aria-live="polite"]').innerText().catch(() => '');
-check(
-  'Sans contenu réel à exporter, un message le dit plutôt que de télécharger un fichier vide',
-  /Rien à exporter/.test(emptyToast),
-  emptyToast.replace(/\n/g, ' | '),
-);
-
-// Ajoute une note réelle, puis vérifie un vrai téléchargement.
-await page.getByRole('tab', { name: 'Notes', exact: true }).click();
-await page.waitForTimeout(400);
-await page.locator('[data-subject-create-note]').click();
-await page.waitForTimeout(400);
-await page.locator('[data-note-editor]').getByLabel('Titre').fill('Trijumeau');
-await page.locator('[data-note-editor]').getByLabel('Contenu').fill('Le nerf trijumeau (V) comporte trois branches.');
-await page.locator('[data-note-save]').click();
-await page.waitForTimeout(500);
-
-await page.getByRole('tab', { name: 'Documents', exact: true }).click();
-await page.waitForTimeout(400);
-const [download] = await Promise.all([page.waitForEvent('download'), exportButton.click()]);
-check('Un vrai fichier est téléchargé (pas une simulation)', download.suggestedFilename().endsWith('-notebooklm.txt'));
-const downloadPath = await download.path();
-check('Le fichier téléchargé contient réellement le texte de la note', downloadPath !== null);
-if (downloadPath) {
-  const content = await (await import('node:fs/promises')).readFile(downloadPath, 'utf-8');
-  check(
-    'Le contenu exporté reprend le texte réel, jamais un résumé inventé',
-    content.includes('Trijumeau') && content.includes('Le nerf trijumeau (V) comporte trois branches.'),
-  );
-}
-
-// ────────────────── 6. iPad portrait/paysage, sans débordement ──────────────────
 for (const [name, viewport] of [
   ['paysage', { width: 1194, height: 834 }],
   ['portrait', { width: 834, height: 1194 }],
