@@ -555,3 +555,40 @@ export interface BackupBundle {
   chatMessages: ChatMessage[];
   podcastEpisodes: PodcastEpisode[];
 }
+
+// ────────────────────────── Couche IA — cache et usage ──────────────────────────
+
+/**
+ * Une réponse IA déjà obtenue, indexée par un hash de tout ce qui détermine
+ * le résultat (tâche + fournisseur + modèle + system + prompt + réglages —
+ * voir `services/ai/cache.ts`). Volontairement ABSENTE de `BackupBundle` : un
+ * cache se reconstruit tout seul à l'usage, ce n'est pas une donnée de
+ * l'utilisateur à préserver — l'inclure alourdirait chaque sauvegarde sans
+ * bénéfice.
+ */
+export interface AiCacheEntry {
+  /** Hash SHA-256 hexadécimal de la requête — voir `computeAiCacheKey`. */
+  key: string;
+  task: string;
+  providerId: string;
+  model: string;
+  response: string;
+  createdAt: ISODateTime;
+  lastUsedAt: ISODateTime;
+  /** Nombre de fois où cette entrée a évité un vrai appel réseau. */
+  hitCount: number;
+}
+
+/**
+ * Agrégat quotidien, tous fournisseurs confondus : combien d'appels ont
+ * réellement quitté l'appareil vers un fournisseur, combien ont été évités
+ * par le cache, combien ont échoué. Sert uniquement à l'affichage simple
+ * dans Réglages IA — pas un historique détaillé, pas de données de cours.
+ */
+export interface AiUsageDay {
+  /** Jour civil local, clé primaire — un seul enregistrement par jour. */
+  day: DayKey;
+  apiCalls: number;
+  cacheHits: number;
+  errors: number;
+}

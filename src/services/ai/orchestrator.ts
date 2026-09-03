@@ -4,6 +4,13 @@ import { geminiProvider } from './providers/gemini';
 import { missingRequirements, selectProviderCandidates, TASK_ROUTES } from './taskRouter';
 import { getPreferredProvider } from './settings';
 import { getTaskProviderPreference } from './taskPreferences';
+import { getModelFor } from './models';
+import { computeAiCacheKey } from './cacheKey';
+import { getCachedResponse, setCachedResponse } from './cache';
+import { dedupeAsk } from './inflight';
+import { delay, isTransientError, RETRY_DELAYS_MS } from './retryPolicy';
+import { isProviderInCooldown, recordProviderOutcome } from './providerHealth';
+import { recordAiError, recordApiCall, recordCacheHit } from './usageStats';
 import { AiRequestError, MissingApiKeyError, ProviderNotConfiguredError } from './types';
 import type { AIProvider, AITask, AskOptions, ProviderId } from './types';
 
@@ -125,10 +132,20 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
      * OpenAI échouait, et n'afficher que l'erreur de Gemini. Le repli
      * automatique n'existe donc plus que dans le mode « Automatique », le
      * seul où l'utilisateur délègue effectivement ce choix.
+     *
+     * En mode Automatique SEULEMENT, un fournisseur en échecs consécutifs
+     * récents est écarté (voir `providerHealth.ts`) — jamais un choix
+     * explicite, qui ne consulte même pas cet état. Si tous les candidats
+     * sont en repos, on retente quand même plutôt que d'échouer à tort :
+     * l'état a pu changer depuis.
      */
-    const candidates = choice.providerId
-      ? usable.filter((provider) => provider.id === choice.providerId)
-      : [...usable];
+    let candidates: AIProvider[];
+    if (choice.providerId) {
+      candidates = usable.filter((provider) => provider.id === choice.providerId);
+    } else {
+      const rested = usable.filter((provider) => !isProviderInCooldown(provider.id));
+      candidates = rested.length > 0 ? rested : usable;
+    }
 
     if (candidates.length === 0) {
       if (choice.providerId) refuseChosenProvider(choice.providerId, options.task);
@@ -137,37 +154,98 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
 
     let lastError: unknown;
     for (const provider of candidates) {
-      const startedAt = Date.now();
-      try {
-        const result = await provider.ask({
-          system: options.system,
-          prompt: options.prompt,
-          maxTokens: options.maxTokens,
-          webSearch: options.webSearch,
-          signal: options.signal,
-          onText: options.onText,
-          tier: route.tier,
-          // Uniquement le modèle prévu POUR CE fournisseur : un identifiant
-          // Anthropic ne doit jamais partir vers le relais OpenAI ou Gemini.
-          preferredModel: route.preferredModel?.[provider.id],
-        });
+      // Le modèle EFFECTIVEMENT utilisé pour ce fournisseur : un modèle
+      // imposé par la tâche, sinon celui choisi par l'utilisateur POUR CE
+      // fournisseur — exactement ce que `provider.ask()` résout en interne
+      // (voir `providers/*.ts`), reproduit ici pour que la clé de cache
+      // corresponde vraiment à la requête qui serait envoyée.
+      const model = route.preferredModel?.[provider.id] ?? getModelFor(provider.id);
+      const cacheKey = computeAiCacheKey({
+        task: options.task,
+        providerId: provider.id,
+        model,
+        system: options.system,
+        prompt: options.prompt,
+        tier: route.tier,
+        maxTokens: options.maxTokens,
+      });
+
+      // CACHE : une réponse déjà obtenue pour EXACTEMENT cette requête (même
+      // tâche, même fournisseur, même modèle, même texte) répond sans
+      // quitter l'appareil — ni appel réseau, ni quota consommé.
+      const cached = await getCachedResponse(cacheKey);
+      if (cached) {
+        options.onText?.(cached.response);
         recordLog({
           task: options.task,
           providerId: provider.id,
-          durationMs: Date.now() - startedAt,
+          durationMs: 0,
           success: true,
           at: new Date().toISOString(),
         });
-        return result;
+        void recordCacheHit();
+        return cached.response;
+      }
+
+      /** Un vrai appel réseau, avec réessais bornés sur les seules erreurs transitoires (voir `retryPolicy.ts`). */
+      const fetchFresh = async (): Promise<string> => {
+        let attemptError: unknown;
+        for (let attemptIndex = 0; attemptIndex <= RETRY_DELAYS_MS.length; attemptIndex++) {
+          const startedAt = Date.now();
+          try {
+            const result = await provider.ask({
+              system: options.system,
+              prompt: options.prompt,
+              maxTokens: options.maxTokens,
+              webSearch: options.webSearch,
+              signal: options.signal,
+              onText: options.onText,
+              tier: route.tier,
+              // Uniquement le modèle prévu POUR CE fournisseur : un
+              // identifiant Anthropic ne doit jamais partir vers le relais
+              // OpenAI ou Gemini.
+              preferredModel: route.preferredModel?.[provider.id],
+            });
+            recordLog({
+              task: options.task,
+              providerId: provider.id,
+              durationMs: Date.now() - startedAt,
+              success: true,
+              at: new Date().toISOString(),
+            });
+            recordProviderOutcome(provider.id, null);
+            void recordApiCall();
+            void setCachedResponse(cacheKey, { task: options.task, providerId: provider.id, model, response: result });
+            return result;
+          } catch (error) {
+            attemptError = error;
+            recordLog({
+              task: options.task,
+              providerId: provider.id,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              errorMessage: error instanceof Error ? error.message : String(error),
+              at: new Date().toISOString(),
+            });
+            // Une annulation demandée par l'utilisateur ne doit jamais se
+            // transformer en réessai.
+            if (options.signal?.aborted) throw error;
+            const canRetry = attemptIndex < RETRY_DELAYS_MS.length && isTransientError(error);
+            if (!canRetry) break;
+            await delay(RETRY_DELAYS_MS[attemptIndex]!);
+          }
+        }
+        recordProviderOutcome(provider.id, attemptError);
+        void recordAiError();
+        throw attemptError;
+      };
+
+      try {
+        // La diffusion progressive (onText) ne peut avoir qu'un seul
+        // abonné : jamais déduplique un appel qui diffuse (voir
+        // `inflight.ts`) — seules les générations en un bloc le sont.
+        return await (options.onText ? fetchFresh() : dedupeAsk(cacheKey, fetchFresh));
       } catch (error) {
-        recordLog({
-          task: options.task,
-          providerId: provider.id,
-          durationMs: Date.now() - startedAt,
-          success: false,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          at: new Date().toISOString(),
-        });
         lastError = error;
         // Une annulation demandée par l'utilisateur ne doit jamais se
         // transformer en tentative silencieuse sur un autre fournisseur.
@@ -231,6 +309,8 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
         success: true,
         at: new Date().toISOString(),
       });
+      recordProviderOutcome(providerId, null);
+      void recordApiCall();
       return {
         ok: true,
         message: 'Connexion réussie.',
@@ -245,6 +325,8 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
         errorMessage: error instanceof Error ? error.message : String(error),
         at: new Date().toISOString(),
       });
+      recordProviderOutcome(providerId, error);
+      void recordAiError();
       // Le message reste celui, en français, que le fournisseur a produit ;
       // le détail brut n'apparaît que derrière « Détails techniques », pour
       // ne pas mettre un code d'erreur sous les yeux de quelqu'un qui veut

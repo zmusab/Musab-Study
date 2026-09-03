@@ -1,5 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
+  AiCacheEntry,
+  AiUsageDay,
   AnatomySheet,
   AnatomyStructure,
   CalendarEvent,
@@ -46,6 +48,8 @@ export class MusabStudyDatabase extends Dexie {
   chatMessages!: EntityTable<ChatMessage, 'id'>;
   podcastEpisodes!: EntityTable<PodcastEpisode, 'id'>;
   chapterAnalyses!: EntityTable<ChapterAnalysis, 'id'>;
+  aiCache!: EntityTable<AiCacheEntry, 'key'>;
+  aiUsage!: EntityTable<AiUsageDay, 'day'>;
 
   constructor() {
     super('musab-study');
@@ -87,6 +91,18 @@ export class MusabStudyDatabase extends Dexie {
     this.version(3).stores({
       notes: 'id, subjectId, chapterId, documentId, updatedAt',
       chapterAnalyses: 'id, subjectId, chapterId',
+    });
+
+    // v4 : cache des réponses IA (`services/ai/cache.ts`) et statistiques
+    // d'usage quotidiennes (`services/ai/usageStats.ts`) — deux tables
+    // entièrement nouvelles, sans effet sur les tables existantes. Ni l'une
+    // ni l'autre ne contient de donnée de cours à préserver : volontairement
+    // absentes de `BackupBundle`.
+    this.version(4).stores({
+      // `lastUsedAt` indexé : c'est ce qui permet un nettoyage éventuel des
+      // entrées les plus anciennes sans scanner toute la table.
+      aiCache: 'key, lastUsedAt',
+      aiUsage: 'day',
     });
   }
 }

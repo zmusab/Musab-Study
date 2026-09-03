@@ -108,13 +108,13 @@ describe.each([
     expect(JSON.stringify(body)).not.toContain('test-key-never-real');
   });
 
-  it('429 du fournisseur devient une erreur de quota', async () => {
+  it('429 du fournisseur, sans code distinctif, devient une limite de débit transitoire', async () => {
     process.env[envVar] = 'test-key-never-real';
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }) as unknown as typeof fetch;
     const response = await handler(askRequest({ system: 's', prompt: 'p' }));
     expect(response.status).toBe(429);
     const body = await response.json();
-    expect(body.error).toBe('upstream_quota');
+    expect(body.error).toBe('upstream_rate_limit');
   });
 
   it('5xx du fournisseur devient "service indisponible", jamais une fausse réponse', async () => {
@@ -364,6 +364,46 @@ describe('api/ai/gemini — le budget de réponse laisse toujours de quoi répon
     const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
     expect(body.error).toBe('invalid_response');
     expect(body.message).toMatch(/réflexion/i);
+  });
+});
+
+/**
+ * OpenAI renvoie 429 pour deux situations à ne jamais confondre : une limite
+ * de DÉBIT (transitoire) et un CRÉDIT/QUOTA épuisé (définitif tant que rien
+ * n'est rechargé). Les traiter pareil revenait à dire « réessaie » à
+ * quelqu'un dont le compte est à sec — et à ne jamais mentionner qu'un
+ * abonnement ChatGPT ne couvre pas l'API, source de confusion déjà vécue.
+ */
+describe('api/ai/openai — un 429 « crédit épuisé » est distingué d’une simple limite de débit', () => {
+  it('error.code "insufficient_quota" devient une erreur de facturation explicite, jamais « réessaie plus tard »', async () => {
+    process.env.OPENAI_API_KEY = 'test-key-never-real';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: { message: 'You exceeded your current quota', type: 'insufficient_quota', code: 'insufficient_quota' } }),
+    }) as unknown as typeof fetch;
+
+    const response = await openaiHandler(askRequest({ system: 's', prompt: 'p' }));
+    const body = await response.json();
+
+    expect(body.error).toBe('upstream_billing');
+    expect(body.message).toMatch(/ChatGPT/);
+    expect(body.message).not.toMatch(/réessaie/i);
+  });
+
+  it('error.code "rate_limit_exceeded" reste une limite de débit transitoire, à réessayer', async () => {
+    process.env.OPENAI_API_KEY = 'test-key-never-real';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: { message: 'Rate limit reached', type: 'requests', code: 'rate_limit_exceeded' } }),
+    }) as unknown as typeof fetch;
+
+    const response = await openaiHandler(askRequest({ system: 's', prompt: 'p' }));
+    const body = await response.json();
+
+    expect(body.error).toBe('upstream_rate_limit');
+    expect(body.message).not.toMatch(/ChatGPT/);
   });
 });
 

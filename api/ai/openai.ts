@@ -20,6 +20,26 @@ export const config = { runtime: 'edge' };
  */
 const DEFAULT_MODEL = 'gpt-5.2';
 
+/**
+ * Code court d'erreur OpenAI (`error.code`, à défaut `error.type`), ou
+ * `null`. Seul ce code est extrait — jamais le message brut, potentiellement
+ * imprévisible — pour distinguer un compte à sec (`insufficient_quota`,
+ * n'importe où) d'une limite de DÉBIT (`rate_limit_exceeded`, transitoire).
+ * Documenté par OpenAI : platform.openai.com/docs/guides/error-codes.
+ */
+async function readErrorCode(response: Response): Promise<string | null> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+  const error = (payload as { error?: { code?: unknown; type?: unknown } } | null)?.error;
+  if (typeof error?.code === 'string' && error.code.length > 0) return error.code;
+  if (typeof error?.type === 'string' && error.type.length > 0) return error.type;
+  return null;
+}
+
 async function callOpenAI(apiKey: string, model: string, body: ProxyAskBody): Promise<Response> {
   return fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -64,7 +84,22 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('upstream_auth', 'La clé OpenAI configurée côté serveur est refusée.', 502);
     }
     if (upstream.status === 429) {
-      return errorResponse('upstream_quota', 'Limite de débit OpenAI atteinte. Réessaie plus tard.', 429);
+      // OpenAI renvoie 429 pour DEUX situations à ne jamais confondre : une
+      // limite de DÉBIT (transitoire, réessayer suffit) et un CRÉDIT/QUOTA
+      // épuisé (definitif tant que rien n'est rechargé — réessayer ne sert à
+      // rien). `error.code` les distingue ; sans lui, impossible de savoir
+      // laquelle s'est produite. Un abonnement ChatGPT Plus/Pro ne couvre
+      // JAMAIS l'API — c'est une facturation séparée, source de confusion
+      // déjà rencontrée : le message le dit explicitement.
+      const code = await readErrorCode(upstream);
+      if (code === 'insufficient_quota') {
+        return errorResponse(
+          'upstream_billing',
+          "Crédit API OpenAI épuisé. Un abonnement ChatGPT (Plus/Pro) ne couvre PAS l'API : ajoute un moyen de paiement sur platform.openai.com → Billing.",
+          429,
+        );
+      }
+      return errorResponse('upstream_rate_limit', 'Limite de débit OpenAI atteinte. Réessaie dans quelques secondes.', 429);
     }
     if (upstream.status >= 500) {
       return errorResponse('upstream_unavailable', 'OpenAI est momentanément indisponible.', 502);

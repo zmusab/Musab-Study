@@ -20,7 +20,10 @@ import {
 } from '@/services/ai/taskPreferences';
 import { proxyProviderStatus, refreshProviderStatus, type ProxyProviderId } from '@/services/ai/providerStatus';
 import { aiOrchestrator, type ProviderTestResult } from '@/services/ai/orchestrator';
+import { getTodayUsage } from '@/services/ai/usageStats';
+import { clearAiCache, countCacheEntries } from '@/services/ai/cache';
 import type { AITask, ProviderId } from '@/services/ai/types';
+import type { AiUsageDay } from '@/types';
 
 /**
  * RÉGLAGES IA — une seule carte, deux niveaux de lecture.
@@ -86,6 +89,18 @@ export function AiSettingsCard() {
   const [keyDraft, setKeyDraft] = useState('');
   const [workspaceDraft, setWorkspaceDraft] = useState('');
   const [taskPreferences, setTaskPreferences] = useState<Partial<Record<AITask, ProviderId>>>(getAllTaskProviderPreferences);
+  const [usage, setUsage] = useState<AiUsageDay | null>(null);
+  const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const refreshUsage = () => {
+    void getTodayUsage().then(setUsage);
+    void countCacheEntries().then(setCacheCount);
+  };
+
+  useEffect(() => {
+    refreshUsage();
+  }, []);
 
   // Le modèle affiché suit l'assistant choisi ; en « Automatique », on règle
   // celui de Claude, seul fournisseur dont la clé vit sur cet appareil.
@@ -126,8 +141,19 @@ export function AiSettingsCard() {
     try {
       const result = await aiOrchestrator.testProvider(id);
       setResults((current) => ({ ...current, [id]: result }));
+      refreshUsage();
     } finally {
       setTesting(null);
+    }
+  };
+
+  const emptyCache = async () => {
+    setClearingCache(true);
+    try {
+      await clearAiCache();
+      refreshUsage();
+    } finally {
+      setClearingCache(false);
     }
   };
 
@@ -267,6 +293,13 @@ export function AiSettingsCard() {
         <p className="mt-2.5 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
           « Tester » envoie une vraie question au fournisseur choisi, et à lui seul.
         </p>
+        {usage && (
+          <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]" data-ai-usage-today>
+            IA aujourd’hui : {usage.apiCalls} appel{usage.apiCalls === 1 ? '' : 's'} API
+            {usage.cacheHits > 0 && <> · {usage.cacheHits} depuis le cache (sans appel réseau)</>}
+            {usage.errors > 0 && <> · {usage.errors} échec{usage.errors === 1 ? '' : 's'}</>}
+          </p>
+        )}
       </div>
 
       {/* ────────────── Avancé ────────────── */}
@@ -374,6 +407,25 @@ export function AiSettingsCard() {
             </p>
           </div>
 
+          <div>
+            <p className="mb-1.5 text-[0.83rem] font-medium">Cache des réponses</p>
+            <p className="mb-2.5 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+              Une question identique (même fonctionnalité, même assistant, même modèle, même texte) répond depuis ce
+              cache local — sans appel réseau, sans consommer de quota. {cacheCount ?? 0} réponse
+              {cacheCount === 1 ? '' : 's'} actuellement en cache.
+            </p>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={clearingCache}
+              disabled={!cacheCount}
+              onClick={() => void emptyCache()}
+              data-ai-clear-cache
+            >
+              Vider le cache
+            </Button>
+          </div>
+
           <div className="rounded-[var(--radius-control)] bg-[var(--surface-2)]/60 px-3.5 py-3 text-[0.78rem] leading-relaxed text-[var(--ink-soft)]">
             <p>
               <strong>ChatGPT et Gemini</strong> n’autorisent pas l’appel direct depuis un navigateur : Musab Study les
@@ -387,6 +439,11 @@ export function AiSettingsCard() {
             <p className="mt-2">
               <strong>Gemini Education</strong> est une offre de licence, pas une API distincte — le fournisseur
               Gemini ci-dessus la couvre.
+            </p>
+            <p className="mt-2">
+              <strong>Abonnement ChatGPT (Plus/Pro) et API OpenAI sont deux facturations séparées.</strong> Payer
+              ChatGPT ne crédite pas l’API : il faut un moyen de paiement distinct sur platform.openai.com → Billing
+              pour que ce relais fonctionne.
             </p>
           </div>
         </div>

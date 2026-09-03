@@ -1,16 +1,30 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { createOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider } from '@/services/ai/settings';
 import { setTaskProviderPreference } from '@/services/ai/taskPreferences';
 import { AiRequestError, MissingApiKeyError } from '@/services/ai/types';
 import type { AIProvider, AIProviderCapabilities, ProviderAskOptions } from '@/services/ai/types';
+import { db } from '@/data/db';
+import { resetProviderHealthForTests } from '@/services/ai/providerHealth';
+import { clearInFlightForTests } from '@/services/ai/inflight';
 
 /**
  * L'orchestrateur est testé avec de faux providers — aucun réseau, aucune
  * clé réelle. Ce qui est vérifié ici, c'est le MÉCANISME : repli sur un
  * autre provider en cas d'échec, erreur claire sans aucun provider
  * disponible, journal alimenté à chaque tentative.
+ *
+ * Le cache (`aiCache`, IndexedDB) et la santé des fournisseurs (mémoire,
+ * partagée entre tous les tests de ce fichier) sont repris à zéro avant
+ * CHAQUE test : sans cela, un test antérieur qui simule un échec, ou qui
+ * répond à la même question, fausserait un test suivant qui attend un
+ * comportement différent pour cette même requête.
  */
+beforeEach(async () => {
+  await db.aiCache.clear();
+  resetProviderHealthForTests();
+  clearInFlightForTests();
+});
 
 const CAPABILITIES: AIProviderCapabilities = {
   reasoning: 'excellent',
@@ -408,5 +422,222 @@ describe('createOrchestrator — le modèle imposé ne traverse jamais vers un a
     ]);
     await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' });
     expect(received).toBeUndefined();
+  });
+});
+
+/**
+ * CACHE — le SEUL point d'entrée de la couche IA (`ask()`) évite un appel
+ * réseau quand la requête est strictement identique à une déjà obtenue :
+ * même tâche, même fournisseur, même modèle, même texte.
+ */
+describe('createOrchestrator — cache des réponses', () => {
+  afterEach(() => setPreferredProvider('auto'));
+
+  it('une deuxième question strictement identique répond depuis le cache, sans rappeler le fournisseur', async () => {
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          return 'réponse unique';
+        },
+      }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse unique');
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse unique');
+    expect(calls).toBe(1);
+  });
+
+  it('changer de fournisseur ignore le cache de l’ancien — jamais la réponse d’un autre fournisseur', async () => {
+    setPreferredProvider('anthropic');
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', { ask: async () => 'réponse anthropic' }),
+      makeProvider('openai', { ask: async () => 'réponse openai' }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse anthropic');
+    setPreferredProvider('openai');
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse openai');
+  });
+
+  it('un prompt différent produit une clé différente, jamais de collision', async () => {
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async (options) => {
+          calls++;
+          return `réponse à : ${options.prompt}`;
+        },
+      }),
+    ]);
+    expect(await orchestrator.ask({ ...BASE_OPTIONS, prompt: 'question A' })).toBe('réponse à : question A');
+    expect(await orchestrator.ask({ ...BASE_OPTIONS, prompt: 'question B' })).toBe('réponse à : question B');
+    expect(calls).toBe(2);
+  });
+
+  it('une réponse en échec n’est jamais mise en cache', async () => {
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          throw new AiRequestError('Anthropic a refusé la requête (400).');
+        },
+      }),
+    ]);
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow();
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow();
+    expect(calls).toBe(2);
+  });
+
+  it('une réponse en cache est transmise à onText en un seul fragment, pour un flux qui écoute', async () => {
+    const orchestrator = createOrchestrator([makeProvider('anthropic', { ask: async () => 'réponse complète' })]);
+    await orchestrator.ask(BASE_OPTIONS);
+
+    const fragments: string[] = [];
+    const result = await orchestrator.ask({ ...BASE_OPTIONS, onText: (delta) => fragments.push(delta) });
+    expect(result).toBe('réponse complète');
+    expect(fragments).toEqual(['réponse complète']);
+  });
+});
+
+/** DÉDUPLICATION EN VOL — le mécanisme lui-même est testé isolément dans `ai-inflight.test.ts` ; ici, son branchement dans `ask()`. */
+describe('createOrchestrator — déduplication des requêtes en vol', () => {
+  it('deux appels concurrents strictement identiques partagent la même requête réseau', async () => {
+    let calls = 0;
+    let resolveAsk: (value: string) => void = () => {};
+    const pending = new Promise<string>((resolve) => {
+      resolveAsk = resolve;
+    });
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          return pending;
+        },
+      }),
+    ]);
+
+    const first = orchestrator.ask(BASE_OPTIONS);
+    // Laisse le premier appel dépasser sa lecture de cache (IndexedDB, donc
+    // asynchrone) et s'enregistrer en vol AVANT que le second ne parte —
+    // sinon les deux lectures de cache concurrentes ne garantissent aucun
+    // ordre entre elles, ce que ce test n'a pas vocation à vérifier (voir
+    // `ai-inflight.test.ts` pour le mécanisme lui-même, lui parfaitement
+    // déterministe).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const second = orchestrator.ask(BASE_OPTIONS);
+    // Même chose pour le second : le laisser dépasser SA propre lecture de
+    // cache et rejoindre l'appel en vol avant de résoudre la requête — sinon
+    // la première pourrait déjà s'être terminée et nettoyée entre-temps,
+    // fermant la fenêtre de partage avant que le second n'y arrive (un délai
+    // artificiel de ce test, pas une limite réelle : en usage réel, un aller-
+    // retour réseau dure infiniment plus longtemps qu'une lecture locale).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    resolveAsk('réponse partagée');
+
+    expect(await first).toBe('réponse partagée');
+    expect(await second).toBe('réponse partagée');
+    expect(calls).toBe(1);
+  });
+});
+
+/**
+ * RÉESSAIS — bornés, et jamais sur une erreur définitive (voir
+ * `retryPolicy.ts`) : réessayer une clé refusée ou un crédit épuisé échouerait
+ * à l'identique, pour rien.
+ */
+describe('createOrchestrator — réessais transitoires', () => {
+  it('une erreur transitoire (service momentanément indisponible) est réessayée, et peut réussir', async () => {
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          if (calls === 1) throw new AiRequestError('Le service est momentanément indisponible. Réessaie dans un instant.');
+          return 'réponse après réessai';
+        },
+      }),
+    ]);
+    expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse après réessai');
+    expect(calls).toBe(2);
+  }, 10_000);
+
+  it('une erreur définitive (clé refusée) n’est jamais réessayée', async () => {
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          throw new AiRequestError('Clé API refusée. Vérifie-la dans Paramètres → Assistant IA.');
+        },
+      }),
+    ]);
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(/refusée/);
+    expect(calls).toBe(1);
+  });
+
+  it('une annulation demandée par l’utilisateur interrompt les réessais', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          controller.abort();
+          throw new AiRequestError('Le service est momentanément indisponible. Réessaie dans un instant.');
+        },
+      }),
+    ]);
+    await expect(orchestrator.ask({ ...BASE_OPTIONS, signal: controller.signal })).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+});
+
+/**
+ * SANTÉ DES FOURNISSEURS — filtre UNIQUEMENT la sélection du mode
+ * Automatique ; un choix explicite reste toujours essayé (voir
+ * `providerHealth.ts`).
+ */
+describe('createOrchestrator — santé des fournisseurs (mode Automatique seulement)', () => {
+  afterEach(() => setPreferredProvider('auto'));
+
+  it('en mode Automatique, un fournisseur en échecs consécutifs est écarté au profit d’un autre disponible', async () => {
+    setPreferredProvider('auto');
+    let anthropicCalls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          anthropicCalls++;
+          throw new AiRequestError('Anthropic a refusé la requête (400).');
+        },
+      }),
+      makeProvider('openai'),
+    ]);
+
+    await orchestrator.ask({ ...BASE_OPTIONS, prompt: 'question 1' });
+    await orchestrator.ask({ ...BASE_OPTIONS, prompt: 'question 2' });
+    expect(anthropicCalls).toBe(2);
+
+    // Anthropic est désormais en repos : le troisième appel ne le retente plus.
+    await orchestrator.ask({ ...BASE_OPTIONS, prompt: 'question 3' });
+    expect(anthropicCalls).toBe(2);
+  });
+
+  it('un fournisseur choisi explicitement reste toujours essayé, même après des échecs qui l’auraient mis en repos en mode Automatique', async () => {
+    setPreferredProvider('anthropic');
+    let calls = 0;
+    const orchestrator = createOrchestrator([
+      makeProvider('anthropic', {
+        ask: async () => {
+          calls++;
+          throw new AiRequestError('Anthropic a refusé la requête (400).');
+        },
+      }),
+    ]);
+
+    await expect(orchestrator.ask({ ...BASE_OPTIONS, prompt: 'q1' })).rejects.toThrow();
+    await expect(orchestrator.ask({ ...BASE_OPTIONS, prompt: 'q2' })).rejects.toThrow();
+    await expect(orchestrator.ask({ ...BASE_OPTIONS, prompt: 'q3' })).rejects.toThrow();
+    expect(calls).toBe(3);
   });
 });

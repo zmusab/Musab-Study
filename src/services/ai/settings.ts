@@ -20,30 +20,8 @@ import type { ProviderId } from './types';
  */
 
 const KEY_STORAGE = 'musab-study:anthropic-key';
-const MODEL_STORAGE = 'musab-study:anthropic-model';
 const WORKSPACE_STORAGE = 'musab-study:anthropic-workspace-id';
 const PREFERRED_PROVIDER_STORAGE = 'musab-study:preferred-provider';
-
-/** Modèles proposés, du plus capable au plus économique. */
-export const AVAILABLE_MODELS = [
-  {
-    id: 'claude-opus-5',
-    label: 'Claude Opus 5',
-    hint: 'Le plus capable — meilleur pour les fiches et les explications',
-  },
-  {
-    id: 'claude-sonnet-5',
-    label: 'Claude Sonnet 5',
-    hint: 'Bon compromis qualité / coût',
-  },
-  {
-    id: 'claude-haiku-4-5',
-    label: 'Claude Haiku 4.5',
-    hint: 'Le plus rapide et le moins cher — pour générer en volume',
-  },
-] as const;
-
-export const DEFAULT_MODEL = AVAILABLE_MODELS[0].id;
 
 function readStorage(key: string): string | null {
   try {
@@ -73,14 +51,6 @@ export function setApiKey(key: string | null): void {
 
 export function hasApiKey(): boolean {
   return getApiKey() !== null;
-}
-
-export function getModel(): string {
-  return readStorage(MODEL_STORAGE) ?? DEFAULT_MODEL;
-}
-
-export function setModel(model: string): void {
-  writeStorage(MODEL_STORAGE, model);
 }
 
 /**
@@ -119,10 +89,11 @@ export function maskApiKey(key: string): string {
 /**
  * `'auto'` (défaut, inchangé pour tout appareil existant) laisse
  * `taskRouter`/`orchestrator` choisir comme aujourd'hui — disponibilité puis
- * ordre d'enregistrement. Un choix explicite fait essayer CE fournisseur en
- * premier pour toutes les tâches sans préférence propre (voir
- * `taskPreferences.ts`), sans jamais empêcher le repli sur un autre
- * fournisseur disponible si celui-ci échoue.
+ * ordre d'enregistrement, avec repli réel entre candidats disponibles. Un
+ * choix explicite, lui, restreint l'orchestrateur à CE SEUL fournisseur pour
+ * toutes les tâches sans préférence propre (voir `taskPreferences.ts`) : s'il
+ * échoue, la demande échoue avec son erreur à lui, jamais une bascule
+ * silencieuse vers un autre — voir `orchestrator.ts` → `resolveProviderChoice`.
  */
 export type PreferredProvider = 'auto' | ProviderId;
 

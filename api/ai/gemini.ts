@@ -114,7 +114,7 @@ export default async function handler(request: Request): Promise<Response> {
       return errorResponse('upstream_auth', 'La clé Gemini configurée côté serveur est refusée.', 502);
     }
     if (upstream.status === 429) {
-      return errorResponse('upstream_quota', 'Limite de débit Gemini atteinte. Réessaie plus tard.', 429);
+      return errorResponse('upstream_rate_limit', 'Limite de débit Gemini atteinte. Réessaie plus tard.', 429);
     }
     if (upstream.status >= 500) {
       return errorResponse('upstream_unavailable', 'Gemini est momentanément indisponible.', 502);

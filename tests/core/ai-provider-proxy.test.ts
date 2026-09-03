@@ -62,7 +62,7 @@ describe.each([
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
-      json: async () => ({ error: 'upstream_quota', message: 'Limite de débit atteinte. Réessaie plus tard.' }),
+      json: async () => ({ error: 'upstream_rate_limit', message: 'Limite de débit atteinte. Réessaie plus tard.' }),
     }) as unknown as typeof fetch;
 
     await expect(provider.ask(ASK_OPTIONS)).rejects.toThrow(/débit/);

@@ -100,8 +100,18 @@ export async function parseAskBody(request: Request): Promise<ProxyAskBody | nul
   };
 }
 
-/** Code d'erreur STABLE consommé par `services/ai/providers/*` — jamais un message de fournisseur brut, qui pourrait contenir des détails imprévisibles. */
-export type ProxyErrorCode = 'not_configured' | 'invalid_request' | 'upstream_auth' | 'upstream_quota' | 'upstream_unavailable' | 'upstream_timeout' | 'upstream_error' | 'invalid_response';
+/**
+ * Code d'erreur STABLE consommé par `services/ai/providers/*` — jamais un
+ * message de fournisseur brut, qui pourrait contenir des détails
+ * imprévisibles.
+ *
+ * `upstream_rate_limit` (transitoire — réessayer plus tard) et
+ * `upstream_billing` (facturation/crédits épuisés — ne réessaiera jamais
+ * tout seul) sont volontairement distincts : les confondre sous un seul
+ * « upstream_quota » revenait à dire « réessaie plus tard » à quelqu'un dont
+ * le compte est à sec, ce qui n'arrivera jamais tout seul.
+ */
+export type ProxyErrorCode = 'not_configured' | 'invalid_request' | 'upstream_auth' | 'upstream_rate_limit' | 'upstream_billing' | 'upstream_unavailable' | 'upstream_timeout' | 'upstream_error' | 'invalid_response';
 
 export function errorResponse(code: ProxyErrorCode, message: string, status: number): Response {
   return jsonResponse({ error: code, message }, status);
