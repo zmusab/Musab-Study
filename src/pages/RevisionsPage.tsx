@@ -11,7 +11,7 @@ import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/c
 import { db } from '@/data/db';
 import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
-import { compareAttempt, type AttemptComparison } from '@/core/revisions/compareAttempt';
+import { evaluateAnswer, type AnswerVerdict } from '@/core/revisions/evaluateAnswer';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 
 /**
@@ -42,10 +42,18 @@ const CONFIDENCE_SEGMENTS = [
   { value: 'high' as const, label: 'Sûr' },
 ];
 
-const COMPARISON_LABEL: Record<AttemptComparison, { text: string; color: string }> = {
-  close: { text: '✓ Ta réponse semble correspondre', color: 'var(--success)' },
-  partial: { text: '≈ Partiellement — vérifie les détails', color: 'var(--warning)' },
-  different: { text: '✕ Assez différente de la réponse attendue', color: 'var(--ink-soft)' },
+const VERDICT_LABEL: Record<AnswerVerdict, { text: string; color: string; tint: string }> = {
+  correct: { text: '🟢 Correct', color: 'var(--success)', tint: 'var(--success-tint)' },
+  partial: { text: '🟡 Partiellement correct', color: 'var(--warning)', tint: 'var(--warning-tint)' },
+  incorrect: { text: '🔴 Incorrect', color: 'var(--danger)', tint: 'var(--danger-tint)' },
+  indeterminate: { text: '⚪ Évaluation indisponible', color: 'var(--ink-soft)', tint: 'var(--surface-2)' },
+};
+
+const VERDICT_MESSAGE: Record<AnswerVerdict, string | null> = {
+  correct: null,
+  partial: null,
+  incorrect: null,
+  indeterminate: 'Je ne peux pas déterminer automatiquement si ta réponse est correcte. Juge ta réponse toi-même.',
 };
 
 interface SessionSummary {
@@ -74,7 +82,8 @@ function ReviewSession({
 
   const current = queue[0];
   const progressPct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
-  const comparison = current ? compareAttempt(attempt, current.answer) : null;
+  const hasAttempt = attempt.trim().length > 0;
+  const evaluation = current && hasAttempt ? evaluateAnswer(attempt, current.answer) : null;
 
   const handleRate = async (rating: Rating) => {
     if (!current) return;
@@ -136,25 +145,33 @@ function ReviewSession({
                   transition={springSoft}
                   className="overflow-hidden"
                 >
-                  {attempt.trim().length > 0 && (
+                  {hasAttempt && (
                     <div className="mt-4 border-t border-[var(--line)] pt-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
-                          Ta réponse
-                        </p>
-                        {comparison && (
-                          <span
-                            className="text-[0.74rem] font-medium"
-                            style={{ color: COMPARISON_LABEL[comparison].color }}
-                            data-review-comparison={comparison}
-                          >
-                            {COMPARISON_LABEL[comparison].text}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
+                        Ta réponse
+                      </p>
                       <p className="mt-1 text-[0.9rem] leading-relaxed text-[var(--ink-soft)]" data-review-your-answer>
                         {attempt}
                       </p>
+                      {evaluation && (
+                        <div
+                          className="mt-3 rounded-[var(--radius-control)] px-3 py-2"
+                          style={{ backgroundColor: VERDICT_LABEL[evaluation.verdict].tint }}
+                          data-review-verdict={evaluation.verdict}
+                        >
+                          <p
+                            className="text-[0.84rem] font-semibold"
+                            style={{ color: VERDICT_LABEL[evaluation.verdict].color }}
+                          >
+                            {VERDICT_LABEL[evaluation.verdict].text}
+                          </p>
+                          {(evaluation.explanation ?? VERDICT_MESSAGE[evaluation.verdict]) && (
+                            <p className="mt-1 text-[0.78rem] leading-relaxed text-[var(--ink-soft)]">
+                              {evaluation.explanation ?? VERDICT_MESSAGE[evaluation.verdict]}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="mt-4 border-t border-[var(--line)] pt-4">
@@ -180,7 +197,7 @@ function ReviewSession({
             data-review-attempt
           />
           <Button block onClick={() => setRevealed(true)} data-review-validate>
-            Valider
+            Vérifier ma réponse
           </Button>
           <button
             type="button"
@@ -195,8 +212,8 @@ function ReviewSession({
         <div className="mt-4 flex flex-col gap-3">
           <div className="flex flex-col items-center gap-2 text-center">
             <span className="text-[0.78rem] text-[var(--ink-faint)]">
-              {attempt.trim().length > 0
-                ? 'La comparaison ci-dessus n’est qu’un indice approximatif — c’est à toi de juger : ta réponse correspondait-elle vraiment ?'
+              {hasAttempt
+                ? 'L’évaluation ci-dessus est un repère pédagogique local — c’est à toi de juger, honnêtement, si tu as vraiment su répondre.'
                 : 'Avant de voir la réponse, tu étais…'}
             </span>
             <SegmentedControl segments={CONFIDENCE_SEGMENTS} value={confidence} onChange={setConfidence} size="sm" />

@@ -19,6 +19,7 @@ const LOCAL_ENGINE_FILES = [
   'src/services/local/localNotions.ts',
   'src/services/local/localAnswer.ts',
   'src/services/local/citation.ts',
+  'src/services/local/textQuality.ts',
 ];
 
 const FORBIDDEN_PATTERNS = [/aiOrchestrator/, /from ['"]@\/services\/ai\//, /from ['"]\.\.?\/.*services\/ai\//];

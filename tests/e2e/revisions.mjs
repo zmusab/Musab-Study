@@ -70,6 +70,8 @@ await page.locator('[data-review-validate]').click();
 await page.waitForTimeout(400);
 check('La réponse tapée par l’étudiant est rappelée avant la bonne réponse',
   await page.locator('[data-review-your-answer]').getByText('Environ 20 mm, je crois.').isVisible());
+check('Un verdict d’évaluation locale s’affiche avant la réponse attendue',
+  await page.locator('[data-review-verdict]').isVisible());
 check('La réponse attendue se révèle', await main.getByText('Environ 22 mm.').isVisible());
 check('Les 4 boutons de notation sont visibles', await page.getByRole('button', { name: 'Facile' }).isVisible());
 

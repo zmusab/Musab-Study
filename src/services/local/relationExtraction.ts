@@ -5,6 +5,7 @@ import {
   splitEnumerationItems,
   splitIntoSentences,
 } from './textStructure';
+import { isPlausibleSubject, isPlausibleAnswerText } from './textQuality';
 import type { DocumentChunk, ID } from '@/types';
 
 /**
@@ -136,11 +137,12 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
   if (cleanNegation) {
     const [, subjectRaw, remainderRaw] = cleanNegation;
     const subject = subjectRaw!.trim();
-    if (subject.length === 0 || /^\d/.test(subject)) return null;
+    const negationObject = trimTrailingPeriod(remainderRaw!);
+    if (!isPlausibleSubject(subject) || !isPlausibleAnswerText(negationObject)) return null;
     return {
       subject,
       predicate: 'possession',
-      object: trimTrailingPeriod(remainderRaw!),
+      object: negationObject,
       items: null,
       countWord: null,
       countNoun: null,
@@ -156,11 +158,12 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
   const classification = CLASSIFICATION_PATTERN.exec(trimmed);
   if (classification) {
     const [, subjectRaw, bodyRaw] = classification;
+    const classificationSubject = subjectRaw!.trim();
     const object = trimTrailingPeriod(bodyRaw!);
     const items = itemsFromObject(object);
-    if (items) {
+    if (items && isPlausibleSubject(classificationSubject) && isPlausibleAnswerText(object)) {
       return {
-        subject: subjectRaw!.trim(),
+        subject: classificationSubject,
         predicate: 'classification',
         object,
         items,
@@ -179,9 +182,9 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
     if (!match) continue;
     const [, subjectRaw, objectRaw] = match;
     const subject = subjectRaw!.trim();
-    if (subject.length === 0 || /^\d/.test(subject)) continue;
+    if (!isPlausibleSubject(subject)) continue;
     const object = trimTrailingPeriod(objectRaw!);
-    if (object.length === 0) continue;
+    if (!isPlausibleAnswerText(object)) continue;
 
     const count = ITEM_PREDICATES.has(rule.predicate) ? detectLeadingCount(object) : null;
     const items = ITEM_PREDICATES.has(rule.predicate) ? itemsFromObject(object) : null;
@@ -201,7 +204,7 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
 
   // ── Dernier recours : liste inline sans verbe reconnu ("Les branches : a, b, c"). ──
   const inline = detectInlineEnumeration(trimmed);
-  if (inline && inline.intro) {
+  if (inline && inline.intro && isPlausibleSubject(inline.intro)) {
     return {
       subject: inline.intro,
       predicate: 'composition',
@@ -222,7 +225,7 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
 /** Faits issus de listes à puces du fragment — hors du flux phrase par phrase. */
 function factsFromBullets(chunk: DocumentChunk): RawFact[] {
   return detectBulletEnumerations(chunk.text)
-    .filter((match) => match.intro !== null && match.intro.length >= 4)
+    .filter((match) => match.intro !== null && isPlausibleSubject(match.intro))
     .map((match) => ({
       subject: match.intro!,
       predicate: 'composition' as const,
