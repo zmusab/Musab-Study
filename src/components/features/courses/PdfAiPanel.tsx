@@ -4,6 +4,7 @@ import { db } from '@/data/db';
 import { listChunks } from '@/data/repositories/documents';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { courseSystemPrompt, verifyCourseAnswer } from '@/services/ai/tutor';
+import { studyChapter } from '@/services/assistant/chapterStudy';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { hasApiKey } from '@/services/ai/settings';
 import type { Citation, ID } from '@/types';
@@ -14,6 +15,16 @@ import type { Citation, ID } from '@/types';
  * chapitre » (tous les chunks du chapitre). Même garde-fou que partout
  * ailleurs dans l'app : la réponse n'est acceptée que si elle cite un
  * fragment réellement transmis (`verifyCourseAnswer`).
+ *
+ * « Résume ce chapitre » délègue à `studyChapter()` — EXACTEMENT la fonction
+ * que l'Assistant IA (onglet « Étudier ») utilise pour la même action. Avant,
+ * les deux endroits reconstruisaient chacun leur propre prompt (budget de
+ * contexte différent, ordre des extraits différent, texte légèrement
+ * différent) : un résumé déjà obtenu depuis l'un ne pouvait jamais servir de
+ * cache pour l'autre, alors qu'il s'agit de la même question sur le même
+ * chapitre. Un seul appelant, un seul texte de requête → le cache de
+ * `aiOrchestrator` (voir `services/ai/cache.ts`) les reconnaît désormais
+ * comme identiques.
  */
 export function PdfAiPanel({
   subjectId,
@@ -45,25 +56,31 @@ export function PdfAiPanel({
     setLoading(scope);
     setAnswer(null);
     try {
+      // « Résume ce chapitre » est la MÊME question que l'action « Résumer ce
+      // cours » de l'Assistant IA — voir `studyChapter()` : un seul appelant,
+      // pour que le cache reconnaisse un résumé déjà obtenu pour ce chapitre,
+      // quelle que soit la porte d'entrée utilisée.
+      if (scope === 'chapter') {
+        const result = await studyChapter({ subjectId, chapterId }, 'summary', program);
+        if (!result) {
+          notify('Aucun contenu indexé pour ce chapitre.', 'error');
+          return;
+        }
+        setAnswer({ text: result.verified.text, citations: result.verified.citations });
+        return;
+      }
+
       const allChunks = await listChunks({ subjectId, chapterId });
-      const relevant =
-        scope === 'page'
-          ? allChunks.filter(
-              (chunk) =>
-                chunk.documentId === documentId &&
-                chunk.pageStart !== null &&
-                chunk.pageStart <= currentPage &&
-                (chunk.pageEnd ?? chunk.pageStart) >= currentPage,
-            )
-          : allChunks;
+      const relevant = allChunks.filter(
+        (chunk) =>
+          chunk.documentId === documentId &&
+          chunk.pageStart !== null &&
+          chunk.pageStart <= currentPage &&
+          (chunk.pageEnd ?? chunk.pageStart) >= currentPage,
+      );
 
       if (relevant.length === 0) {
-        notify(
-          scope === 'page'
-            ? "Cette page n'a pas pu être associée à un passage indexé."
-            : 'Aucun contenu indexé pour ce chapitre.',
-          'error',
-        );
+        notify("Cette page n'a pas pu être associée à un passage indexé.", 'error');
         return;
       }
 
@@ -81,15 +98,10 @@ export function PdfAiPanel({
       };
       const context = buildContext(scored, lookup);
 
-      const prompt =
-        scope === 'page'
-          ? `Explique cette page de mon cours en langage clair et pédagogique, comme à un étudiant qui la découvre.`
-          : `Résume ce chapitre : dégage les idées principales et les points importants à retenir, de façon structurée.`;
-
       const raw = await aiOrchestrator.ask({
         system: courseSystemPrompt(context, program),
-        prompt,
-        task: scope === 'page' ? 'pdf-explain-page' : 'pdf-summarize-chapter',
+        prompt: `Explique cette page de mon cours en langage clair et pédagogique, comme à un étudiant qui la découvre.`,
+        task: 'pdf-explain-page',
       });
 
       const verified = verifyCourseAnswer(raw, context);
