@@ -120,7 +120,7 @@ check('Les compteurs de la matière sont à jour',
 await nav.getByRole('link', { name: 'IA', exact: true }).first().click();
 await page.waitForTimeout(700);
 check('L’assistant s’ouvre sur la matière importée',
-  await page.getByRole('heading', { name: 'Assistant IA', exact: true }).isVisible());
+  await page.getByRole('heading', { name: 'IA', exact: true }).isVisible());
 
 await page.getByPlaceholder(/question sur tes cours/).fill('Innervation du masséter ?');
 await page.getByRole('button', { name: 'Envoyer' }).click();

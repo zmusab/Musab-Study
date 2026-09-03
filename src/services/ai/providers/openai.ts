@@ -1,4 +1,5 @@
 import { isProxyProviderAvailable } from '../providerStatus';
+import { getModelFor } from '../models';
 import { askViaProxy } from './proxyClient';
 import type { AIProvider, AIProviderCapabilities } from '../types';
 
@@ -32,5 +33,13 @@ export const openaiProvider: AIProvider = {
   label: 'OpenAI (ChatGPT)',
   capabilities: CAPABILITIES,
   isAvailable: () => isProxyProviderAvailable('openai'),
-  ask: (options) => askViaProxy('openai', 'OpenAI', options),
+  // Le modèle choisi par l'utilisateur POUR OPENAI (réglages) s'applique,
+  // sauf si la tâche en impose un (`taskRouter`). Sans cela, le sélecteur
+  // « Modèle » n'avait aucun effet ici : le relais retombait toujours sur son
+  // modèle par défaut.
+  ask: (options) =>
+    askViaProxy('openai', 'OpenAI', {
+      ...options,
+      preferredModel: options.preferredModel ?? getModelFor('openai'),
+    }),
 };

@@ -56,6 +56,17 @@ export function resolveProviderChoice(task: AITask): ProviderChoice {
   return { providerId: null, source: 'auto' };
 }
 
+/**
+ * Résultat d'un test de connexion. `message` est destiné à l'utilisateur —
+ * une phrase compréhensible ; `detail` est le brut, réservé à la section
+ * « Détails techniques » et jamais affiché d'emblée.
+ */
+export interface ProviderTestResult {
+  ok: boolean;
+  message: string;
+  detail?: string;
+}
+
 export interface AiCallLogEntry {
   task: AITask;
   providerId: ProviderId;
@@ -195,11 +206,15 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
    * Elle ignore volontairement les préférences de fournisseur : on teste
    * celui qu'on désigne, pas celui que l'orchestrateur choisirait.
    */
-  async function testProvider(providerId: ProviderId): Promise<{ ok: boolean; message: string }> {
+  async function testProvider(providerId: ProviderId): Promise<ProviderTestResult> {
     const provider = providers.find((entry) => entry.id === providerId);
     if (!provider) return { ok: false, message: `Fournisseur « ${providerId} » inconnu.` };
     if (!provider.isAvailable()) {
-      return { ok: false, message: `${provider.label} n'est pas configuré.` };
+      return {
+        ok: false,
+        message: `${provider.label} n'est pas configuré.`,
+        detail: 'Aucune clé détectée pour ce fournisseur.',
+      };
     }
 
     const startedAt = Date.now();
@@ -218,7 +233,8 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
       });
       return {
         ok: true,
-        message: `${provider.label} a répondu (${answer.trim().slice(0, 40) || 'réponse vide'}).`,
+        message: 'Connexion réussie.',
+        detail: `${provider.label} · ${Date.now() - startedAt} ms · réponse : « ${answer.trim().slice(0, 40)} »`,
       };
     } catch (error) {
       recordLog({
@@ -229,7 +245,15 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
         errorMessage: error instanceof Error ? error.message : String(error),
         at: new Date().toISOString(),
       });
-      return { ok: false, message: describeAiError(error) };
+      // Le message reste celui, en français, que le fournisseur a produit ;
+      // le détail brut n'apparaît que derrière « Détails techniques », pour
+      // ne pas mettre un code d'erreur sous les yeux de quelqu'un qui veut
+      // juste savoir si ça marche.
+      return {
+        ok: false,
+        message: describeAiError(error),
+        detail: error instanceof Error ? `${error.name} · ${error.message}` : String(error),
+      };
     }
   }
 

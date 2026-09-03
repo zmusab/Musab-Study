@@ -81,3 +81,34 @@ describe('describeAnthropicError — l’erreur d’espace de travail devient un
     expect(message).toMatch(/Workspace ID/);
   });
 });
+
+/**
+ * Anthropic répond 400 — et non 402 — quand le solde est épuisé. Le message
+ * brut est en anglais et ressemble à un refus de requête : confondu avec une
+ * mauvaise clé, il envoie recréer une clé qui fonctionne parfaitement.
+ */
+describe('describeAnthropicError — un solde épuisé n’est pas une mauvaise clé', () => {
+  it('nomme les crédits et rassure sur la validité de la clé', async () => {
+    const [{ describeAnthropicError }, { default: Anthropic }] = await Promise.all([
+      import('@/services/ai/providers/anthropic'),
+      import('@anthropic-ai/sdk'),
+    ]);
+    const error = new Anthropic.APIError(
+      400,
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'Your credit balance is too low to access the Anthropic API.',
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    const message = describeAnthropicError(error);
+    expect(message).toMatch(/[Cc]rédits/);
+    expect(message).toMatch(/clé, elle, reste valide|reste valide/);
+    expect(message).not.toContain('credit balance');
+  });
+});

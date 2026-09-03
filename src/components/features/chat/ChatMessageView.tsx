@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Chip } from '@/components/ui';
+import { AnswerText } from './AnswerText';
 import { springSoft } from '@/components/motion/transitions';
 import { cn } from '@/lib/cn';
 import type { ChatMessage } from '@/types';
@@ -21,7 +22,12 @@ const PROVENANCE_BADGE = {
   error: { label: 'Erreur', icon: '✕', color: 'var(--danger)' },
 } as const;
 
-export function ChatMessageView({ message }: { message: ChatMessage }) {
+export interface AnswerAction {
+  label: string;
+  onClick: () => void;
+}
+
+export function ChatMessageView({ message, actions }: { message: ChatMessage; actions?: AnswerAction[] }) {
   const reduced = useReducedMotion();
   const [showSources, setShowSources] = useState(false);
 
@@ -48,14 +54,33 @@ export function ChatMessageView({ message }: { message: ChatMessage }) {
 
       <div
         className={cn(
-          'surface-card whitespace-pre-wrap px-4 py-3 text-[0.92rem] leading-relaxed',
+          'surface-card px-4 py-3',
           message.provenance === 'insufficient' &&
             'border-[var(--warning)] bg-[var(--warning-tint)]',
           message.provenance === 'error' && 'border-[var(--danger)] bg-[var(--danger-tint)]',
         )}
       >
-        {message.text}
+        <AnswerText text={message.text} />
       </div>
+
+      {/* Actions proposées seulement sous une VRAIE réponse — jamais sous une
+          erreur ni sous un « absent de tes cours », où elles n'auraient rien
+          à reprendre. */}
+      {actions && (message.provenance === 'course' || message.provenance === 'internet') && (
+        <div className="mt-2 flex flex-wrap gap-2" data-answer-actions>
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              data-touch-target
+              className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[0.78rem] text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--ink)] [-webkit-tap-highlight-color:transparent]"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {message.citations.length > 0 && (
         <div className="mt-2">

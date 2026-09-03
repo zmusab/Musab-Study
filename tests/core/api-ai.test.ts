@@ -313,6 +313,60 @@ describe('api/ai/gemini — un 400 « clé invalide » est nommé, jamais laiss�
   });
 });
 
+/**
+ * LA cause des réponses vides et des blocages Gemini observés en production :
+ * les modèles Gemini 3.x réfléchissent par défaut, et ces jetons sont
+ * décomptés de `maxOutputTokens`. Un budget serré part donc entièrement en
+ * réflexion, sans qu'une seule ligne de réponse soit rédigée.
+ */
+describe('api/ai/gemini — le budget de réponse laisse toujours de quoi répondre', () => {
+  function captureBody(): { read: () => Record<string, unknown> } {
+    let sent: Record<string, unknown> = {};
+    global.fetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+      } as Response);
+    }) as unknown as typeof fetch;
+    return { read: () => sent };
+  }
+
+  it('un budget minuscule est relevé — sinon la réflexion consomme tout', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    const captured = captureBody();
+
+    await geminiHandler(askRequest({ system: 's', prompt: 'p', maxTokens: 16 }));
+
+    const config = captured.read().generationConfig as { maxOutputTokens: number };
+    expect(config.maxOutputTokens).toBeGreaterThanOrEqual(2048);
+  });
+
+  it('un budget déjà confortable n’est jamais réduit', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    const captured = captureBody();
+
+    await geminiHandler(askRequest({ system: 's', prompt: 'p', maxTokens: 8192 }));
+
+    const config = captured.read().generationConfig as { maxOutputTokens: number };
+    expect(config.maxOutputTokens).toBe(8192);
+  });
+
+  it('une réponse sans texte pour cause de budget épuisé le dit, au lieu d’un « format inattendu »', async () => {
+    process.env.GEMINI_API_KEY = 'test-key-never-real';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] }),
+    }) as unknown as typeof fetch;
+
+    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
+    expect(body.error).toBe('invalid_response');
+    expect(body.message).toMatch(/réflexion/i);
+  });
+});
+
 describe('api/ai/status — ne révèle jamais une valeur de clé', () => {
   it('reflète fidèlement la présence/absence de chaque clé', async () => {
     process.env.OPENAI_API_KEY = 'sk-should-not-appear';

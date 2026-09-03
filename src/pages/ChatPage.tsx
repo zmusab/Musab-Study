@@ -1,24 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Link, useSearchParams } from 'react-router-dom';
-import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
-import {
-  Button,
-  EmptyState,
-  Icon,
-  Input,
-  SegmentedControl,
-  Select,
-  Spinner,
-  useToast,
-} from '@/components/ui';
-import { ChatMessageView } from '@/components/features/chat/ChatMessageView';
-import { AssistantHub, type AssistantExchangeResult } from '@/components/features/assistant/AssistantHub';
+import { Button, EmptyState, Icon, Input, Spinner, useToast } from '@/components/ui';
+import { ChatMessageView, type AnswerAction } from '@/components/features/chat/ChatMessageView';
+import { AssistantSheet, type AssistantCategory, type AssistantExchangeResult } from '@/components/features/assistant/AssistantSheet';
 import { useChapters, useSubjects } from '@/hooks/useSubjects';
 import { useProfile } from '@/hooks/useProfile';
 import { db } from '@/data/db';
 import { appendChatMessage, clearChat } from '@/data/repositories/chat';
+import { createNote } from '@/data/repositories/notes';
 import { listChunks } from '@/data/repositories/documents';
 import { bm25Retriever, buildContext, type ContextLookup } from '@/services/rag/retrieval';
 import {
@@ -27,24 +19,44 @@ import {
   verifyCourseAnswer,
   verifyInternetAnswer,
 } from '@/services/ai/tutor';
-import { aiOrchestrator } from '@/services/ai/orchestrator';
-import { hasApiKey } from '@/services/ai/settings';
+import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
+import { getPreferredProvider, hasApiKey, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
+import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
+
+/**
+ * IA — une page, une conversation.
+ *
+ * Tout ce qui n'est pas « poser une question » est SECONDAIRE et le reste
+ * visuellement : quatre intentions ouvrent le reste des actions à la
+ * demande (`AssistantSheet`), la source et l'assistant tiennent sur une
+ * ligne discrète. Aucune capacité n'a disparu — elles sont regroupées.
+ */
 
 type Mode = 'cours' | 'internet';
 
 /** Nombre de fragments transmis au modèle. */
 const RETRIEVAL_LIMIT = 8;
 
-const MODES = [
-  { value: 'cours' as const, label: 'Mes cours', icon: '📚' },
-  { value: 'internet' as const, label: 'Internet', icon: '🌐' },
+const INTENTS: { category: AssistantCategory; label: string; icon: string }[] = [
+  { category: 'comprendre', label: 'Comprendre', icon: '🧠' },
+  { category: 'etudier', label: 'Étudier', icon: '📚' },
+  { category: 'memoriser', label: 'Mémoriser', icon: '🎴' },
+  { category: 'examen', label: "Préparer l'examen", icon: '🎯' },
+];
+
+const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
+  { value: 'auto', label: 'Automatique' },
+  { value: 'anthropic', label: 'Claude' },
+  { value: 'openai', label: 'ChatGPT' },
+  { value: 'gemini', label: 'Gemini' },
 ];
 
 export function ChatPage() {
   const subjects = useSubjects();
   const profile = useProfile();
   const { notify } = useToast();
+  const navigate = useNavigate();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [subjectId, setSubjectId] = useState<ID | ''>('');
@@ -53,6 +65,8 @@ export function ChatPage() {
   const [question, setQuestion] = useState(() => searchParams.get('prompt') ?? '');
   const [pending, setPending] = useState<string | null>(null);
   const [streamed, setStreamed] = useState('');
+  const [assistant, setAssistant] = useState<PreferredProvider>(getPreferredProvider);
+  const [sheet, setSheet] = useState<AssistantCategory | null>(null);
 
   const chapters = useChapters(subjectId || undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -62,9 +76,8 @@ export function ChatPage() {
     if (!subjectId && subjects && subjects.length > 0) setSubjectId(subjects[0]!.id);
   }, [subjects, subjectId]);
 
-  // Une question passée depuis l'accueil (« Que veux-tu faire ? ») pré-remplit
-  // le champ plutôt que d'être envoyée seule : la matière n'est pas encore
-  // choisie à ce stade, l'envoi reste un geste explicite.
+  // Une question passée depuis l'accueil pré-remplit le champ plutôt que
+  // d'être envoyée seule : la matière n'est pas encore choisie à ce stade.
   useEffect(() => {
     const prompt = searchParams.get('prompt');
     if (prompt) {
@@ -74,7 +87,6 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Le chapitre choisi doit toujours appartenir à la matière courante.
   useEffect(() => {
     setChapterId('all');
   }, [subjectId]);
@@ -94,6 +106,20 @@ export function ChatPage() {
     return chapters?.find((chapter) => chapter.id === chapterId)?.name ?? 'ce chapitre';
   }, [chapterId, chapters]);
 
+  /**
+   * Le mode Internet exige un fournisseur capable de CHERCHER sur le web —
+   * une seule intégration l'est réellement aujourd'hui. Plutôt que de
+   * laisser l'étudiant découvrir l'échec après avoir écrit sa question, on le
+   * dit ici, avant l'envoi (voir aussi `taskRouter`, qui refuse la tâche).
+   */
+  const internetBlocked = useMemo(() => {
+    if (mode !== 'internet') return null;
+    const choice = resolveProviderChoice('chat-internet');
+    if (!choice.providerId || choice.providerId === 'anthropic') return null;
+    const label = ASSISTANT_OPTIONS.find((option) => option.value === choice.providerId)?.label ?? choice.providerId;
+    return `${label} ne sait pas chercher sur le web. Choisis Claude ou Automatique pour ce mode.`;
+  }, [mode, assistant]);
+
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? question).trim();
     if (trimmed.length === 0 || !subjectId || pending) return;
@@ -103,15 +129,12 @@ export function ChatPage() {
       return;
     }
 
-    // Une action rapide de l'Assistant IA (catégorie « Comprendre ») ne
-    // touche pas au champ de saisie : l'étudiant garde son brouillon en cours.
     if (!overrideText) setQuestion('');
     setStreamed('');
     setPending(trimmed);
     await appendChatMessage({ subjectId, role: 'user', text: trimmed });
 
     try {
-      // 1. Récupération : uniquement dans la portée choisie.
       const chunks = await listChunks({
         subjectId,
         chapterId: chapterId === 'all' ? null : chapterId,
@@ -130,9 +153,8 @@ export function ChatPage() {
       };
       const context = buildContext(scored, lookup);
 
-      // 2. Court-circuit : sans le moindre extrait pertinent, interroger le
-      // modèle ne pourrait produire qu'une réponse invérifiable. On économise
-      // l'appel et on répond honnêtement.
+      // Sans le moindre extrait pertinent, interroger le modèle ne pourrait
+      // produire qu'une réponse invérifiable : on économise l'appel.
       if (mode === 'cours' && context.sources.length === 0) {
         await appendChatMessage({
           subjectId,
@@ -145,8 +167,6 @@ export function ChatPage() {
         return;
       }
 
-      // 3. Interrogation du modèle, via l'orchestrateur — cette page ne sait
-      // pas quel fournisseur répond, seulement quelle tâche elle demande.
       const program = profile.program || 'dentisterie';
       const raw = await aiOrchestrator.ask({
         system:
@@ -159,7 +179,6 @@ export function ChatPage() {
         task: mode === 'cours' ? 'chat-course' : 'chat-internet',
       });
 
-      // 4. Vérification : c'est ici que la provenance est établie.
       const verified =
         mode === 'cours' ? verifyCourseAnswer(raw, context) : verifyInternetAnswer(raw, context);
 
@@ -191,162 +210,284 @@ export function ChatPage() {
   };
 
   /**
-   * Utilisé par les actions « Étudier » de l'Assistant IA (résumer un
-   * chapitre, une fiche de révision, une note, les notions importantes) :
-   * l'appelant a déjà calculé et vérifié sa réponse (`studyChapter`,
-   * `analyzeChapter`, `summarizeNote`) — cette fonction ne fait qu'écrire les
-   * deux messages dans la MÊME conversation que le chat normal, avec
-   * `appendChatMessage`, pour que tout reste visible au même endroit.
+   * Actions proposées sous la dernière réponse. Chacune REPREND une
+   * fonctionnalité existante — la page Flashcards, le Quiz, les Notes — au
+   * lieu d'en refaire une variante ici.
    */
-  const postExchange = async (userText: string, assistant: AssistantExchangeResult) => {
+  const answerActions = (text: string): AnswerAction[] => {
+    if (!subjectId) return [];
+    const scopedChapterId = chapterId === 'all' ? null : chapterId;
+    return [
+      {
+        label: '🧠 Créer des flashcards',
+        onClick: () => navigate(`/flashcards?subject=${subjectId}`),
+      },
+      {
+        label: '📝 Créer un quiz',
+        onClick: () => {
+          const params = new URLSearchParams({ format: 'mixed', count: '10', subject: subjectId });
+          if (scopedChapterId) {
+            params.set('scope', 'chapter');
+            params.set('chapter', scopedChapterId);
+          } else {
+            params.set('scope', 'subject');
+          }
+          navigate(`/quiz?${params.toString()}`);
+        },
+      },
+      {
+        label: '📚 Ajouter aux notes',
+        onClick: () => {
+          void createNote({
+            subjectId,
+            chapterId: scopedChapterId,
+            title: `Réponse de l’assistant — ${new Date().toLocaleDateString('fr-FR')}`,
+            text,
+          }).then(() => notify('Réponse enregistrée dans tes notes.', 'success'));
+        },
+      },
+    ];
+  };
+
+  /** Les actions « Étudier » écrivent dans la MÊME conversation que le chat. */
+  const postExchange = async (userText: string, assistantMessage: AssistantExchangeResult) => {
     if (!subjectId) return;
     await appendChatMessage({ subjectId, role: 'user', text: userText });
     await appendChatMessage({
       subjectId,
       role: 'assistant',
-      text: assistant.text,
-      provenance: assistant.provenance,
-      citations: assistant.citations ?? [],
+      text: assistantMessage.text,
+      provenance: assistantMessage.provenance,
+      citations: assistantMessage.citations ?? [],
     });
   };
 
   if (subjects && subjects.length === 0) {
     return (
       <PageTransition>
-        <PageHeader title="Assistant IA" />
-        <EmptyState
-          icon={<Icon name="ai" size={30} />}
-          title="Importe d’abord un cours"
-          description="L’assistant répond uniquement à partir de tes propres documents. Crée une matière, ajoute un chapitre et importe un PDF — il pourra alors le citer précisément."
-          action={
-            <Link to="/cours">
-              <Button>Aller aux cours</Button>
-            </Link>
-          }
-        />
+        <h1 className="text-[1.75rem] leading-tight">IA</h1>
+        <div className="mt-6">
+          <EmptyState
+            icon={<Icon name="ai" size={30} />}
+            title="Importe d’abord un cours"
+            description="L’assistant répond à partir de tes propres documents. Crée une matière, ajoute un chapitre et importe un PDF — il pourra alors le citer précisément."
+            action={
+              <Link to="/cours">
+                <Button>Aller aux cours</Button>
+              </Link>
+            }
+          />
+        </div>
       </PageTransition>
     );
   }
 
+  const conversationEmpty = messages?.length === 0;
+
   return (
     <PageTransition>
-      <PageHeader
-        title="Assistant IA"
-        subtitle="Il répond à partir de tes cours et cite ses sources. Ce qu’il ne peut pas prouver, il ne l’affirme pas."
-      />
+      <div className="mx-auto flex w-full max-w-[46rem] flex-col">
+        <h1 className="text-[1.75rem] leading-tight">IA</h1>
+        <p className="mt-1 text-[0.95rem] text-[var(--ink-soft)]">
+          {profile.name ? `Bonjour ${profile.name}, que veux-tu travailler ?` : 'Que veux-tu travailler ?'}
+        </p>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <Select
-          label="Matière"
-          value={subjectId}
-          onChange={(event) => setSubjectId(event.target.value)}
-        >
-          {(subjects ?? []).map((subject) => (
-            <option key={subject.id} value={subject.id}>
-              {subject.name}
-            </option>
+        {/* Quatre intentions. Tout le reste des actions vit derrière elles. */}
+        <div className="mt-4 flex flex-wrap gap-2" data-ai-intents>
+          {INTENTS.map((intent) => (
+            <button
+              key={intent.category}
+              type="button"
+              onClick={() => setSheet(intent.category)}
+              data-touch-target
+              data-ai-intent={intent.category}
+              className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-[0.85rem] font-medium transition-colors hover:bg-[var(--surface-2)] [-webkit-tap-highlight-color:transparent]"
+            >
+              <span aria-hidden>{intent.icon}</span> {intent.label}
+            </button>
           ))}
-        </Select>
-        <Select
-          label="Portée"
-          value={chapterId}
-          onChange={(event) => setChapterId(event.target.value as ID | 'all')}
-        >
-          <option value="all">Toute la matière</option>
-          {(chapters ?? []).map((chapter) => (
-            <option key={chapter.id} value={chapter.id}>
-              {chapter.name}
-            </option>
+        </div>
+
+        {/* Le champ de question, toujours au même endroit, jamais à chercher. */}
+        <div className="mt-4 flex gap-2">
+          <Input
+            value={question}
+            placeholder={mode === 'cours' ? 'Une question sur tes cours…' : 'Une question, cours + internet…'}
+            className="flex-1"
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+            data-ai-question
+          />
+          <Button loading={pending !== null} disabled={question.trim().length === 0} onClick={() => void handleSend()}>
+            Envoyer
+          </Button>
+        </div>
+
+        {/* Source, portée, assistant : une seule ligne, volontairement sobre. */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--line)] pt-3 text-[0.82rem]">
+          <div className="flex gap-1" role="group" aria-label="Source des réponses">
+            {(['cours', 'internet'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                aria-pressed={mode === value}
+                data-touch-target
+                data-ai-source={value}
+                className={cn(
+                  'rounded-full px-3 py-1.5 font-medium transition-colors [-webkit-tap-highlight-color:transparent]',
+                  mode === value
+                    ? 'bg-[var(--accent)] text-white'
+                    : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
+                )}
+              >
+                {value === 'cours' ? '📚 Mes cours' : '🌐 Internet'}
+              </button>
+            ))}
+          </div>
+
+          <span className="text-[var(--ink-faint)]" aria-hidden>
+            ·
+          </span>
+
+          <select
+            value={subjectId}
+            onChange={(event) => setSubjectId(event.target.value)}
+            aria-label="Matière"
+            data-ai-subject
+            className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
+          >
+            {(subjects ?? []).map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={chapterId}
+            onChange={(event) => setChapterId(event.target.value as ID | 'all')}
+            aria-label="Portée"
+            data-ai-scope
+            className="max-w-[10rem] truncate bg-transparent text-[var(--ink-soft)] outline-none"
+          >
+            <option value="all">Toute la matière</option>
+            {(chapters ?? []).map((chapter) => (
+              <option key={chapter.id} value={chapter.id}>
+                {chapter.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={assistant}
+            onChange={(event) => {
+              const value = event.target.value as PreferredProvider;
+              setAssistant(value);
+              setPreferredProvider(value);
+            }}
+            aria-label="Assistant"
+            data-ai-assistant
+            className="ml-auto bg-transparent text-[var(--ink-soft)] outline-none"
+          >
+            {ASSISTANT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                Assistant : {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {internetBlocked && (
+          <p
+            className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning)] bg-[var(--warning-tint)] px-3.5 py-2.5 text-[0.8rem] leading-relaxed"
+            data-ai-internet-blocked
+          >
+            {internetBlocked}
+          </p>
+        )}
+
+        {/* ────────────── La conversation ────────────── */}
+        <div className="mt-6 flex flex-col gap-4">
+          {!conversationEmpty && (
+            <div className="flex items-center justify-between">
+              <h2 className="text-[0.85rem] font-semibold text-[var(--ink-faint)]">Conversation</h2>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  if (subjectId) await clearChat(subjectId);
+                }}
+              >
+                Effacer
+              </Button>
+            </div>
+          )}
+
+          {messages?.map((message, index) => (
+            <ChatMessageView
+              key={message.id}
+              message={message}
+              // Seulement sous la DERNIÈRE réponse : proposer de reprendre un
+              // échange déjà enfoui n'a pas de sens, et répéter trois boutons
+              // sous chaque message reconstituerait l'encombrement qu'on vient
+              // de retirer.
+              actions={index === (messages?.length ?? 0) - 1 ? answerActions(message.text) : undefined}
+            />
           ))}
-        </Select>
+
+          {pending && (
+            <FadeUp className="max-w-[94%]">
+              <div className="surface-card whitespace-pre-wrap px-4 py-3 text-[0.92rem] leading-relaxed">
+                {streamed.length > 0 ? (
+                  streamed
+                ) : (
+                  <span className="flex items-center gap-2 text-[var(--ink-soft)]">
+                    <Spinner size={14} />
+                    {mode === 'internet' ? 'Recherche internet…' : 'Lecture de tes cours…'}
+                  </span>
+                )}
+              </div>
+            </FadeUp>
+          )}
+
+          {conversationEmpty && !pending && (
+            <p className="text-[0.85rem] leading-relaxed text-[var(--ink-faint)]">
+              Par exemple : « Quelle est l’innervation du masséter ? ». En mode <strong>Mes cours</strong>, chaque
+              affirmation est rattachée à un passage précis de tes documents — et si l’information n’y est pas,
+              l’assistant le dit au lieu de l’inventer.
+            </p>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {subjectId && (
-        <div className="mb-5">
-          <AssistantHub
-            subjectId={subjectId}
-            chapterId={chapterId}
-            chapters={chapters ?? []}
-            program={profile.program || 'dentisterie'}
-            onAskChat={(promptText) => void handleSend(promptText)}
-            onPostExchange={postExchange}
-          />
-        </div>
-      )}
-
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <SegmentedControl segments={MODES} value={mode} onChange={setMode} size="sm" />
-        {messages && messages.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={async () => {
-              if (subjectId) await clearChat(subjectId);
-            }}
-          >
-            Effacer la conversation
-          </Button>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-4">
-        {messages?.map((message) => <ChatMessageView key={message.id} message={message} />)}
-
-        {pending && (
-          <FadeUp className="max-w-[94%]">
-            <div className="surface-card whitespace-pre-wrap px-4 py-3 text-[0.92rem] leading-relaxed">
-              {streamed.length > 0 ? (
-                streamed
-              ) : (
-                <span className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <Spinner size={14} />
-                  {mode === 'internet' ? 'Recherche internet…' : 'Lecture de tes cours…'}
-                </span>
-              )}
-            </div>
-          </FadeUp>
-        )}
-
-        {messages?.length === 0 && !pending && (
-          <EmptyState
-            icon={<Icon name="ai" size={30} />}
-            title="Pose ta première question"
-            description={
-              <>
-                Par exemple : « Quelle est l’innervation du masséter ? ». En mode{' '}
-                <strong>Mes cours</strong>, chaque affirmation sera rattachée à un passage précis de
-                tes documents — et si l’information n’y est pas, l’assistant te le dira au lieu de
-                l’inventer.
-              </>
-            }
-          />
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="sticky bottom-24 z-10 mt-5 flex gap-2 md:bottom-6">
-        <Input
-          value={question}
-          placeholder={
-            mode === 'cours' ? 'Une question sur tes cours…' : 'Une question, cours + internet…'
-          }
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void handleSend();
-            }
+        <AssistantSheet
+          open={sheet !== null}
+          category={sheet ?? 'comprendre'}
+          onCategoryChange={setSheet}
+          onClose={() => setSheet(null)}
+          subjectId={subjectId}
+          chapterId={chapterId}
+          chapters={chapters ?? []}
+          program={profile.program || 'dentisterie'}
+          onAskChat={(promptText) => {
+            setSheet(null);
+            void handleSend(promptText);
+          }}
+          onPostExchange={async (userText, result) => {
+            setSheet(null);
+            await postExchange(userText, result);
           }}
         />
-        <Button
-          loading={pending !== null}
-          disabled={question.trim().length === 0}
-          onClick={() => void handleSend()}
-        >
-          Envoyer
-        </Button>
-      </div>
+      )}
     </PageTransition>
   );
 }

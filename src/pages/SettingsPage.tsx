@@ -8,25 +8,14 @@ import {
   CardTitle,
   Input,
   SegmentedControl,
-  Select,
   Textarea,
   useConfirm,
   useToast,
 } from '@/components/ui';
-import { HubIaCard } from '@/components/features/settings/HubIaCard';
+import { AiSettingsCard } from '@/components/features/settings/AiSettingsCard';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
 import { useTheme } from '@/hooks/useTheme';
-import {
-  AVAILABLE_MODELS,
-  getApiKey,
-  getModel,
-  getWorkspaceId,
-  maskApiKey,
-  setApiKey,
-  setModel,
-  setWorkspaceId,
-} from '@/services/ai/settings';
 import { exportBackup, importBackup } from '@/services/backup';
 import { convertLegacyDump, isLegacyDump } from '@/services/legacyImport';
 import { clearAllData } from '@/data/db';
@@ -57,10 +46,6 @@ export function SettingsPage() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({ name: '', university: '', section: '', program: '', goals: '' });
-  const [apiKeyDraft, setApiKeyDraft] = useState('');
-  const [storedKey, setStoredKey] = useState<string | null>(null);
-  const [workspaceDraft, setWorkspaceDraft] = useState('');
-  const [model, setModelState] = useState(getModel);
   const [busy, setBusy] = useState(false);
 
   // Le profil arrive de façon asynchrone : on hydrate le formulaire à l'arrivée.
@@ -74,39 +59,9 @@ export function SettingsPage() {
     });
   }, [profile]);
 
-  useEffect(() => {
-    setStoredKey(getApiKey());
-    setWorkspaceDraft(getWorkspaceId() ?? '');
-  }, []);
-
   const handleSaveProfile = async () => {
     await saveProfile(form);
     notify('Profil enregistré.', 'success');
-  };
-
-  const handleSaveKey = () => {
-    const trimmed = apiKeyDraft.trim();
-    if (trimmed.length === 0) {
-      notify('Colle ta clé API avant d’enregistrer.', 'error');
-      return;
-    }
-    setApiKey(trimmed);
-    setStoredKey(trimmed);
-    setApiKeyDraft('');
-    notify('Clé API enregistrée sur cet appareil.', 'success');
-  };
-
-  const handleRemoveKey = async () => {
-    const ok = await confirm({
-      title: 'Supprimer la clé API ?',
-      description: 'Les fonctions IA seront désactivées jusqu’à ce que tu en saisisses une nouvelle.',
-      confirmLabel: 'Supprimer',
-      destructive: true,
-    });
-    if (!ok) return;
-    setApiKey(null);
-    setStoredKey(null);
-    notify('Clé API supprimée.', 'info');
   };
 
   const handleExport = async () => {
@@ -224,105 +179,9 @@ export function SettingsPage() {
         </StaggerItem>
 
         <StaggerItem>
-          <Card>
-            <CardTitle>Assistant IA</CardTitle>
-            <CardSubtitle>
-              Ta clé API est enregistrée <strong>uniquement sur cet appareil</strong>. Elle n’est
-              jamais envoyée ailleurs qu’à Anthropic, et n’est pas incluse dans tes sauvegardes.
-            </CardSubtitle>
-
-            <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--warning)] bg-[var(--warning-tint)] px-3.5 py-3 text-[0.83rem] leading-relaxed text-[var(--ink)]">
-              <strong>À savoir :</strong> cette application est hébergée en statique, sans serveur.
-              La clé est donc lisible par le code de la page. C’est acceptable pour un usage
-              personnel, mais n’utilise pas une clé partagée avec d’autres personnes, et révoque-la
-              depuis la console Anthropic si tu la penses exposée.
-            </div>
-
-            <div className="mt-4 flex flex-col gap-3.5">
-              {storedKey ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
-                  <span className="font-mono text-[0.83rem] text-[var(--ink-soft)]">
-                    {maskApiKey(storedKey)}
-                  </span>
-                  <Button size="sm" variant="danger" onClick={handleRemoveKey}>
-                    Supprimer
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Input
-                    label="Clé API Anthropic"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="sk-ant-…"
-                    value={apiKeyDraft}
-                    hint={
-                      <>
-                        À créer sur{' '}
-                        <a
-                          href="https://console.anthropic.com/settings/keys"
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="underline underline-offset-2"
-                        >
-                          console.anthropic.com
-                        </a>
-                        .
-                      </>
-                    }
-                    onChange={(event) => setApiKeyDraft(event.target.value)}
-                  />
-                  <Button onClick={handleSaveKey}>Enregistrer la clé</Button>
-                </>
-              )}
-
-              <Select
-                label="Modèle"
-                value={model}
-                hint={AVAILABLE_MODELS.find((entry) => entry.id === model)?.hint}
-                onChange={(event) => {
-                  setModelState(event.target.value);
-                  setModel(event.target.value);
-                }}
-              >
-                {AVAILABLE_MODELS.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.label}
-                  </option>
-                ))}
-              </Select>
-
-              {/* Nécessaire uniquement pour une clé « liée à une identité »,
-                  qui n'appartient à aucun espace de travail : Anthropic
-                  refuse alors la requête tant que l'espace de travail n'est
-                  pas nommé. Une clé rattachée à un espace de travail
-                  fonctionne sans rien saisir ici. */}
-              <Input
-                label="Workspace ID (facultatif)"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="wrkspc_…"
-                value={workspaceDraft}
-                hint={
-                  <>
-                    À renseigner seulement si Claude répond «&nbsp;ta clé est liée à une identité&nbsp;». À copier depuis
-                    console.anthropic.com → Settings → Workspaces.
-                  </>
-                }
-                onChange={(event) => {
-                  setWorkspaceDraft(event.target.value);
-                  setWorkspaceId(event.target.value);
-                }}
-                data-anthropic-workspace-id
-              />
-            </div>
-          </Card>
+          <AiSettingsCard />
         </StaggerItem>
 
-        <StaggerItem>
-          <HubIaCard />
-        </StaggerItem>
 
         <StaggerItem>
           <Card>

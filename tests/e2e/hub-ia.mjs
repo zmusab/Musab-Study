@@ -45,92 +45,98 @@ const goSettings = async () => {
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
 
-// ────────────────── 1. La carte Hub IA s'affiche, statuts honnêtes ──────────────────
+// ────────────────── 1. Les réglages IA tiennent en deux choix ──────────────────
 await goSettings();
 check('La page Paramètres s’ouvre', await page.getByRole('heading', { name: 'Paramètres' }).isVisible());
-check('La carte « Hub IA » est présente', await page.getByRole('heading', { name: 'Hub IA', exact: true }).isVisible());
+check('Une seule carte « IA » remplace les deux cartes précédentes', await page.getByRole('heading', { name: 'IA', exact: true }).isVisible());
+check('L’assistant préféré est proposé d’emblée', await page.locator('[data-hub-preferred-provider]').isVisible());
+check('Le modèle est proposé d’emblée', await page.locator('[data-ai-model]').isVisible());
+
+// Le détail technique n'est plus imposé : il vit derrière « Avancé ».
+check('Les réglages par fonctionnalité ne sont plus affichés d’emblée',
+  (await page.locator('[data-hub-task-preference="flashcards-generate"]').isVisible()) === false);
 
 const hubText = await page.locator('main').innerText();
-check('Claude est annoncé « Non configuré » (aucune clé saisie dans ce test)', /Claude \(Anthropic\)[\s\S]{0,20}Non configuré/.test(hubText));
-check(
-  'OpenAI est annoncé honnêtement indisponible (aucune fonction serveur ici)',
-  /OpenAI \(ChatGPT\)[\s\S]{0,40}Relais indisponible/.test(hubText),
-);
-check(
-  'Gemini est annoncé honnêtement indisponible (aucune fonction serveur ici)',
-  /Google Gemini[\s\S]{0,40}Relais indisponible/.test(hubText),
-);
-check(
-  'NotebookLM explique l’absence d’API accessible, sans simuler une intégration',
-  hubText.includes('Pas d’API accessible pour un usage personnel'),
-);
-check(
-  'Gemini Education est rattaché à Gemini, jamais présenté comme une API distincte',
-  hubText.includes('Couvert par Gemini ci-dessus'),
-);
-check(
-  'Aucune formulation ne prétend qu’OpenAI/Gemini fonctionnent réellement ici',
-  !/OpenAI \(ChatGPT\)[\s\S]{0,40}Configuré \(relais serveur\)/.test(hubText) &&
-    !/Google Gemini[\s\S]{0,40}Configuré \(relais serveur\)/.test(hubText),
-);
+check('Claude est annoncé sans clé (aucune saisie dans ce test)', /Claude[\s\S]{0,30}Clé manquante/.test(hubText));
+check('ChatGPT est annoncé honnêtement indisponible (aucune fonction serveur ici)', /ChatGPT[\s\S]{0,30}Indisponible ici/.test(hubText));
+check('Gemini est annoncé honnêtement indisponible (aucune fonction serveur ici)', /Gemini[\s\S]{0,30}Indisponible ici/.test(hubText));
+check('Aucune formulation ne prétend qu’ils fonctionnent réellement ici', !/ChatGPT[\s\S]{0,30}Configuré/.test(hubText));
 
-// ────────────────── 2. Vérifier la configuration — ne casse rien, ne ment pas ──────────────────
-await page.locator('[data-hub-check-status]').click();
-await page.waitForTimeout(600);
-const afterCheckText = await page.locator('main').innerText();
-check(
-  'Après vérification, le statut reste honnête (toujours indisponible, pas de faux "configuré")',
-  /OpenAI \(ChatGPT\)[\s\S]{0,40}Relais indisponible/.test(afterCheckText),
-);
+// ────────────────── 2. Le modèle proposé dépend de l'assistant choisi ──────────────────
+const modelOptions = async () => page.locator('[data-ai-model] option').allInnerTexts();
+check('Par défaut, les modèles proposés sont ceux de Claude', (await modelOptions()).every((label) => /Claude/.test(label)));
 
-// ────────────────── 3. Sélection du fournisseur — configurable, persistante ──────────────────
+await page.locator('[data-hub-preferred-provider]').selectOption({ label: 'Gemini' });
+await page.waitForTimeout(300);
+const geminiModels = await modelOptions();
+check('Choisir Gemini propose des modèles Gemini, jamais ceux d’un autre fournisseur',
+  geminiModels.length > 0 && geminiModels.every((label) => /Gemini/.test(label)), geminiModels.join(' | '));
+
 await page.locator('[data-hub-preferred-provider]').selectOption({ label: 'ChatGPT' });
 await page.waitForTimeout(300);
+const openaiModels = await modelOptions();
+check('Choisir ChatGPT propose des modèles OpenAI, jamais ceux d’un autre fournisseur',
+  openaiModels.length > 0 && openaiModels.every((label) => /GPT/i.test(label)), openaiModels.join(' | '));
+
 await page.reload({ waitUntil: 'networkidle' });
 await goSettings();
-check(
-  'Le fournisseur préféré choisi survit à un rechargement',
-  await page.locator('[data-hub-preferred-provider]').inputValue() === 'openai',
-);
-// Remet « Automatique » pour ne pas influencer un autre test de cette session.
+check('L’assistant choisi survit à un rechargement', (await page.locator('[data-hub-preferred-provider]').inputValue()) === 'openai');
 await page.locator('[data-hub-preferred-provider]').selectOption({ label: 'Automatique' });
 await page.waitForTimeout(200);
 
-// ────────────────── 4. Préférence par tâche — indépendante, persistante ──────────────────
-const flashcardsTaskSelect = page.locator('[data-hub-task-preference="flashcards-generate"]');
-check('Une préférence par tâche est proposée pour chaque fonctionnalité IA existante', await flashcardsTaskSelect.isVisible());
-await flashcardsTaskSelect.selectOption({ label: 'Gemini' });
+// ────────────────── 3. Tester un fournisseur — celui-là, et lui seul ──────────────────
+for (const id of ['anthropic', 'openai', 'gemini']) {
+  check(`Un bouton « Tester » est proposé pour ${id}`, await page.locator(`[data-hub-test-provider="${id}"]`).isVisible());
+}
+
+await page.locator('[data-hub-test-provider="gemini"]').click();
+await page.waitForTimeout(1200);
+check('Tester Gemini affiche un résultat pour Gemini', await page.locator('[data-hub-test-result="gemini"]').isVisible());
+check('Tester Gemini NE teste PAS Anthropic', (await page.locator('[data-hub-test-result="anthropic"]').count()) === 0);
+check('Tester Gemini NE teste PAS OpenAI', (await page.locator('[data-hub-test-result="openai"]').count()) === 0);
+
+const geminiResult = await page.locator('[data-hub-test-result="gemini"]').innerText();
+check('Le résultat est lisible : réussite ou échec, en clair', /Connexion (réussie|impossible)/.test(geminiResult), geminiResult.replace(/\n/g, ' | '));
+check('Sans relais ici, l’échec est annoncé honnêtement', /Connexion impossible/.test(geminiResult));
+
+await page.locator('[data-hub-test-result="gemini"]').getByText('Détails techniques').click();
+await page.waitForTimeout(200);
+check('Le code d’erreur reste disponible, mais seulement sur demande',
+  (await page.locator('[data-hub-test-result="gemini"]').innerText()).length > geminiResult.length);
+
+// ────────────────── 4. Avancé — présent, mais plus imposé ──────────────────
+await page.locator('[data-ai-advanced] summary').click();
 await page.waitForTimeout(300);
-await page.reload({ waitUntil: 'networkidle' });
-await goSettings();
-check(
-  'La préférence par tâche survit à un rechargement, indépendamment du choix général',
-  (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'gemini' &&
-    (await page.locator('[data-hub-preferred-provider]').inputValue()) === 'auto',
-);
-// Un réglage par tâche l'emporte sur le choix général : il doit se VOIR,
-// sinon un ancien « Gemini » continue de s'appliquer en silence après avoir
-// choisi ChatGPT — exactement le scénario du bug de routage corrigé.
+check('« Avancé » révèle les réglages par fonctionnalité',
+  await page.locator('[data-hub-task-preference="flashcards-generate"]').isVisible());
+check('« Avancé » contient la clé Claude, jamais demandée pour les autres', await page.locator('[data-anthropic-key]').isVisible());
+check('« Avancé » contient « Vérifier la configuration »', await page.locator('[data-hub-check-status]').isVisible());
+
+const avance = await page.locator('[data-ai-advanced]').innerText();
+check('NotebookLM explique l’absence d’API accessible, sans simuler une intégration', /NotebookLM[\s\S]{0,80}pas d’API en libre-service/.test(avance));
+check('Gemini Education est rattaché à Gemini, jamais présenté comme une API distincte', /Gemini Education[\s\S]{0,80}offre de licence/.test(avance));
+check('La recherche web est annoncée pour ce qu’elle est réellement', /seul Claude la pratique réellement/.test(avance));
+
+await page.locator('[data-hub-check-status]').click();
+await page.waitForTimeout(600);
+check('« Vérifier la configuration » ne transforme rien en faux « configuré »',
+  /ChatGPT[\s\S]{0,30}Indisponible ici/.test(await page.locator('main').innerText()));
+
+// Un réglage par fonctionnalité reste possible, et reste VISIBLE quand il
+// contredit le choix général — sinon un ancien « Gemini » s'appliquerait en
+// silence après avoir choisi ChatGPT.
+await page.locator('[data-hub-task-preference="flashcards-generate"]').selectOption({ label: 'Gemini' });
+await page.waitForTimeout(300);
 const overrideNotice = page.locator('[data-hub-task-overrides]');
-check('Un réglage par tâche qui contredit le choix général est signalé, jamais silencieux', await overrideNotice.isVisible());
-check(
-  'Le signalement nomme la fonctionnalité concernée et son fournisseur',
-  /Génération de flashcards\s*→\s*Gemini/.test(await overrideNotice.innerText()),
-);
+check('Un réglage par fonctionnalité qui contredit le choix général est signalé', await overrideNotice.isVisible());
+check('Le signalement nomme la fonctionnalité et son fournisseur',
+  /Génération de flashcards\s*→\s*Gemini/.test(await overrideNotice.innerText()));
 
 await page.locator('[data-hub-reset-task-preferences]').click();
 await page.waitForTimeout(300);
-check(
-  '« Tout remettre sur Automatique » efface réellement les réglages par tâche',
+check('« Tout remettre sur Automatique » efface réellement ces réglages',
   (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'auto' &&
-    (await overrideNotice.count()) === 0,
-);
-await page.reload({ waitUntil: 'networkidle' });
-await goSettings();
-check(
-  'La remise à zéro survit à un rechargement — plus aucun ancien choix ne traîne',
-  (await page.locator('[data-hub-task-preference="flashcards-generate"]').inputValue()) === 'auto',
-);
+    (await overrideNotice.count()) === 0);
 
 // ────────────────── 5. Export NotebookLM depuis une matière — manuel, réel ──────────────────
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();

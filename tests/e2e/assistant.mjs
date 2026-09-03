@@ -49,8 +49,13 @@ const goFlashcards = async () => {
   await page.waitForTimeout(600);
 };
 const toast = () => page.locator('[aria-live="polite"]').innerText().catch(() => '');
-const hub = () => page.locator('[data-assistant-hub]');
-const category = (label) => hub().getByRole('tab', { name: label });
+const sheet = () => page.locator('[data-assistant-sheet]');
+/** Ouvre la feuille d'actions depuis l'intention correspondante. */
+const openIntent = async (key) => {
+  await page.locator(`[data-ai-intent="${key}"]`).click();
+  await page.waitForTimeout(400);
+};
+const category = (label) => sheet().getByRole('tab', { name: label });
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
 
@@ -84,12 +89,22 @@ for (const [q, a] of [
 }
 check('Quatre flashcards réelles créées pour alimenter le Quiz', await page.getByText('Bibliothèque (4)').isVisible());
 
-// ────────────────── 1. La carte Assistant IA s'affiche, quatre catégories ──────────────────
+// ────────────────── 1. La page IA met la conversation au centre ──────────────────
 await goIa();
-check('« Assistant IA » s’ouvre toujours (nav existante inchangée)', await page.getByRole('heading', { name: 'Assistant IA', exact: true }).isVisible());
-check('La carte « Assistant IA — que veux-tu faire ? » est présente', await hub().isVisible());
+check('La page « IA » s’ouvre', await page.getByRole('heading', { name: 'IA', exact: true }).isVisible());
+check('Le champ de question est immédiatement visible, sans défilement', await page.locator('[data-ai-question]').isVisible());
+check('Le bouton « Envoyer » est immédiatement visible', await page.getByRole('button', { name: 'Envoyer' }).isVisible());
+check('La source (Mes cours / Internet) est proposée', await page.locator('[data-ai-source="cours"]').isVisible());
+check('L’assistant se choisit discrètement, sans envahir l’écran', await page.locator('[data-ai-assistant]').isVisible());
+
+// Quatre intentions seulement — le reste des actions vit derrière elles.
+check('Exactement quatre intentions sont affichées', (await page.locator('[data-ai-intent]').count()) === 4);
+check('Aucune feuille d’actions n’est ouverte au départ', (await sheet().count()) === 0);
+
+await openIntent('comprendre');
+check('Une intention ouvre la feuille d’actions', await sheet().isVisible());
 for (const label of ['Comprendre', 'Étudier', 'Mémoriser', "Préparer l'examen"]) {
-  check(`Catégorie « ${label} » proposée`, await category(label).isVisible());
+  check(`Catégorie « ${label} » atteignable depuis la feuille`, await category(label).isVisible());
 }
 
 // ────────────────── 2. Comprendre — construit une question, réutilise le chat ──────────────────
@@ -103,7 +118,11 @@ check(
   /Ajoute ta clé API/.test(await toast()),
 );
 
+// Lancer une action REFERME la feuille — la conversation reprend la main.
+check('Lancer une action referme la feuille et rend la conversation au premier plan', (await sheet().count()) === 0);
+
 // « Comparer deux notions » exige les deux champs.
+await openIntent('comprendre');
 await page.locator('[data-assistant-comprehend-notion]').fill('');
 const compareChip = page.locator('[data-assistant-comprehend]').getByRole('button', { name: /Comparer deux notions/ });
 await compareChip.click();
@@ -114,6 +133,7 @@ check(
 );
 
 // ────────────────── 3. Étudier — actions sur tout le chapitre, jamais une invention ──────────────────
+if ((await sheet().count()) === 0) await openIntent('etudier');
 await category('Étudier').click();
 await page.waitForTimeout(300);
 await page.locator('[data-assistant-study-summary]').click();
@@ -129,6 +149,7 @@ check(
 );
 
 // ────────────────── 4. Mémoriser — flashcards proposées, jamais générées sans clé, et Quiz réel ──────────────────
+if ((await sheet().count()) === 0) await openIntent('memoriser');
 await category('Mémoriser').click();
 await page.waitForTimeout(300);
 await page.locator('[data-assistant-memorize-generate]').click();
@@ -150,7 +171,7 @@ if (quizStarted) {
 
 // ────────────────── 5. Préparer l'examen — déterministe, aucun appel IA ──────────────────
 await goIa();
-await category("Préparer l'examen").click();
+await openIntent('examen');
 await page.waitForTimeout(400);
 check(
   'Sans assez de réponses enregistrées, les points faibles le disent honnêtement (aucun chiffre inventé)',
@@ -175,7 +196,7 @@ for (const [name, viewport] of [
   await goIa();
   await page.waitForTimeout(400);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  check(`Assistant IA : aucun débordement horizontal (${name})`, !overflow);
+  check(`Page IA : aucun débordement horizontal (${name})`, !overflow);
   await page.screenshot({ path: `${SHOT}/assistant-${name}.png` });
 }
 await page.setViewportSize({ width: 1194, height: 834 });

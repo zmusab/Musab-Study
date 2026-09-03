@@ -2,10 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button,
-  Card,
-  CardSubtitle,
-  CardTitle,
   Input,
+  Modal,
   SegmentedControl,
   Select,
   Textarea,
@@ -31,9 +29,16 @@ import type { CardDraft } from '@/services/flashcards/validate';
 import type { AnswerProvenance, Chapter, Citation, ID } from '@/types';
 
 /**
- * ASSISTANT IA — interface pédagogique unique, au-dessus du chat existant.
+ * ASSISTANT IA — les actions, ouvertes À LA DEMANDE.
  *
- * Quatre catégories, aucune n'invente son propre circuit IA :
+ * Ce panneau vivait auparavant en permanence au-dessus de la conversation :
+ * une douzaine de boutons visibles en continu, qui repoussaient la question
+ * — le geste principal — sous la ligne de flottaison. Il s'ouvre désormais
+ * depuis l'une des quatre intentions de la page IA, et se referme dès qu'une
+ * action est lancée : la conversation reste le centre.
+ *
+ * AUCUNE capacité n'a été retirée au passage — les quatre panneaux
+ * ci-dessous sont inchangés. Aucun n'invente son propre circuit IA :
  *  - Comprendre  → construit une question et la pose au chat existant
  *    (`onAskChat`), qui la traite avec EXACTEMENT le même pipeline que si
  *    l'étudiant l'avait tapée (`buildContext` → `courseSystemPrompt` →
@@ -49,7 +54,8 @@ import type { AnswerProvenance, Chapter, Citation, ID } from '@/types';
  *    entièrement déterministe, aucun appel IA.
  */
 
-type Category = 'comprendre' | 'etudier' | 'memoriser' | 'examen';
+export type AssistantCategory = 'comprendre' | 'etudier' | 'memoriser' | 'examen';
+type Category = AssistantCategory;
 
 const CATEGORY_SEGMENTS: Segment<Category>[] = [
   { value: 'comprendre', label: 'Comprendre', icon: '💡' },
@@ -64,7 +70,11 @@ export interface AssistantExchangeResult {
   citations?: Citation[];
 }
 
-export interface AssistantHubProps {
+export interface AssistantSheetProps {
+  open: boolean;
+  category: AssistantCategory;
+  onCategoryChange: (category: AssistantCategory) => void;
+  onClose: () => void;
   subjectId: ID;
   chapterId: ID | 'all';
   chapters: Chapter[];
@@ -76,22 +86,32 @@ export interface AssistantHubProps {
 const INSUFFICIENT_CHAPTER_TEXT =
   '⚠️ Aucun document indexé dans cette portée. Importe un document avant de pouvoir utiliser cette action.';
 
-export function AssistantHub({ subjectId, chapterId, chapters, program, onAskChat, onPostExchange }: AssistantHubProps) {
-  const [category, setCategory] = useState<Category>('comprendre');
+const CATEGORY_TITLES: Record<Category, string> = {
+  comprendre: 'Comprendre',
+  etudier: 'Étudier',
+  memoriser: 'Mémoriser',
+  examen: "Préparer l'examen",
+};
 
+export function AssistantSheet({
+  open,
+  category,
+  onCategoryChange,
+  onClose,
+  subjectId,
+  chapterId,
+  chapters,
+  program,
+  onAskChat,
+  onPostExchange,
+}: AssistantSheetProps) {
   return (
-    <Card data-assistant-hub>
-      <CardTitle>Assistant IA — que veux-tu faire ?</CardTitle>
-      <CardSubtitle>
-        Il utilise tes vraies données (cours, notes, flashcards, quiz, calendrier) et affiche sa source quand c’est
-        possible. Ce qu’il ne peut pas prouver, il ne l’affirme pas.
-      </CardSubtitle>
+    <Modal open={open} onClose={onClose} title={CATEGORY_TITLES[category]} size="lg">
+      <div className="flex flex-col gap-4" data-assistant-sheet>
+        {/* Changer d'intention sans refermer : les quatre groupes restent
+            atteignables, mais un seul est déplié à la fois. */}
+        <SegmentedControl segments={CATEGORY_SEGMENTS} value={category} onChange={onCategoryChange} size="sm" />
 
-      <div className="mt-4">
-        <SegmentedControl segments={CATEGORY_SEGMENTS} value={category} onChange={setCategory} size="sm" />
-      </div>
-
-      <div className="mt-4">
         {category === 'comprendre' && <ComprehendPanel onAskChat={onAskChat} />}
         {category === 'etudier' && (
           <StudyPanel subjectId={subjectId} chapterId={chapterId} chapters={chapters} program={program} onPostExchange={onPostExchange} />
@@ -99,7 +119,7 @@ export function AssistantHub({ subjectId, chapterId, chapters, program, onAskCha
         {category === 'memoriser' && <MemorizePanel subjectId={subjectId} chapterId={chapterId} />}
         {category === 'examen' && <ExamPrepPanel subjectId={subjectId} chapterId={chapterId} />}
       </div>
-    </Card>
+    </Modal>
   );
 }
 

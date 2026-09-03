@@ -1,4 +1,5 @@
 import { isProxyProviderAvailable } from '../providerStatus';
+import { getModelFor } from '../models';
 import { askViaProxy } from './proxyClient';
 import type { AIProvider, AIProviderCapabilities } from '../types';
 
@@ -36,5 +37,11 @@ export const geminiProvider: AIProvider = {
   label: 'Google Gemini',
   capabilities: CAPABILITIES,
   isAvailable: () => isProxyProviderAvailable('gemini'),
-  ask: (options) => askViaProxy('gemini', 'Gemini', options),
+  // Comme pour OpenAI : le modèle choisi dans les réglages POUR GEMINI
+  // s'applique, sauf si la tâche en impose un.
+  ask: (options) =>
+    askViaProxy('gemini', 'Gemini', {
+      ...options,
+      preferredModel: options.preferredModel ?? getModelFor('gemini'),
+    }),
 };

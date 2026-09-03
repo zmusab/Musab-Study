@@ -22,13 +22,29 @@ export const config = { runtime: 'edge' };
 /**
  * Vérifié sur ai.google.dev/gemini-api/docs/models (septembre 2026).
  *
- * Corrige un identifiant qui n'a jamais existé : `gemini-3.5-flash`. La
- * gamme « 3.5 » de Google est de la transcription audio
- * (`gemini-3.5-transcribe`), pas un modèle de dialogue — aucune requête
- * envoyée sous ce nom ne pouvait aboutir. À revérifier périodiquement : le
- * catalogue Google change plus vite que ce fichier.
+ * (Rectification d'un diagnostic antérieur : `gemini-3.5-flash`, la valeur
+ * précédente, EXISTE bien pour generateContent — la gamme « 3.5 » comprend
+ * aussi `gemini-3.5-transcribe`, mais les deux coexistent. Ce n'était donc
+ * pas la cause des échecs ; voir `MIN_OUTPUT_TOKENS` ci-dessous pour la
+ * vraie cause. On garde néanmoins un modèle courant et documenté.)
+ * À revérifier périodiquement : le catalogue Google change plus vite que ce
+ * fichier.
  */
 const DEFAULT_MODEL = 'gemini-3.7-flash';
+
+/**
+ * Budget de sortie minimal — LA cause des réponses vides et des blocages
+ * observés en production.
+ *
+ * Les modèles Gemini 3.x réfléchissent par défaut, et ces jetons de réflexion
+ * sont DÉCOMPTÉS de `maxOutputTokens`. Un budget serré (le test de connexion
+ * en demandait 16) part donc intégralement en réflexion : la réponse revient
+ * sans la moindre partie de texte — voire n'aboutit pas du tout. Le plancher
+ * ci-dessous garantit qu'il reste toujours de quoi RÉPONDRE après avoir
+ * réfléchi. Il n'augmente jamais un budget déjà suffisant : il ne fait que
+ * relever ceux qui seraient inutilisables.
+ */
+const MIN_OUTPUT_TOKENS = 2048;
 
 async function callGemini(apiKey: string, model: string, body: ProxyAskBody): Promise<Response> {
   return fetchWithTimeout(
@@ -42,7 +58,9 @@ async function callGemini(apiKey: string, model: string, body: ProxyAskBody): Pr
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: body.system }] },
         contents: [{ role: 'user', parts: [{ text: body.prompt }] }],
-        generationConfig: { maxOutputTokens: body.maxTokens ?? 4096 },
+        generationConfig: {
+          maxOutputTokens: Math.max(MIN_OUTPUT_TOKENS, body.maxTokens ?? 4096),
+        },
       }),
     },
   );
@@ -129,9 +147,24 @@ export default async function handler(request: Request): Promise<Response> {
     return errorResponse('invalid_response', 'Réponse Gemini illisible.', 502);
   }
 
-  const candidates = (data as { candidates?: { content?: { parts?: { text?: unknown }[] } }[] })?.candidates;
+  const candidates = (data as {
+    candidates?: { finishReason?: unknown; content?: { parts?: { text?: unknown }[] } }[];
+  })?.candidates;
   const text = candidates?.[0]?.content?.parts?.map((part) => part.text).filter((t): t is string => typeof t === 'string').join('');
   if (!text || text.trim().length === 0) {
+    // Distinguer les deux causes possibles d'une réponse sans texte : le
+    // modèle a réfléchi jusqu'à épuiser son budget (`MAX_TOKENS`, cas le plus
+    // fréquent sur les modèles Gemini 3.x — voir MIN_OUTPUT_TOKENS), ou la
+    // réponse a une forme inattendue. Le premier cas se règle en demandant
+    // plus de jetons, le second non : les confondre envoyait l'utilisateur
+    // chercher au mauvais endroit.
+    if (candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      return errorResponse(
+        'invalid_response',
+        'Gemini a épuisé son budget de réponse en réflexion, sans rien rédiger. Réessaie : la demande était trop serrée pour ce modèle.',
+        502,
+      );
+    }
     return errorResponse('invalid_response', 'Réponse Gemini vide ou dans un format inattendu.', 502);
   }
 

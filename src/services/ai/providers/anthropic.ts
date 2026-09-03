@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getApiKey, getModel, getWorkspaceId } from '../settings';
+import { getApiKey, getWorkspaceId } from '../settings';
+import { getModelFor } from '../models';
 import { MissingApiKeyError, AiRequestError } from '../types';
 import type { AIProvider, AIProviderCapabilities, ProviderAskOptions, QualityTier } from '../types';
 
@@ -69,6 +70,13 @@ function describeAnthropicError(error: unknown): string {
       case 429:
         return 'Limite de débit atteinte. Attends quelques secondes et réessaie.';
       case 400:
+        // Anthropic renvoie 400 — et non 402 — quand le solde est épuisé.
+        // Confondre ce cas avec « requête refusée » (ou pire, avec une
+        // mauvaise clé) envoie recréer une clé qui fonctionne très bien :
+        // il faut simplement recharger le compte.
+        if (error.message.includes('credit balance is too low')) {
+          return 'Crédits Anthropic épuisés. Recharge ton solde sur console.anthropic.com → Billing. Ta clé, elle, reste valide.';
+        }
         // Cas repéré en production : une clé « liée à une identité » exige
         // que la requête nomme son espace de travail. Le message brut de
         // l'API est en anglais et parle d'un en-tête HTTP — inexploitable
@@ -116,7 +124,7 @@ const CAPABILITIES: AIProviderCapabilities = {
 
 async function ask(options: ProviderAskOptions): Promise<string> {
   const client = createClient();
-  const model = options.preferredModel ?? getModel();
+  const model = options.preferredModel ?? getModelFor('anthropic');
   const maxTokens = options.maxTokens ?? 4096;
   const tuning = effortParams(model, options.tier);
 
