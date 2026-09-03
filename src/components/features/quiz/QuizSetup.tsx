@@ -6,7 +6,6 @@ import { listChunks } from '@/data/repositories/documents';
 import { listSubjectAnalyses, saveChapterAnalysis } from '@/data/repositories/notions';
 import { analyzeChapter, InsufficientChapterContentError } from '@/services/courses/notions';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
-import { hasApiKey } from '@/services/ai/settings';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { QuizDifficulty, QuizFormat, QuizScope } from '@/core/quiz';
 import type { Evaluation } from '@/core/progress/exam';
@@ -48,12 +47,12 @@ const FORMAT_OPTIONS: { value: QuizFormat; label: string }[] = [
 ];
 
 /**
- * Renfort optionnel : lance l'analyse IA déjà existante (`analyzeChapter`,
- * la même que l'onglet « Notions » d'une matière) sur les chapitres du
- * périmètre qui n'en ont pas encore. N'invente rien de neuf — l'estimation
- * fonctionne déjà sans elle (importance des flashcards, historique de
- * réponses, examen enregistré) ; ceci ne fait qu'ajouter le signal du cours
- * quand une clé API est configurée.
+ * Renfort optionnel : lance l'analyse de chapitre déjà existante
+ * (`analyzeChapter`, la même que l'onglet « Notions » d'une matière — moteur
+ * local par défaut, aucune clé requise) sur les chapitres du périmètre qui
+ * n'en ont pas encore. N'invente rien de neuf — l'estimation fonctionne déjà
+ * sans elle (importance des flashcards, historique de réponses, examen
+ * enregistré) ; ceci ne fait qu'ajouter le signal du cours.
  */
 function ExamLikelyAiBoost({
   subjectId,
@@ -75,10 +74,8 @@ function ExamLikelyAiBoost({
   if (targetChapters.length === 0) return null;
 
   const run = async () => {
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour renforcer l’estimation avec l’IA.', 'error');
-      return;
-    }
+    // `analyzeChapter` utilise par défaut le moteur local (aucune clé
+    // requise) — voir services/courses/notions.ts.
     setAnalyzing(true);
     let done = 0;
     try {
@@ -121,8 +118,8 @@ function ExamLikelyAiBoost({
     >
       <p className="text-[var(--ink-soft)]">
         {unanalyzed.length === 0
-          ? 'Cours déjà analysé par l’IA pour ce périmètre — l’estimation en tient compte.'
-          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} chapitre(s) analysé(s) par l’IA.`}
+          ? 'Cours déjà analysé pour ce périmètre — l’estimation en tient compte.'
+          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} chapitre(s) analysé(s).`}
       </p>
       {unanalyzed.length > 0 && (
         <Button
@@ -132,7 +129,7 @@ function ExamLikelyAiBoost({
           onClick={() => void run()}
           data-quiz-exam-likely-analyze
         >
-          {analyzing ? 'Analyse en cours…' : 'Renforcer avec l’analyse IA du cours'}
+          {analyzing ? 'Analyse en cours…' : 'Renforcer avec l’analyse du cours'}
         </Button>
       )}
     </div>

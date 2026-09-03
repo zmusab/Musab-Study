@@ -23,7 +23,6 @@ import { db } from '@/data/db';
 import { createFlashcard, deleteCard, updateCard } from '@/data/repositories/cards';
 import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
-import { hasApiKey } from '@/services/ai/settings';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { masteryStatus, MASTERY_COLOR_VARS } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
@@ -48,6 +47,8 @@ export function FlashcardsPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>(2);
   const [generating, setGenerating] = useState(false);
   const [drafts, setDrafts] = useState<CardDraft[]>([]);
+  /** D'où viennent les propositions actuellement affichées — jamais deviné, toujours ce qui a réellement été demandé. */
+  const [draftsSource, setDraftsSource] = useState<'local' | 'ai'>('local');
   const [draftIndex, setDraftIndex] = useState(0);
   const [manualQuestion, setManualQuestion] = useState('');
   const [manualAnswer, setManualAnswer] = useState('');
@@ -95,10 +96,16 @@ export function FlashcardsPage() {
   const aiCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'ai').length, [cards]);
   const manualCount = useMemo(() => (cards ?? []).filter((c) => c.origin !== 'ai').length, [cards]);
 
-  const handleGenerate = async () => {
+  /**
+   * `source: 'local'` (par défaut) : moteur à règles, aucune clé requise,
+   * aucun appel réseau — c'est ce que le bouton principal déclenche.
+   * `source: 'ai'` : régénération explicite via l'IA, seulement si demandée
+   * (bouton « Régénérer avec l'IA »), jamais silencieuse.
+   */
+  const handleGenerate = async (source: 'local' | 'ai' = 'local') => {
     if (!subjectId) return;
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour générer des cartes.', 'error');
+    if (source === 'ai' && !aiOrchestrator.hasAvailableProvider()) {
+      notify('Ajoute une clé API dans Paramètres pour régénérer avec l’IA.', 'error');
       return;
     }
 
@@ -126,15 +133,19 @@ export function FlashcardsPage() {
         difficulty,
         chunks,
         lookup,
+        source,
       });
 
       if (generated.length === 0) {
         notify(
-          "L'IA n'a proposé aucune carte vérifiable à partir de ce contenu. Essaie une autre portée.",
+          source === 'ai'
+            ? "L'IA n'a proposé aucune carte vérifiable à partir de ce contenu. Essaie une autre portée."
+            : "Le moteur local n'a trouvé aucune information exploitable dans ce contenu (définitions, énumérations…). Essaie une autre portée, ou régénère avec l'IA.",
           'error',
         );
       } else {
         setDrafts(generated);
+        setDraftsSource(source);
         notify(`${generated.length} carte(s) proposée(s) — accepte, modifie ou supprime.`, 'success');
       }
     } catch (error) {
@@ -253,7 +264,7 @@ export function FlashcardsPage() {
         <SegmentedControl
           className="mb-4"
           segments={[
-            { value: 'ai', label: '✨ Générer avec l’IA' },
+            { value: 'ai', label: '✨ Générer automatiquement' },
             { value: 'manual', label: '✍️ Créer manuellement' },
           ]}
           value={creationMode}
@@ -295,9 +306,21 @@ export function FlashcardsPage() {
                 <option value={3}>Difficile</option>
               </Select>
             </div>
-            <Button className="mt-4" loading={generating} onClick={handleGenerate} block>
-              {generating ? 'Analyse du cours et génération des cartes…' : `✨ Générer ${count} cartes`}
+            <Button className="mt-4" loading={generating} onClick={() => void handleGenerate('local')} block>
+              {generating ? 'Analyse du cours et génération des cartes…' : `⚙️ Générer ${count} cartes (local, sans IA)`}
             </Button>
+            <p className="mt-2 text-center text-[0.76rem] text-[var(--ink-faint)]">
+              Analyse le texte réel de ton cours (définitions, énumérations…) — aucune clé API requise.{' '}
+              <button
+                type="button"
+                className="underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={generating}
+                onClick={() => void handleGenerate('ai')}
+              >
+                Régénérer avec l’IA
+              </button>{' '}
+              pour une reformulation plus naturelle, si un fournisseur est configuré.
+            </p>
 
             <AnimatePresence mode="wait">
               {currentDraft && (
@@ -309,9 +332,14 @@ export function FlashcardsPage() {
                   transition={springSoft}
                   className="mt-5 rounded-[var(--radius-card)] border border-[var(--accent)] bg-[var(--accent-tint)] p-4"
                 >
-                  <Chip>
-                    Carte {draftIndex + 1}/{drafts.length}
-                  </Chip>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Chip>
+                      Carte {draftIndex + 1}/{drafts.length}
+                    </Chip>
+                    <Chip color={draftsSource === 'ai' ? 'var(--accent)' : 'var(--ink-faint)'}>
+                      {draftsSource === 'ai' ? '✨ Générée par l’IA' : '⚙️ Générée localement'}
+                    </Chip>
+                  </div>
                   <input
                     className="mt-2 w-full bg-transparent text-[0.98rem] font-semibold outline-none"
                     value={currentDraft.question}

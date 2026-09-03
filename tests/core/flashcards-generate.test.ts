@@ -61,27 +61,27 @@ describe('generateCardDrafts', () => {
     void subject;
   });
 
-  it('déclare la tâche flashcards-generate', async () => {
+  it('déclare la tâche flashcards-generate (source: ai, régénération explicite)', async () => {
     const { chunks, lookup } = await seedSubjectWithDocument();
     askMock.mockResolvedValueOnce(
       JSON.stringify([{ question: 'Combien de branches a le trijumeau ?', answer: 'Trois [S1].', refs: ['S1'] }]),
     );
-    await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup, source: 'ai' });
     expect(askMock.mock.calls[0]![0].task).toBe('flashcards-generate');
   });
 
-  it('ne propose que des cartes sourcées par un extrait réellement transmis', async () => {
+  it('ne propose que des cartes sourcées par un extrait réellement transmis (source: ai)', async () => {
     const { chunks, lookup } = await seedSubjectWithDocument();
     askMock.mockResolvedValueOnce(
       JSON.stringify([
         { question: 'Une question ?', answer: 'Une affirmation sans référence valable [S9].', refs: ['S9'] },
       ]),
     );
-    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup, source: 'ai' });
     expect(drafts).toHaveLength(0);
   });
 
-  it('rappelle au modèle les questions déjà présentes dans la portée, pour qu’il évite de les redemander', async () => {
+  it('rappelle au modèle les questions déjà présentes dans la portée, pour qu’il évite de les redemander (source: ai)', async () => {
     const { subject, chapter, chunks, lookup } = await seedSubjectWithDocument();
     await createFlashcard({
       subjectId: subject.id,
@@ -94,14 +94,14 @@ describe('generateCardDrafts', () => {
       JSON.stringify([{ question: 'Combien de branches a le trijumeau ?', answer: 'Trois [S1].', refs: ['S1'] }]),
     );
 
-    await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup, source: 'ai' });
 
     const systemPrompt: string = askMock.mock.calls[0]![0].system;
     expect(systemPrompt).toContain('CARTES DÉJÀ EXISTANTES');
     expect(systemPrompt).toContain('Quel est le plus volumineux des nerfs crâniens ?');
   });
 
-  it('filtre une carte quasi identique à une carte déjà existante, même si le modèle l’a proposée malgré la consigne', async () => {
+  it('filtre une carte quasi identique à une carte déjà existante, même si le modèle l’a proposée malgré la consigne (source: ai)', async () => {
     const { subject, chapter, chunks, lookup } = await seedSubjectWithDocument();
     await createFlashcard({
       subjectId: subject.id,
@@ -119,13 +119,13 @@ describe('generateCardDrafts', () => {
       ]),
     );
 
-    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup, source: 'ai' });
 
     expect(drafts).toHaveLength(1);
     expect(drafts[0]!.question).toContain('moteur');
   });
 
-  it('n’écarte pas une carte d’un AUTRE chapitre juste parce que le sujet se recoupe', async () => {
+  it('n’écarte pas une carte d’un AUTRE chapitre juste parce que le sujet se recoupe (source: ai)', async () => {
     const { subject, chunks, lookup } = await seedSubjectWithDocument();
     const otherChapter = await createChapter(subject.id, 'Un autre chapitre');
     await createFlashcard({
@@ -139,13 +139,23 @@ describe('generateCardDrafts', () => {
       JSON.stringify([{ question: 'Quelles sont les trois branches du trijumeau ?', answer: 'V1, V2, V3 [S1].', refs: ['S1'] }]),
     );
 
-    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup, source: 'ai' });
 
     // La portée demandée est CE chapitre : une carte d'un autre chapitre ne
     // doit ni figurer dans le rappel envoyé au modèle, ni filtrer la carte.
     const systemPrompt: string = askMock.mock.calls[0]![0].system;
     expect(systemPrompt).not.toContain('CARTES DÉJÀ EXISTANTES');
     expect(drafts).toHaveLength(1);
+  });
+
+  it('par défaut (aucun `source` fourni), utilise le moteur local — jamais le moindre appel IA', async () => {
+    const { chunks, lookup } = await seedSubjectWithDocument();
+    const drafts = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
+    expect(askMock).not.toHaveBeenCalled();
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) {
+      expect(draft.citations.length).toBeGreaterThan(0);
+    }
   });
 });
 

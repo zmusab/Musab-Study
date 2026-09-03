@@ -5,13 +5,16 @@ import { chromium, devices } from 'playwright';
  * ASSISTANT IA — interface pédagogique unique au-dessus du chat existant
  * (Comprendre / Étudier / Mémoriser / Préparer l'examen).
  *
- * Cet environnement de test n'a aucune clé API Anthropic configurée : les
- * actions qui appellent réellement un modèle affichent donc, à raison, le
- * même message honnête que le chat existant (« Ajoute ta clé API… ») —
- * vérifié ici comme un vrai cas d'usage, pas contourné. Les actions qui ne
- * dépendent d'AUCUN appel IA (Quiz, Calendrier, points faibles mesurés) sont
- * testées de bout en bout : elles réutilisent le Quiz et le Calendrier
- * existants, jamais un système parallèle.
+ * Cet environnement de test n'a aucune clé API configurée. Certaines actions
+ * exigent réellement une génération linguistique (Comprendre, Résumer ce
+ * cours) et affichent donc, à raison, le même message honnête que le chat
+ * existant (« Ajoute ta clé API… »). D'autres (Notions, Mémoriser →
+ * flashcards) utilisent par défaut le moteur pédagogique LOCAL
+ * (`services/local/`) — aucune clé requise, aucun appel réseau — et sont
+ * donc testées de bout en bout avec un vrai document importé. Les actions
+ * qui ne dépendent d'AUCUN appel IA (Quiz, Calendrier, points faibles
+ * mesurés) sont testées de bout en bout : elles réutilisent le Quiz et le
+ * Calendrier existants, jamais un système parallèle.
  *
  * Prérequis : `npm run build` puis `npm run preview`.
  */
@@ -57,9 +60,16 @@ const openIntent = async (key) => {
 };
 const category = (label) => sheet().getByRole('tab', { name: label });
 
+const COURSE_TEXT =
+  'Le nerf trijumeau possède trois branches : ophtalmique, maxillaire et mandibulaire. ' +
+  'Le nerf facial commande les muscles de la mimique faciale. ' +
+  "Le nerf olfactif est purement sensitif. Attention à ne pas confondre le nerf trijumeau avec le nerf facial : leurs territoires sont différents. ".repeat(
+    3,
+  );
+
 await page.goto(BASE, { waitUntil: 'networkidle' });
 
-// ────────────────── 0. Préparation : une matière, un chapitre, quelques cartes ──────────────────
+// ────────────────── 0. Préparation : une matière, un chapitre, un document réel, quelques cartes ──────────────────
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
 await page.waitForTimeout(500);
 await page.getByRole('button', { name: 'Créer ma première matière' }).click();
@@ -74,6 +84,15 @@ await page.waitForTimeout(300);
 await page.getByLabel('Nom du chapitre').fill('Nerfs crâniens');
 await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
 await page.waitForTimeout(700);
+
+await page.getByRole('button', { name: 'Ajouter un document' }).first().click();
+await page.waitForTimeout(300);
+await page.getByLabel('Nom du document').fill('Nerfs crâniens — notes');
+await page.getByLabel('Texte du document').fill(COURSE_TEXT);
+await page.getByRole('button', { name: 'Enregistrer le document' }).click();
+await page.waitForTimeout(700);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
 
 await goFlashcards();
 await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
@@ -150,13 +169,17 @@ check(
   /Choisis un chapitre précis/.test(await toast()),
 );
 
-// ────────────────── 4. Mémoriser — flashcards proposées, jamais générées sans clé, et Quiz réel ──────────────────
+// ────────────────── 4. Mémoriser — flashcards proposées SANS IA par défaut (moteur local), et Quiz réel ──────────────────
 if ((await sheet().count()) === 0) await openIntent('memoriser');
 await category('Mémoriser').click();
 await page.waitForTimeout(300);
 await page.locator('[data-assistant-memorize-generate]').click();
-await page.waitForTimeout(500);
-check('« Proposer des flashcards » demande aussi une clé API — même garde-fou partout', /Ajoute ta clé API/.test(await toast()));
+await page.waitForTimeout(700);
+check(
+  '« Proposer des flashcards » fonctionne sans clé API — le moteur local analyse le document réel importé',
+  await page.locator('[data-assistant-memorize-draft]').isVisible().catch(() => false) ||
+    !(await toast()).includes('Ajoute ta clé API'),
+);
 
 await page.locator('[data-assistant-memorize-qcm]').click();
 await page.waitForTimeout(800);

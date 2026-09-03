@@ -2,6 +2,7 @@ import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { extractJsonArray } from '@/services/ai/parsing';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { validateConcepts, type RawConcept } from '@/services/podcast/validate';
+import { generateLocalNotions, localNotionsToPodcastConcepts } from '@/services/local/localNotions';
 import type { DocumentChunk, PodcastConcept } from '@/types';
 
 /**
@@ -11,6 +12,12 @@ import type { DocumentChunk, PodcastConcept } from '@/types';
  * un podcast ou à peupler l'onglet « Notions » d'une matière. Seul le prompt
  * change, parce que le cadrage n'est pas le même (ici on identifie les
  * notions clés d'un cours, pas le contenu d'un podcast).
+ *
+ * SOURCE PAR DÉFAUT : le moteur local (`services/local/localNotions.ts`),
+ * sans le moindre appel réseau — Musab Study doit rester utilisable sans API
+ * IA externe. L'IA reste disponible via `source: 'ai'`, un choix explicite
+ * (bouton « Régénérer avec l'IA »), avec un comportement strictement
+ * inchangé par rapport à avant ce chantier.
  */
 
 const NOTIONS_CONTEXT_BUDGET = 32_000;
@@ -51,6 +58,12 @@ export interface AnalyzeChapterInput {
   /** Nombre maximal de notions retenues. */
   count?: number;
   signal?: AbortSignal;
+  /**
+   * 'local' (par défaut) : moteur à règles, aucun appel réseau. 'ai' :
+   * régénération explicite via l'IA — comportement strictement identique à
+   * avant ce chantier, jamais choisi automatiquement.
+   */
+  source?: 'local' | 'ai';
 }
 
 /** Analyse un chapitre et renvoie ses notions, sourcées et vérifiées — jamais de simulation en cas d'échec. */
@@ -58,6 +71,14 @@ export async function analyzeChapter(input: AnalyzeChapterInput): Promise<Podcas
   if (input.chunks.length === 0) throw new InsufficientChapterContentError();
 
   const count = input.count ?? 15;
+
+  if ((input.source ?? 'local') === 'local') {
+    const notions = generateLocalNotions({ chunks: input.chunks, count });
+    const concepts = localNotionsToPodcastConcepts(notions, input.chunks, input.lookup);
+    if (concepts.length === 0) throw new InsufficientChapterContentError();
+    return concepts;
+  }
+
   const context = buildContext(chunksInReadingOrder(input.chunks), input.lookup, NOTIONS_CONTEXT_BUDGET);
 
   const raw = await aiOrchestrator.ask({

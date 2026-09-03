@@ -1,0 +1,124 @@
+import { extractFacts, type RawFact } from './relationExtraction';
+import { citationFromChunk } from './citation';
+import { isDuplicateQuestion } from '@/services/flashcards/dedupe';
+import type { CardDraft } from '@/services/flashcards/validate';
+import type { ContextLookup } from '@/services/rag/retrieval';
+import type { DocumentChunk, Difficulty, Importance } from '@/types';
+
+/**
+ * Génération de flashcards SANS IA — moteur à règles, à partir des relations
+ * détectées par `relationExtraction.ts`. Produit EXACTEMENT la même forme
+ * (`CardDraft`) que `services/flashcards/generate.ts` : aucun composant en
+ * aval (validation, dédoublonnage, création de la carte, SM-2) n'a besoin de
+ * savoir d'où vient la proposition.
+ *
+ * Garantie identique au chemin IA : chaque réponse porte une citation vers
+ * un extrait réel, jamais reformulé. La différence est la SOURCE de la
+ * garantie — ici structurelle (l'extrait EST la réponse), là vérifiée après
+ * coup (référence `[Sn]` recoupée avec le contexte transmis).
+ */
+
+const ITEMS_JOINER = (items: string[]): string => {
+  if (items.length === 1) return items[0]!;
+  return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}`;
+};
+
+const capitalize = (text: string): string => (text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text);
+
+interface QuestionAnswer {
+  question: string;
+  answer: string;
+}
+
+function questionAnswerFor(fact: RawFact): QuestionAnswer | null {
+  const subject = fact.subject;
+  switch (fact.predicate) {
+    case 'definition':
+      return { question: `Qu'est-ce que ${subject} ?`, answer: capitalize(fact.object) };
+    case 'composition':
+      return {
+        question: `De quoi se compose ${subject} ?`,
+        answer: fact.items ? capitalize(ITEMS_JOINER(fact.items)) : capitalize(fact.object),
+      };
+    case 'possession':
+      return {
+        question: `Que possède ${subject} ?`,
+        answer: fact.items ? capitalize(ITEMS_JOINER(fact.items)) : capitalize(fact.object),
+      };
+    case 'function':
+      return { question: `Quelle est la fonction de ${subject} ?`, answer: capitalize(fact.object) };
+    case 'location':
+      return { question: `Où se situe ${subject} ?`, answer: capitalize(fact.object) };
+    case 'classification':
+      return {
+        question: `Quels sont les types de ${subject} ?`,
+        answer: fact.items ? capitalize(ITEMS_JOINER(fact.items)) : capitalize(fact.object),
+      };
+    default:
+      return null;
+  }
+}
+
+/** Carte à trous quand le fait porte un compte explicite ("trois branches"). */
+function clozeFor(fact: RawFact): QuestionAnswer | null {
+  if (!fact.countWord || !fact.countNoun) return null;
+  return {
+    question: `${capitalize(fact.subject)} ${predicateVerb(fact.predicate)} ___ ${fact.countNoun}.`,
+    answer: fact.countWord,
+  };
+}
+
+function predicateVerb(predicate: RawFact['predicate']): string {
+  return predicate === 'composition' ? 'se compose de' : 'possède';
+}
+
+export interface GenerateLocalCardsInput {
+  chunks: DocumentChunk[];
+  lookup: ContextLookup;
+  count: number;
+  importance: Importance;
+  difficulty: Difficulty;
+  /** Questions déjà présentes dans la bibliothèque — jamais reproposées. */
+  existingQuestions: readonly string[];
+}
+
+/**
+ * Génère des propositions de cartes sans le moindre appel réseau. Un fait de
+ * confiance insuffisante ('low', ou tout simplement absent de l'extraction —
+ * voir `relationExtraction.ts`) ne produit jamais de carte : mieux ne rien
+ * proposer qu'une carte potentiellement fausse.
+ */
+export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDraft[] {
+  const drafts: CardDraft[] = [];
+  const proposedQuestions: string[] = [...input.existingQuestions];
+
+  for (const chunk of input.chunks) {
+    for (const fact of extractFacts(chunk)) {
+      if (fact.confidence === 'low') continue;
+
+      const citation = citationFromChunk(chunk, input.lookup, fact.sourceExcerpt);
+      const candidates = [questionAnswerFor(fact), clozeFor(fact)].filter(
+        (candidate): candidate is QuestionAnswer => candidate !== null,
+      );
+
+      for (const candidate of candidates) {
+        if (candidate.answer.trim().length === 0) continue;
+        if (isDuplicateQuestion(candidate.question, proposedQuestions)) continue;
+
+        drafts.push({
+          question: candidate.question,
+          answer: candidate.answer,
+          citations: [citation],
+          sourceChunkIds: [chunk.id],
+          importance: input.importance,
+          difficulty: input.difficulty,
+        });
+        proposedQuestions.push(candidate.question);
+
+        if (drafts.length >= input.count) return drafts;
+      }
+    }
+  }
+
+  return drafts;
+}

@@ -236,10 +236,9 @@ function StudyPanel({
       notify('Choisis un chapitre précis (Portée, en haut) pour cette action.', 'error');
       return;
     }
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour utiliser l’assistant.', 'error');
-      return;
-    }
+    // `analyzeChapter` utilise par défaut le moteur local (aucune clé
+    // requise) — voir services/courses/notions.ts. Aucun garde-fou sur la
+    // clé API ici : cette action fonctionne sans IA.
     const chapter = chapters.find((c) => c.id === chapterId);
     const userText = `Identifie les notions importantes et difficiles du chapitre « ${chapter?.name ?? ''} ».`;
     setRunning('notions');
@@ -400,10 +399,9 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
   const current = drafts[index];
 
   const generate = async () => {
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour générer des flashcards.', 'error');
-      return;
-    }
+    // `generateCardDrafts` utilise par défaut le moteur local (aucune clé
+    // requise) — voir services/flashcards/generate.ts. Aucun garde-fou sur
+    // la clé API ici : cette action fonctionne sans IA.
     setGenerating(true);
     setDrafts([]);
     setIndex(0);
@@ -412,7 +410,7 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
       const lookup: ContextLookup = await loadContextLookup(subjectId);
       const generated = await generateCardDrafts({ count: 5, importance: 2, difficulty: 2, chunks, lookup });
       if (generated.length === 0) {
-        notify("L'IA n'a proposé aucune carte vérifiable à partir de ce contenu.", 'error');
+        notify("Aucune carte vérifiable n'a pu être proposée à partir de ce contenu.", 'error');
       } else {
         setDrafts(generated);
       }

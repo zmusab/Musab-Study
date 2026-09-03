@@ -6,10 +6,10 @@ import { chromium, devices } from 'playwright';
 /**
  * Parcours du centre documentaire Cours : import → onglets de la page de
  * matière → note prise dans le lecteur, retrouvée dans l'onglet Notes et
- * ramenant à la bonne page → analyse d'un chapitre (échec honnête sans clé
- * API, pas de simulation) → renommer un chapitre → déplacer un document →
- * recherche depuis la page Cours → bouton plein écran → persistance après
- * rechargement.
+ * ramenant à la bonne page → analyse d'un chapitre (moteur local par défaut,
+ * aucune clé requise, jamais d'invention) → renommer un chapitre → déplacer
+ * un document → recherche depuis la page Cours → bouton plein écran →
+ * persistance après rechargement.
  *
  * Prérequis : `npm run build` puis `npm run preview`.
  */
@@ -115,13 +115,18 @@ check('Cliquer la note ramène exactement à sa page d’origine', await page.ge
 await page.getByRole('link', { name: 'Retour aux cours' }).click();
 await page.waitForTimeout(600);
 
-// ---------- Onglet Notions — échec honnête sans clé API, pas de simulation ----------
+// ---------- Onglet Notions — moteur local par défaut, aucune clé requise ----------
 await page.getByRole('tab', { name: 'Notions' }).click();
 await page.waitForTimeout(300);
-await page.getByRole('button', { name: 'Analyser ce chapitre' }).first().click();
-await page.waitForTimeout(400);
-check('Sans clé API, l’analyse échoue clairement plutôt que d’inventer des notions',
-  await page.getByText(/clé API dans Paramètres/).isVisible());
+await page.getByRole('button', { name: /Analyser ce chapitre \(local\)/ }).first().click();
+await page.waitForTimeout(500);
+check('Sans clé API, l’analyse ne demande jamais de clé — le moteur local répond seul',
+  !(await page.getByText(/clé API dans Paramètres/).isVisible()));
+check(
+  'L’analyse locale produit soit de vraies notions sourcées, soit un refus honnête (jamais une invention)',
+  (await page.getByText(/notion\(s\) détectée\(s\)/).isVisible()) ||
+    (await page.getByText(/contenu indexé/).isVisible()),
+);
 
 // ---------- Renommer un chapitre ----------
 await page.getByRole('tab', { name: 'Documents' }).click();

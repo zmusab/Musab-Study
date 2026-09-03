@@ -3,7 +3,19 @@ import { extractJsonArray } from '@/services/ai/parsing';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import { listCards } from '@/data/repositories/cards';
 import { validateCardDrafts, type CardDraft, type RawCardDraft } from './validate';
+import { isDuplicateQuestion } from './dedupe';
+import { generateLocalCardDrafts } from '@/services/local/localFlashcards';
 import type { DocumentChunk, Difficulty, Importance } from '@/types';
+
+export { isDuplicateQuestion };
+
+/**
+ * SOURCE PAR DÉFAUT : le moteur local (`services/local/localFlashcards.ts`),
+ * sans le moindre appel réseau — Musab Study doit rester utilisable sans API
+ * IA externe. L'IA reste disponible via `source: 'ai'`, un choix explicite
+ * (bouton « Régénérer avec l'IA »), avec un comportement strictement
+ * inchangé par rapport à avant ce chantier.
+ */
 
 /** Budget de contexte : une génération de cartes couvre tout un chapitre, pas une question ciblée. */
 const CONTEXT_BUDGET = 24_000;
@@ -54,6 +66,12 @@ export interface GenerateCardsInput {
   chunks: DocumentChunk[];
   lookup: ContextLookup;
   signal?: AbortSignal;
+  /**
+   * 'local' (par défaut) : moteur à règles, aucun appel réseau. 'ai' :
+   * régénération explicite via l'IA — comportement strictement identique à
+   * avant ce chantier, jamais choisi automatiquement.
+   */
+  source?: 'local' | 'ai';
 }
 
 export class NoIndexedContentError extends Error {
@@ -61,44 +79,6 @@ export class NoIndexedContentError extends Error {
     super("Ce chapitre ne contient aucun document indexé. Importe d'abord un document.");
     this.name = 'NoIndexedContentError';
   }
-}
-
-const normalizeQuestion = (text: string): string =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // accents (diacritiques combinants après NFD) — « Où » et « ou » ne doivent pas se distinguer ici.
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-/**
- * Vrai si `question` reformule, mot pour mot ou presque, une question déjà
- * posée — jamais une vraie compréhension sémantique (ce serait un second
- * appel IA, hors de propos ici), seulement un filet de sécurité bon marché
- * pour le cas où le modèle ignore la consigne du prompt et répète une carte
- * déjà existante avec quelques mots changés. La consigne dans le prompt
- * (liste des questions existantes) reste la vraie ligne de défense.
- */
-export function isDuplicateQuestion(question: string, existingQuestions: readonly string[]): boolean {
-  const normalized = normalizeQuestion(question);
-  if (normalized.length === 0) return false;
-  const words = new Set(normalized.split(' '));
-
-  return existingQuestions.some((existing) => {
-    const existingNormalized = normalizeQuestion(existing);
-    if (existingNormalized === normalized) return true;
-
-    const existingWords = new Set(existingNormalized.split(' '));
-    const intersection = [...words].filter((w) => existingWords.has(w)).length;
-    const union = new Set([...words, ...existingWords]).size;
-    // Recouvrement massif du vocabulaire : une vraie reformulation
-    // superficielle (« Quelles sont les branches du nerf trijumeau ? » vs
-    // « Quelles sont les trois branches du trijumeau ? »), pas juste deux
-    // questions qui partagent un même sujet (« le trijumeau », par exemple)
-    // sans partager la question elle-même.
-    return union > 0 && intersection / union >= 0.7;
-  });
 }
 
 /**
@@ -122,8 +102,20 @@ async function existingQuestionsFor(chunks: DocumentChunk[]): Promise<string[]> 
 export async function generateCardDrafts(input: GenerateCardsInput): Promise<CardDraft[]> {
   if (input.chunks.length === 0) throw new NoIndexedContentError();
 
-  const context = buildContext(chunksInReadingOrder(input.chunks), input.lookup, CONTEXT_BUDGET);
   const existingQuestions = await existingQuestionsFor(input.chunks);
+
+  if ((input.source ?? 'local') === 'local') {
+    return generateLocalCardDrafts({
+      chunks: input.chunks,
+      lookup: input.lookup,
+      count: input.count,
+      importance: input.importance,
+      difficulty: input.difficulty,
+      existingQuestions,
+    });
+  }
+
+  const context = buildContext(chunksInReadingOrder(input.chunks), input.lookup, CONTEXT_BUDGET);
 
   const raw = await aiOrchestrator.ask({
     system: systemPrompt(input.count, context.text, existingQuestions),

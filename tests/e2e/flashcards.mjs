@@ -103,12 +103,17 @@ await page.waitForTimeout(700);
 check('La modification de la question est bien persistée après rechargement',
   await main.locator('input[value="Fréquence cardiaque au repos — adulte sain ?"]').isVisible());
 
-// ---------- Génération IA sans clé ----------
-await page.getByRole('tab', { name: '✨ Générer avec l’IA' }).click();
+// ---------- Génération locale (par défaut, sans clé) et régénération IA explicite ----------
+await page.getByRole('tab', { name: '✨ Générer automatiquement' }).click();
 await page.waitForTimeout(300);
 await page.getByRole('button', { name: /Générer \d+ cartes/ }).click();
 await page.waitForTimeout(900);
-check('Sans clé API, l’échec de génération est signalé clairement',
+check('La génération locale ne demande jamais de clé API — seul le manque de contenu est signalé',
+  await page.getByText(/document indexé/).isVisible() && !(await page.getByText(/clé API dans Paramètres/).isVisible()));
+
+await page.getByRole('button', { name: 'Régénérer avec l’IA' }).click();
+await page.waitForTimeout(900);
+check('« Régénérer avec l’IA » reste un choix explicite, honnêtement refusé sans clé configurée',
   await page.getByText(/clé API dans Paramètres/).isVisible());
 
 await page.screenshot({ path: `${SHOT}/ipad-flashcards.png`, fullPage: false });

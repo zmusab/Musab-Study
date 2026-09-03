@@ -7,7 +7,6 @@ import { listChunks } from '@/data/repositories/documents';
 import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/notions';
 import { analyzeChapter, InsufficientChapterContentError } from '@/services/courses/notions';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
-import { hasApiKey } from '@/services/ai/settings';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { Chapter, ID } from '@/types';
 
@@ -16,16 +15,23 @@ import type { Chapter, ID } from '@/types';
  * (services/courses/notions.ts), lui-même bâti sur le pipeline de validation
  * du podcast. Rien n'est affiché avant que l'analyse soit réellement
  * terminée : pas de nombre de notions inventé pendant le chargement.
+ *
+ * SOURCE PAR DÉFAUT : le moteur local (aucune clé requise). `lastSource`
+ * n'est connu QUE pour une analyse lancée pendant cette session — une
+ * analyse déjà stockée avant ce chantier peut venir de l'IA ou du moteur
+ * local sans qu'on puisse honnêtement le savoir après coup, donc aucun
+ * badge n'est affiché pour elle.
  */
 function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: Chapter }) {
   const { notify } = useToast();
   const navigate = useNavigate();
   const analysis = useLiveQuery(() => getChapterAnalysis(chapter.id), [chapter.id]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [lastSource, setLastSource] = useState<'local' | 'ai' | null>(null);
 
-  const runAnalysis = async () => {
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour analyser ce chapitre.', 'error');
+  const runAnalysis = async (source: 'local' | 'ai' = 'local') => {
+    if (source === 'ai' && !aiOrchestrator.hasAvailableProvider()) {
+      notify('Ajoute une clé API dans Paramètres pour analyser avec l’IA.', 'error');
       return;
     }
     setAnalyzing(true);
@@ -42,8 +48,9 @@ function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: C
         documents: new Map(documentRows.map((row) => [row.id, { id: row.id, name: row.name }])),
       };
 
-      const notions = await analyzeChapter({ chunks, lookup });
+      const notions = await analyzeChapter({ chunks, lookup, source });
       await saveChapterAnalysis(subjectId, chapter.id, notions);
+      setLastSource(source);
       notify(`« ${chapter.name} » analysé — ${notions.length} notion(s) détectée(s).`, 'success');
     } catch (error) {
       if (error instanceof InsufficientChapterContentError) {
@@ -64,12 +71,27 @@ function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: C
           {analysis && (
             <p className="mt-0.5 text-[0.76rem] text-[var(--ink-faint)]">
               {analysis.notions.length} notion(s) détectée(s)
+              {lastSource && (
+                <span className="ml-1.5">
+                  · {lastSource === 'ai' ? '✨ par l’IA' : '⚙️ localement'}
+                </span>
+              )}
             </p>
           )}
         </div>
-        <Button size="sm" variant="secondary" loading={analyzing} onClick={() => void runAnalysis()}>
-          {analyzing ? 'Analyse en cours…' : analysis ? 'Ré-analyser' : 'Analyser ce chapitre'}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" variant="secondary" loading={analyzing} onClick={() => void runAnalysis('local')}>
+            {analyzing ? 'Analyse en cours…' : analysis ? 'Ré-analyser (local)' : 'Analyser ce chapitre (local)'}
+          </Button>
+          <button
+            type="button"
+            className="text-[0.72rem] text-[var(--ink-faint)] underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={analyzing}
+            onClick={() => void runAnalysis('ai')}
+          >
+            avec l’IA à la place
+          </button>
+        </div>
       </div>
 
       {analysis && analysis.notions.length > 0 && (
