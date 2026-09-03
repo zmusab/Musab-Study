@@ -316,6 +316,46 @@ describe('buildQuiz — construction de QCM réels', () => {
     expect(result.blocked).toMatch(/distinctes/);
   });
 
+  /**
+   * Cas réel signalé : « Quelles dents supérieures sont innervées par les
+   * nerfs alvéolaires supérieurs et postérieurs ? » avec, parmi les options,
+   * « Les molaires et les prémolaires supérieures » à côté de « La deuxième
+   * prémolaire et les deux premières molaires supérieures » — deux réponses
+   * qui se chevauchent au point que la première pourrait être défendue comme
+   * une version moins précise de la bonne réponse. Les distracteurs sont de
+   * VRAIES réponses d'autres cartes (jamais fabriquées) : rien n'empêchait
+   * jusqu'ici deux cartes réelles de décrire la même notion sous deux
+   * formulations qui se recoupent.
+   */
+  it('n’utilise jamais, comme distracteur, une réponse qui se recoupe trop avec la bonne réponse', () => {
+    const targeted = card({
+      id: 't1',
+      subjectId: 's1',
+      chapterId: 'ch1',
+      answer: 'La deuxième prémolaire et les deux premières molaires supérieures.',
+    });
+    const ambiguous = card({
+      id: 'amb1',
+      subjectId: 's1',
+      chapterId: 'ch1',
+      answer: 'Les molaires et les prémolaires supérieures.',
+    });
+    const distinct = [
+      card({ id: 'd1', subjectId: 's1', chapterId: 'ch1', answer: 'Le nerf mandibulaire.' }),
+      card({ id: 'd2', subjectId: 's1', chapterId: 'ch1', answer: 'La branche ophtalmique.' }),
+      card({ id: 'd3', subjectId: 's1', chapterId: 'ch1', answer: 'Le ganglion trigéminal.' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'cards', cardIds: [targeted.id] },
+      emptyTables([targeted, ambiguous, ...distinct]),
+      { count: 1, difficulty: 'mixed', format: 'qcm', now: NOW, random: seeded(21) },
+    );
+    expect(result.blocked).toBeNull();
+    const question = result.questions[0]!;
+    expect(question.options).not.toContain(ambiguous.answer);
+    expect(question.options).toContain(targeted.answer);
+  });
+
   it('propose un indice dérivé du texte réel de la réponse', () => {
     const result = buildQuiz(
       { kind: 'subject', subjectId: 's1' },

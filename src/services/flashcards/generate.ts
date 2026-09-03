@@ -38,6 +38,7 @@ Adapte bien sûr chaque carte au contenu réel fourni ci-dessous — ces deux ph
 RÈGLES ABSOLUES :
 - Chaque réponse doit citer la référence de l'extrait qui la soutient, entre crochets : "S1", "S2".
 - N'utilise QUE les extraits ci-dessous. Si une information n'y est pas clairement présente, ne l'invente pas et ne la propose pas comme si elle en provenait — complète JAMAIS avec des connaissances générales absentes du texte.
+- Utilise la terminologie EXACTE du cours (nom d'une structure anatomique, d'un nerf, d'un muscle...) telle qu'elle apparaît dans les extraits — ne la traduis pas, ne l'abrège pas, ne la remplace pas par un synonyme. Si un terme anatomique est ambigu ou absent des extraits, ne propose PAS de carte dessus plutôt que d'inventer ou de deviner une dénomination.
 - Ne propose pas deux cartes qui testent la même information sous une forme différente.
 - Réponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ni après, sans balises de code. Format exact :
 [{"question":"...","answer":"réponse concise avec sa référence [S1]","refs":["S1"]}]

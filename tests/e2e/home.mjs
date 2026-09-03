@@ -104,11 +104,11 @@ check('Une durée estimée est affichée', await page.getByText(/≈ \d+ min/).i
 await page.getByRole('button', { name: '▶️ Commencer ma session' }).click();
 await page.waitForTimeout(600);
 check('La session démarre directement, sans étape intermédiaire', await main.getByText('Quel est le rôle du nerf vague ?').isVisible());
-await page.getByRole('button', { name: 'Voir la réponse' }).click();
+await page.locator('[data-review-see-answer]').click();
 await page.waitForTimeout(300);
 await page.getByRole('button', { name: 'Bien' }).click();
 await page.waitForTimeout(500);
-check('La séance se termine', await page.getByText('Séance terminée').isVisible());
+check('La séance se termine', await page.getByText('Révision terminée').isVisible());
 
 // ---------- État 5 : de retour à jour après la séance ----------
 await nav.getByRole('link', { name: 'Accueil', exact: true }).first().click();

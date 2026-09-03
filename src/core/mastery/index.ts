@@ -52,6 +52,29 @@ export function masteryLevel(
   return 4;
 }
 
+export interface MasteryStatus {
+  label: string;
+  /** `null` pour une carte jamais révisée — un pourcentage y serait trompeur, pas juste bas. */
+  pct: number | null;
+  level: MasteryLevel | null;
+}
+
+/**
+ * Étiquette affichable, pensée pour ne jamais laisser croire qu'un « 0 % »
+ * juge la carte elle-même plutôt que le simple fait qu'elle n'a encore
+ * jamais été révisée — cas qui se confond sinon avec la case la plus faible
+ * de `MASTERY_LABELS` (« Très faible »), destinée à une carte réellement mal
+ * maîtrisée après des révisions ratées.
+ */
+export function masteryStatus(state: Pick<SchedulingState, 'ease' | 'interval' | 'reps'>): MasteryStatus {
+  if (state.reps === 0 && state.interval === 0) {
+    return { label: 'À découvrir · jamais révisée', pct: null, level: null };
+  }
+  const level = masteryLevel(state);
+  const pct = masteryPct(state);
+  return { label: `${MASTERY_LABELS[level]} · ${pct}%`, pct, level };
+}
+
 /** Répartition des cartes par niveau de maîtrise, pour la barre empilée. */
 export function masteryDistribution(cards: Flashcard[]): number[] {
   const counts = new Array<number>(MASTERY_LEVELS).fill(0);

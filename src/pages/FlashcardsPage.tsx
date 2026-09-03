@@ -11,6 +11,7 @@ import {
   EmptyState,
   Icon,
   Input,
+  SegmentedControl,
   Select,
   Textarea,
   useConfirm,
@@ -24,7 +25,7 @@ import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
 import { hasApiKey } from '@/services/ai/settings';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
-import { masteryLevel, masteryPct, MASTERY_COLOR_VARS, MASTERY_LABELS } from '@/core/mastery';
+import { masteryStatus, MASTERY_COLOR_VARS } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { CardDraft } from '@/services/flashcards/validate';
@@ -52,6 +53,7 @@ export function FlashcardsPage() {
   const [manualAnswer, setManualAnswer] = useState('');
   const [manualChapterId, setManualChapterId] = useState<ID | ''>('');
   const [search, setSearch] = useState('');
+  const [originFilter, setOriginFilter] = useState<'all' | 'ai' | 'manual'>('all');
 
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
@@ -83,10 +85,14 @@ export function FlashcardsPage() {
     const term = search.trim().toLowerCase();
     return cards.filter((card) => {
       if (filterChapterId !== 'all' && card.chapterId !== filterChapterId) return false;
+      if (originFilter !== 'all' && card.origin !== originFilter) return false;
       if (term.length === 0) return true;
       return card.question.toLowerCase().includes(term) || card.answer.toLowerCase().includes(term);
     });
-  }, [cards, filterChapterId, search]);
+  }, [cards, filterChapterId, originFilter, search]);
+
+  const aiCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'ai').length, [cards]);
+  const manualCount = useMemo(() => (cards ?? []).filter((c) => c.origin !== 'ai').length, [cards]);
 
   const handleGenerate = async () => {
     if (!subjectId) return;
@@ -275,7 +281,7 @@ export function FlashcardsPage() {
           </Select>
         </div>
         <Button className="mt-4" loading={generating} onClick={handleGenerate} block>
-          ✨ Générer {count} cartes
+          {generating ? 'Analyse du cours et génération des cartes…' : `✨ Générer ${count} cartes`}
         </Button>
 
         <AnimatePresence mode="wait">
@@ -312,6 +318,9 @@ export function FlashcardsPage() {
               />
               <p className="mt-2 text-[0.74rem] text-[var(--ink-faint)]">
                 📚 {currentDraft.citations[0]?.documentName}
+                {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
+                  ? ` — page ${currentDraft.citations[0].page}`
+                  : ''}
               </p>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={handleAcceptDraft}>
@@ -366,6 +375,20 @@ export function FlashcardsPage() {
 
       <Card>
         <h2 className="mb-4 text-[1.05rem]">Bibliothèque ({cards?.length ?? 0})</h2>
+        {/* Une seule bibliothèque : « IA » et « Manuelles » ne sont que des filtres
+            sur cette même liste, jamais deux systèmes séparés — une carte générée
+            par l'IA reste une flashcard normale, révisée par le même SM-2. */}
+        <SegmentedControl
+          className="mb-4"
+          size="sm"
+          segments={[
+            { value: 'all', label: `Toutes (${cards?.length ?? 0})` },
+            { value: 'ai', label: `✨ IA (${aiCount})` },
+            { value: 'manual', label: `✍️ Manuelles (${manualCount})` },
+          ]}
+          value={originFilter}
+          onChange={setOriginFilter}
+        />
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <Input
             placeholder="Rechercher…"
@@ -391,8 +414,7 @@ export function FlashcardsPage() {
         ) : (
           <Stagger className="flex flex-col gap-3">
             {filteredCards.map((card) => {
-              const level = masteryLevel(card);
-              const pct = masteryPct(card);
+              const status = masteryStatus(card);
               return (
                 <StaggerItem key={card.id}>
                   <div className="rounded-[var(--radius-control)] border border-[var(--line)] p-3.5">
@@ -417,8 +439,8 @@ export function FlashcardsPage() {
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Chip color={MASTERY_COLOR_VARS[level]}>
-                          {MASTERY_LABELS[level]} · {pct}%
+                        <Chip color={status.level !== null ? MASTERY_COLOR_VARS[status.level] : undefined}>
+                          {status.label}
                         </Chip>
                         {card.chapterId && <Chip>{chapterName(card.chapterId)}</Chip>}
                         {card.origin === 'ai' && <Chip>✨ IA</Chip>}

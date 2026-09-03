@@ -156,6 +156,48 @@ function shuffle<T>(items: readonly T[], random: () => number): T[] {
 const normalize = (text: string): string => text.trim().toLowerCase();
 
 /**
+ * Normalisation plus large que `normalize` : accents retirés, ponctuation
+ * effacée, et un « s » final ôté mot à mot (un radical de pluriel grossier,
+ * pas une vraie lemmatisation) — juste assez pour reconnaître que « les
+ * molaires et les prémolaires » et « la deuxième prémolaire et les deux
+ * premières molaires » parlent du même contenu malgré l'accord.
+ */
+function overlapWords(text: string): Set<string> {
+  const stripped = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word));
+  return new Set(stripped);
+}
+
+/**
+ * Vrai si deux réponses se recoupent trop pour former une paire
+ * question/distracteur défendable sans ambiguïté — l'une contient l'autre,
+ * ou elles partagent l'essentiel de leur vocabulaire. Les distracteurs de
+ * QCM et les fausses affirmations de Vrai/Faux sont de VRAIES réponses
+ * d'autres cartes (jamais fabriquées) : rien n'empêche par construction que
+ * deux cartes réelles décrivent la même notion sous deux formulations qui se
+ * chevauchent — c'est ce recouvrement, pas le mécanisme de tirage, qu'il
+ * faut détecter avant d'afficher la question.
+ */
+function overlapsSignificantly(a: string, b: string): boolean {
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na.length === 0 || nb.length === 0) return false;
+  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+
+  const wordsA = overlapWords(a);
+  const wordsB = overlapWords(b);
+  const intersection = [...wordsA].filter((word) => wordsB.has(word)).length;
+  const union = new Set([...wordsA, ...wordsB]).size;
+  return union > 0 && intersection / union >= 0.5;
+}
+
+/**
  * Le vivier de cartes correspondant à un scope, AVANT filtre de difficulté.
  *
  * Chaque branche ne fait que lire des données réellement enregistrées :
@@ -275,6 +317,10 @@ function pickRelevantAnswers(
       const text = other.answer.trim();
       const key = normalize(text);
       if (key === '' || seen.has(key)) continue;
+      // Une réponse réelle mais qui se recoupe trop avec la bonne réponse
+      // rendrait l'option défendable comme partiellement vraie — jamais
+      // affichée, comme une réponse fabriquée ne le serait pas.
+      if (overlapsSignificantly(text, card.answer)) continue;
       seen.add(key);
       picked.push(text);
     }

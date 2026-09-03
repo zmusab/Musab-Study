@@ -35,22 +35,41 @@ export class PdfExtractionError extends Error {
 }
 
 /**
+ * Un recul horizontal important, à hauteur de ligne inchangée, signale un
+ * changement de colonne — pas la suite naturelle d'une phrase. Fréquent sur
+ * des diapositives exportées en PDF (deux colonnes, ou des zones de texte
+ * séparées à la même hauteur) : sans cette détection, `joinTextItems` collait
+ * la fin d'une colonne au début de l'autre en un seul fragment incohérent —
+ * la cause la plus plausible d'un texte extrait « qui a l'air d'une mauvaise
+ * OCR » alors qu'il n'y a ici AUCUNE OCR, seulement l'ordre dans lequel pdf.js
+ * restitue le texte natif du PDF. En points PDF (1/72 de pouce).
+ */
+const COLUMN_JUMP_THRESHOLD = 40;
+
+/**
  * Recompose le texte d'une page en préservant les sauts de ligne.
  *
  * pdf.js renvoie des fragments positionnés, sans notion de ligne. Les
  * concaténer bêtement — ce que faisait le prototype — colle les titres aux
  * paragraphes et détruit la structure dont dépend le découpage en fragments.
- * On s'appuie ici sur le marqueur `hasEOL` fourni par pdf.js, puis sur les
- * ruptures de position verticale.
+ * On s'appuie ici sur le marqueur `hasEOL` fourni par pdf.js, sur les
+ * ruptures de position verticale, puis sur un recul horizontal suspect (voir
+ * `COLUMN_JUMP_THRESHOLD`).
  */
-function joinTextItems(items: { str: string; hasEOL?: boolean; transform?: number[] }[]): string {
+export function joinTextItems(items: { str: string; hasEOL?: boolean; transform?: number[] }[]): string {
   let out = '';
   let previousY: number | null = null;
+  let previousX: number | null = null;
 
   for (const item of items) {
+    const x = item.transform?.[4] ?? null;
     const y = item.transform?.[5] ?? null;
+    const sameLine = previousY !== null && y !== null && Math.abs(y - previousY) <= 1;
+    const columnJump = sameLine && previousX !== null && x !== null && x < previousX - COLUMN_JUMP_THRESHOLD;
 
-    if (previousY !== null && y !== null && Math.abs(y - previousY) > 1) {
+    if (columnJump) {
+      out += '\n';
+    } else if (previousY !== null && y !== null && Math.abs(y - previousY) > 1) {
       // Un écart vertical important indique un nouveau paragraphe, pas un
       // simple retour à la ligne.
       out += Math.abs(y - previousY) > 14 ? '\n\n' : '\n';
@@ -61,6 +80,7 @@ function joinTextItems(items: { str: string; hasEOL?: boolean; transform?: numbe
     out += item.str;
     if (item.hasEOL) out += '\n';
     previousY = y;
+    previousX = x;
   }
 
   return out;

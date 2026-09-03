@@ -56,8 +56,24 @@ await page.waitForTimeout(600);
 check('Notification de création affichée', await page.getByText('Carte ajoutée.').isVisible());
 check('La carte apparaît dans la bibliothèque',
   await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible());
-check('La maîtrise « Très faible » est affichée pour une carte neuve',
-  await main.getByText(/Très faible/).isVisible());
+check('Une carte neuve, jamais révisée, l’annonce clairement plutôt qu’un trompeur « Très faible · 0% »',
+  await main.getByText('À découvrir · jamais révisée').isVisible());
+check('« Très faible » n’est jamais affiché pour une carte simplement neuve',
+  !(await main.getByText(/Très faible/).isVisible()));
+
+// ---------- Une seule bibliothèque, filtrable par origine ----------
+check('Le filtre « Toutes / IA / Manuelles » est proposé', await page.getByRole('tab', { name: /Toutes/ }).isVisible());
+await page.getByRole('tab', { name: /✍️ Manuelles/ }).click();
+await page.waitForTimeout(300);
+check('Le filtre « Manuelles » garde la carte créée à la main',
+  await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible());
+await page.getByRole('tab', { name: /✨ IA/ }).click();
+await page.waitForTimeout(300);
+check('Le filtre « IA » masque une carte créée à la main (elle n’est pas d’origine IA)',
+  !(await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible()));
+await page.getByRole('tab', { name: /Toutes/ }).click();
+await page.waitForTimeout(300);
+check('« Toutes » réaffiche la carte', await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible());
 
 // ---------- Recherche ----------
 await page.getByPlaceholder('Rechercher…').fill('fréquence');

@@ -3,12 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
-import { Button, Card, Chip, EmptyState, Icon, SegmentedControl, Swatch } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, SegmentedControl, Swatch, Textarea } from '@/components/ui';
 import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import { springSoft } from '@/components/motion/transitions';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
 import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/cards';
 import { db } from '@/data/db';
+import { useProgress } from '@/hooks/useProgress';
+import { computeStreak } from '@/core/progress';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 
 /**
@@ -56,6 +58,7 @@ function ReviewSession({
   const reduced = useReducedMotion();
   const [queue, setQueue] = useState(initialQueue);
   const [revealed, setRevealed] = useState(false);
+  const [attempt, setAttempt] = useState('');
   const [confidence, setConfidence] = useState<Confidence>('medium');
   const [cardStartedAt, setCardStartedAt] = useState(() => Date.now());
   const [reviewed, setReviewed] = useState(0);
@@ -63,6 +66,7 @@ function ReviewSession({
   const total = initialQueue.length;
 
   const current = queue[0];
+  const progressPct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
 
   const handleRate = async (rating: Rating) => {
     if (!current) return;
@@ -78,6 +82,7 @@ function ReviewSession({
     setCorrect(nextCorrect);
     setQueue(nextQueue);
     setRevealed(false);
+    setAttempt('');
     setConfidence('medium');
     setCardStartedAt(Date.now());
 
@@ -88,11 +93,19 @@ function ReviewSession({
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <Chip>{subjectName(current.subjectId)}</Chip>
         <p className="text-[0.8rem] text-[var(--ink-faint)]">
           {reviewed}/{total} révisée(s) · {queue.length} restante(s)
         </p>
+      </div>
+      <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
+        <motion.div
+          className="h-full rounded-full bg-[var(--accent)]"
+          initial={false}
+          animate={{ width: `${progressPct}%` }}
+          transition={springSoft}
+        />
       </div>
 
       <AnimatePresence mode="wait">
@@ -115,10 +128,21 @@ function ReviewSession({
                   transition={springSoft}
                   className="overflow-hidden"
                 >
+                  {attempt.trim().length > 0 && (
+                    <div className="mt-4 border-t border-[var(--line)] pt-4">
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--ink-faint)]">
+                        Ta réponse
+                      </p>
+                      <p className="mt-1 text-[0.9rem] leading-relaxed text-[var(--ink-soft)]" data-review-your-answer>
+                        {attempt}
+                      </p>
+                    </div>
+                  )}
                   <div className="mt-4 border-t border-[var(--line)] pt-4">
-                    <p className="text-[0.95rem] leading-relaxed text-[var(--ink-soft)]">
-                      {current.answer}
+                    <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[var(--accent-ink)]">
+                      Réponse attendue
                     </p>
+                    <p className="mt-1 text-[0.95rem] leading-relaxed">{current.answer}</p>
                   </div>
                 </motion.div>
               )}
@@ -128,13 +152,32 @@ function ReviewSession({
       </AnimatePresence>
 
       {!revealed ? (
-        <Button className="mt-4" block onClick={() => setRevealed(true)}>
-          Voir la réponse
-        </Button>
+        <div className="mt-4 flex flex-col gap-2.5">
+          <Textarea
+            placeholder="Écris ta réponse ici, avant de la voir — le rappel actif retient mieux qu'une simple relecture."
+            rows={3}
+            value={attempt}
+            onChange={(e) => setAttempt(e.target.value)}
+            data-review-attempt
+          />
+          <Button block onClick={() => setRevealed(true)} data-review-validate>
+            Valider
+          </Button>
+          <button
+            type="button"
+            onClick={() => setRevealed(true)}
+            className="self-center text-[0.78rem] text-[var(--ink-faint)] underline underline-offset-2"
+            data-review-see-answer
+          >
+            Je bloque — voir la réponse
+          </button>
+        </div>
       ) : (
         <div className="mt-4 flex flex-col gap-3">
           <div className="flex flex-col items-center gap-2">
-            <span className="text-[0.78rem] text-[var(--ink-faint)]">Avant de voir la réponse, tu étais…</span>
+            <span className="text-[0.78rem] text-[var(--ink-faint)]">
+              {attempt.trim().length > 0 ? 'Comparée à la réponse attendue, ta réponse était…' : 'Avant de voir la réponse, tu étais…'}
+            </span>
             <SegmentedControl segments={CONFIDENCE_SEGMENTS} value={confidence} onChange={setConfidence} size="sm" />
           </div>
           <div className="grid grid-cols-4 gap-2">
@@ -160,6 +203,7 @@ function ReviewSession({
 export function RevisionsPage() {
   const subjects = useSubjects();
   const overviews = useSubjectOverviews();
+  const progress = useProgress();
   const [queue, setQueue] = useState<Flashcard[] | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -170,6 +214,11 @@ export function RevisionsPage() {
     if (!overviews) return 0;
     return Object.values(overviews).reduce((sum, o) => sum + o.dueCards, 0);
   }, [overviews]);
+
+  // Même calcul que « Progression » (`core/progress`, purement local, aucun
+  // appel IA) — la régularité mérite d'être vue ici, là où elle se construit,
+  // pas seulement sur un tableau de bord séparé.
+  const streak = useMemo(() => (progress ? computeStreak(progress.tables.logs) : null), [progress]);
 
   const startAll = async () => {
     setSummary(null);
@@ -245,14 +294,28 @@ export function RevisionsPage() {
         subtitle="Les cartes les moins maîtrisées reviennent en premier, automatiquement."
       />
 
+      {streak && streak.current > 0 && (
+        <p className="mb-4 text-[0.82rem] text-[var(--ink-soft)]">
+          Série en cours : <strong>{streak.current} jour{streak.current > 1 ? 's' : ''}</strong> de révision.
+        </p>
+      )}
+
       <WisdomQuote className="mb-6" />
 
       {summary && (
         <FadeUp className="mb-6 rounded-[var(--radius-card)] border border-[var(--success)]/40 bg-[var(--success-tint)] p-5 text-center">
-          <p className="text-[1.05rem] font-semibold">Séance terminée</p>
+          <p className="text-[1.05rem] font-semibold">Révision terminée</p>
           <p className="mt-1 text-[0.88rem] text-[var(--ink-soft)]">
-            {summary.correct}/{summary.reviewed} carte(s) réussie(s)
+            {summary.correct}/{summary.reviewed} carte{summary.reviewed > 1 ? 's' : ''} réussie{summary.correct > 1 ? 's' : ''}
+            {summary.reviewed > 0 ? ` · ${Math.round((summary.correct / summary.reviewed) * 100)}%` : ''}
           </p>
+          {totalDue === 0 ? (
+            <p className="mt-1 text-[0.8rem] text-[var(--ink-faint)]">Plus aucune carte due pour l’instant.</p>
+          ) : (
+            <p className="mt-1 text-[0.8rem] text-[var(--ink-faint)]">
+              {totalDue} carte{totalDue > 1 ? 's' : ''} encore due{totalDue > 1 ? 's' : ''}.
+            </p>
+          )}
         </FadeUp>
       )}
 
@@ -264,7 +327,7 @@ export function RevisionsPage() {
         />
       ) : (
         <Button className="mb-6" size="lg" block onClick={() => void startAll()}>
-          Réviser tout — {totalDue} carte(s) due(s)
+          Commencer ma révision — {totalDue} carte{totalDue > 1 ? 's' : ''} due{totalDue > 1 ? 's' : ''}
         </Button>
       )}
 

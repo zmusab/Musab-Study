@@ -469,7 +469,7 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
           Rien n’est enregistré tant que tu n’as pas accepté chaque carte — tu peux la modifier avant, ou la refuser.
         </p>
         <Button size="sm" loading={generating} onClick={() => void generate()} data-assistant-memorize-generate>
-          ✨ Proposer 5 flashcards
+          {generating ? 'Analyse du cours et génération…' : '✨ Proposer 5 flashcards'}
         </Button>
 
         {current && (
@@ -489,7 +489,10 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
               value={current.answer}
               onChange={(event) => setDrafts((list) => list.map((d, i) => (i === index ? { ...d, answer: event.target.value } : d)))}
             />
-            <p className="mt-1 text-[0.74rem] text-[var(--ink-faint)]">📚 {current.citations[0]?.documentName}</p>
+            <p className="mt-1 text-[0.74rem] text-[var(--ink-faint)]">
+              📚 {current.citations[0]?.documentName}
+              {current.citations[0]?.page !== null && current.citations[0]?.page !== undefined ? ` — page ${current.citations[0].page}` : ''}
+            </p>
             <div className="mt-3 flex gap-2">
               <Button size="sm" loading={saving} onClick={() => void accept()} data-assistant-memorize-accept>
                 ✓ Accepter

@@ -53,26 +53,32 @@ await page.waitForTimeout(600);
 await nav.getByRole('link', { name: 'Révisions', exact: true }).first().click();
 await page.waitForTimeout(500);
 check('L’écran Révisions s’ouvre', await page.getByRole('heading', { name: 'Révisions' }).isVisible());
-check('Le total des cartes dues est proposé', await page.getByText(/Réviser tout — 1 carte/).isVisible());
+check('Le total des cartes dues est proposé', await page.getByText(/Commencer ma révision — 1 carte/).isVisible());
 
-await page.getByText(/Réviser tout — 1 carte/).click();
+await page.getByText(/Commencer ma révision — 1 carte/).click();
 await page.waitForTimeout(400);
 check('La question s’affiche', await main.getByText('Quelle est la longueur de travail moyenne d’une incisive centrale ?').isVisible());
 check('La réponse n’est pas visible avant révélation', !(await main.getByText('Environ 22 mm.').isVisible()));
 
-await page.getByRole('button', { name: 'Voir la réponse' }).click();
+// ---------- Rappel actif : écrire sa réponse avant de la voir ----------
+check('Le champ de rappel actif est proposé', await page.locator('[data-review-attempt]').isVisible());
+check('« Voir la réponse » reste disponible en secours', await page.locator('[data-review-see-answer]').isVisible());
+await page.locator('[data-review-attempt]').fill('Environ 20 mm, je crois.');
+await page.locator('[data-review-validate]').click();
 await page.waitForTimeout(400);
-check('La réponse se révèle', await main.getByText('Environ 22 mm.').isVisible());
+check('La réponse tapée par l’étudiant est rappelée avant la bonne réponse',
+  await page.locator('[data-review-your-answer]').getByText('Environ 20 mm, je crois.').isVisible());
+check('La réponse attendue se révèle', await main.getByText('Environ 22 mm.').isVisible());
 check('Les 4 boutons de notation sont visibles', await page.getByRole('button', { name: 'Facile' }).isVisible());
 
 await page.getByRole('button', { name: 'Bien' }).click();
 await page.waitForTimeout(500);
-check('La séance se termine après la dernière carte', await page.getByText('Séance terminée').isVisible());
-check('Le résumé compte la carte réussie', await page.getByText(/1\/1 carte\(s\) réussie/).isVisible());
+check('La séance se termine après la dernière carte', await page.getByText('Révision terminée').isVisible());
+check('Le résumé compte la carte réussie', await page.getByText(/1\/1 carte réussie/).isVisible());
 
 // ---------- Plus rien à réviser ----------
-check('Le point d’entrée « Réviser tout » disparaît une fois à jour',
-  !(await page.getByText(/Réviser tout —/).isVisible()));
+check('Le point d’entrée « Commencer ma révision » disparaît une fois à jour',
+  !(await page.getByText(/Commencer ma révision —/).isVisible()));
 check('L’état « à jour » s’affiche', await page.getByText('Tout est à jour').isVisible());
 
 await page.screenshot({ path: `${SHOT}/ipad-revisions.png`, fullPage: false });

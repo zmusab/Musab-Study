@@ -132,12 +132,12 @@ for (const [question, answer] of CARDS.slice(1)) {
 
 await nav.getByRole('link', { name: 'Révisions', exact: true }).first().click();
 await page.waitForTimeout(700);
-await page.getByText(/Réviser tout/).first().click();
+await page.getByText(/Commencer ma révision/).first().click();
 await page.waitForTimeout(500);
 
 let answered = 0;
 for (let i = 0; i < 30; i += 1) {
-  const reveal = page.getByRole('button', { name: /Afficher la réponse|Voir la réponse/ });
+  const reveal = page.locator('[data-review-see-answer]');
   if (await reveal.count()) {
     await reveal.first().click();
     await page.waitForTimeout(200);

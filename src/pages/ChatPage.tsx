@@ -430,15 +430,21 @@ export function ChatPage() {
           )}
 
           {messages?.map((message, index) => (
-            <ChatMessageView
-              key={message.id}
-              message={message}
-              // Seulement sous la DERNIÈRE réponse : proposer de reprendre un
-              // échange déjà enfoui n'a pas de sens, et répéter trois boutons
-              // sous chaque message reconstituerait l'encombrement qu'on vient
-              // de retirer.
-              actions={index === (messages?.length ?? 0) - 1 ? answerActions(message.text) : undefined}
-            />
+            // `key` stable par message : cette animation ne joue qu'à l'arrivée
+            // d'un nouveau message, jamais en boucle au fil des re-rendus — un
+            // fournisseur sans diffusion réelle (OpenAI, Gemini) livre sa
+            // réponse en un bloc, elle n'a donc plus besoin d'apparaître d'un
+            // coup à l'écran pour autant.
+            <FadeUp key={message.id}>
+              <ChatMessageView
+                message={message}
+                // Seulement sous la DERNIÈRE réponse : proposer de reprendre un
+                // échange déjà enfoui n'a pas de sens, et répéter trois boutons
+                // sous chaque message reconstituerait l'encombrement qu'on vient
+                // de retirer.
+                actions={index === (messages?.length ?? 0) - 1 ? answerActions(message.text) : undefined}
+              />
+            </FadeUp>
           ))}
 
           {pending && (

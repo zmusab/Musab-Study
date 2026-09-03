@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   masteryPct,
   masteryLevel,
+  masteryStatus,
   masteryDistribution,
   averageMastery,
   itemHistory,
@@ -157,5 +158,29 @@ describe('itemHistory', () => {
       log({ id: '3', at: '2026-08-25T10:00:00.000Z' }),
     ];
     expect(itemHistory(logs, 'c1').lastReviewAt).toBe('2026-08-29T10:00:00.000Z');
+  });
+});
+
+describe('masteryStatus', () => {
+  it('une carte jamais révisée n’affiche jamais « Très faible · 0% » — le badge de maîtrise le plus bas jugerait la carte, pas son historique', () => {
+    const status = masteryStatus(card({ reps: 0, interval: 0 }));
+    expect(status.label).toBe('À découvrir · jamais révisée');
+    expect(status.pct).toBeNull();
+    expect(status.level).toBeNull();
+  });
+
+  it('une carte réellement mal maîtrisée après des révisions garde un pourcentage réel, distinct d’une carte neuve', () => {
+    const status = masteryStatus(card({ reps: 4, interval: 1, ease: MIN_EASE }));
+    expect(status.pct).not.toBeNull();
+    expect(status.level).toBe(0);
+    expect(status.label).toContain('Très faible');
+    expect(status.label).not.toBe('À découvrir · jamais révisée');
+  });
+
+  it('reflète exactement masteryPct/masteryLevel pour une carte déjà révisée', () => {
+    const c = card({ reps: 3, interval: 30, ease: (MIN_EASE + MAX_EASE) / 2 });
+    const status = masteryStatus(c);
+    expect(status.pct).toBe(masteryPct(c));
+    expect(status.level).toBe(masteryLevel(c));
   });
 });
