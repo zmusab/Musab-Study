@@ -54,7 +54,7 @@ export function FlashcardsPage() {
   const [manualAnswer, setManualAnswer] = useState('');
   const [manualChapterId, setManualChapterId] = useState<ID | ''>('');
   const [search, setSearch] = useState('');
-  const [originFilter, setOriginFilter] = useState<'all' | 'ai' | 'manual'>('all');
+  const [originFilter, setOriginFilter] = useState<'all' | 'local' | 'ai' | 'manual'>('all');
   const [creationMode, setCreationMode] = useState<'ai' | 'manual'>('ai');
 
   const chapters = useChapters(subjectId || undefined);
@@ -87,14 +87,23 @@ export function FlashcardsPage() {
     const term = search.trim().toLowerCase();
     return cards.filter((card) => {
       if (filterChapterId !== 'all' && card.chapterId !== filterChapterId) return false;
-      if (originFilter !== 'all' && card.origin !== originFilter) return false;
+      // « Manuelles » regroupe la saisie à la main et les cartes nées d'une
+      // erreur de quiz : aucune des deux n'a été produite par un générateur.
+      if (originFilter === 'manual' && card.origin !== 'manual' && card.origin !== 'quiz-error') return false;
+      if (originFilter !== 'all' && originFilter !== 'manual' && card.origin !== originFilter) return false;
       if (term.length === 0) return true;
       return card.question.toLowerCase().includes(term) || card.answer.toLowerCase().includes(term);
     });
   }, [cards, filterChapterId, originFilter, search]);
 
+  const localCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'local').length, [cards]);
   const aiCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'ai').length, [cards]);
-  const manualCount = useMemo(() => (cards ?? []).filter((c) => c.origin !== 'ai').length, [cards]);
+  // « Manuelles » = tout ce qui n'a été produit par aucun générateur : la
+  // saisie à la main et les cartes nées d'une erreur de quiz.
+  const manualCount = useMemo(
+    () => (cards ?? []).filter((c) => c.origin === 'manual' || c.origin === 'quiz-error').length,
+    [cards],
+  );
 
   /**
    * `source: 'local'` (par défaut) : moteur à règles, aucune clé requise,
@@ -170,7 +179,11 @@ export function FlashcardsPage() {
       answer: currentDraft.answer,
       importance: currentDraft.importance,
       difficulty: currentDraft.difficulty,
-      origin: 'ai',
+      // La provenance ENREGISTRÉE est celle qui a réellement produit la carte.
+      // Auparavant tout était marqué `'ai'`, y compris les cartes que le moteur
+      // local avait générées sans le moindre appel réseau : la bibliothèque
+      // affichait donc « ✨ IA » sur des cartes purement locales.
+      origin: draftsSource === 'ai' ? 'ai' : 'local',
       sourceChunkIds: currentDraft.sourceChunkIds,
     });
     setDraftIndex((i) => i + 1);
@@ -425,6 +438,7 @@ export function FlashcardsPage() {
           size="sm"
           segments={[
             { value: 'all', label: `Toutes (${cards?.length ?? 0})` },
+            { value: 'local', label: `⚙️ Locales (${localCount})` },
             { value: 'ai', label: `✨ IA (${aiCount})` },
             { value: 'manual', label: `✍️ Manuelles (${manualCount})` },
           ]}
@@ -486,6 +500,7 @@ export function FlashcardsPage() {
                         </Chip>
                         {card.chapterId && <Chip>{chapterName(card.chapterId)}</Chip>}
                         {card.origin === 'ai' && <Chip>✨ IA</Chip>}
+                        {card.origin === 'local' && <Chip>⚙️ Locale</Chip>}
                       </div>
                       <Button size="sm" variant="danger" onClick={() => handleDelete(card)}>
                         Suppr.

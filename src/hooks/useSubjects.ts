@@ -40,9 +40,17 @@ export interface SubjectOverview {
   documents: number;
   cards: number;
   dueCards: number;
-  quizQuestions: number;
   notes: number;
 }
+
+/*
+ * `quizQuestions` a été RETIRÉ de ces compteurs. La table du même nom n'est
+ * jamais écrite : le quiz est construit à la volée à partir des flashcards
+ * réelles (voir `core/quiz`). Le compteur affichait donc « 0 question(s) » en
+ * permanence, sur une matière dont le quiz fonctionnait parfaitement — une
+ * statistique décorative et fausse. La table reste en base (elle figure dans
+ * les sauvegardes) mais plus rien ne prétend qu'elle contient quelque chose.
+ */
 
 /** Compteurs de toutes les matières, calculés uniquement par index. */
 export function useSubjectOverviews(): Record<ID, SubjectOverview> | undefined {
@@ -51,7 +59,7 @@ export function useSubjectOverviews(): Record<ID, SubjectOverview> | undefined {
     const subjects = await db.subjects.toArray();
     const entries = await Promise.all(
       subjects.map(async (subject): Promise<[ID, SubjectOverview]> => {
-        const [chapters, documents, cards, dueCards, quizQuestions, notes] = await Promise.all([
+        const [chapters, documents, cards, dueCards, notes] = await Promise.all([
           db.chapters.where('subjectId').equals(subject.id).count(),
           db.documents.where('subjectId').equals(subject.id).count(),
           db.flashcards.where('subjectId').equals(subject.id).count(),
@@ -59,10 +67,9 @@ export function useSubjectOverviews(): Record<ID, SubjectOverview> | undefined {
             .where('[subjectId+due]')
             .between([subject.id, Dexie.minKey], [subject.id, now], true, true)
             .count(),
-          db.quizQuestions.where('subjectId').equals(subject.id).count(),
           db.notes.where('subjectId').equals(subject.id).count(),
         ]);
-        return [subject.id, { chapters, documents, cards, dueCards, quizQuestions, notes }];
+        return [subject.id, { chapters, documents, cards, dueCards, notes }];
       }),
     );
     return Object.fromEntries(entries);

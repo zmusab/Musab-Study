@@ -1,4 +1,5 @@
 import { masteryPct } from '@/core/mastery';
+import { singularize } from '@/core/text';
 import { chapterProgress, weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
 import {
@@ -170,7 +171,10 @@ function overlapWords(text: string): Set<string> {
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
-    .map((word) => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word));
+    // `singularize` vient de `core/text` : expression rigoureusement identique
+    // à celle qui était recopiée ici, donc aucun changement de comportement du
+    // quiz — seulement une définition de moins à maintenir en double.
+    .map(singularize);
   return new Set(stripped);
 }
 

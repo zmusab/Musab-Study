@@ -94,3 +94,58 @@ describe('findLocalAnswer', () => {
     expect(answer!.text.split('\n\n')).toHaveLength(1);
   });
 });
+
+/**
+ * Non-régression du signalement « réponses hors sujet » : une question dont le
+ * terme distinctif est absent du cours ne doit JAMAIS recevoir en réponse des
+ * phrases sur un sujet voisin qui partage seulement un mot générique.
+ */
+describe('findLocalAnswer — pertinence réelle, pas un simple partage de mots', () => {
+  const NERFS = makeChunk(
+    'Le nerf facial commande les muscles de la mimique faciale. ' +
+      'Le nerf trijumeau possède trois branches : ophtalmique, maxillaire et mandibulaire. ' +
+      'Le nerf est une structure conductrice.',
+  );
+
+  it('« les nerfs de Willis » ne renvoie pas des phrases sur le nerf facial — le cours n’en parle pas', () => {
+    expect(findLocalAnswer("C'est quoi les nerfs de Willis ?", [scored(NERFS)], LOOKUP)).toBeNull();
+  });
+
+  it('un sujet générique (« le nerf ») ne capture plus toutes les questions contenant « nerf »', () => {
+    const generic = makeChunk('Le nerf est une structure conductrice de l’influx nerveux.');
+    expect(findLocalAnswer('Explique-moi le nerf trijumeau', [scored(generic)], LOOKUP)).toBeNull();
+  });
+
+  it('la vraie question sur le trijumeau reste correctement répondue', () => {
+    const answer = findLocalAnswer('Explique-moi le nerf trijumeau', [scored(NERFS)], LOOKUP);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('trijumeau');
+    expect(answer!.text).not.toContain('mimique');
+  });
+
+  it('LIMITE ASSUMÉE : s’abstient aussi quand le cours nomme le sujet autrement que la question', () => {
+    // « polygone de Willis » est la bonne dénomination ; l'étudiant a demandé
+    // « les nerfs de Willis ». Le terme « nerf » est absent de ce cours-ci, le
+    // moteur s'abstient donc, alors qu'une réponse aurait été possible et même
+    // pédagogiquement utile (elle aurait corrigé la confusion).
+    //
+    // C'est un choix DÉLIBÉRÉ, pas un oubli : le seul moyen de distinguer ce
+    // cas du bug « nerfs de Willis » (répondre sur le nerf facial parce que la
+    // question contient « nerf ») serait de deviner quel terme est le plus
+    // spécifique — par la majuscule d'un éponyme, par exemple. Une telle
+    // heuristique se trompe dès qu'un étudiant tape sans majuscules, et la
+    // règle du projet est claire : mieux vaut s'abstenir que risquer une
+    // réponse à côté. L'étudiant voit le message honnête et le bouton
+    // « Répondre avec l'IA », qui traite très bien ce cas.
+    const willis = makeChunk(
+      'Le polygone de Willis est un cercle artériel situé à la base du cerveau.',
+    );
+    expect(findLocalAnswer("C'est quoi les nerfs de Willis ?", [scored(willis)], LOOKUP)).toBeNull();
+  });
+
+  it('un adverbe de politesse ou de remplissage ne fait pas abstenir le moteur', () => {
+    const answer = findLocalAnswer('Explique-moi rapidement le nerf trijumeau stp', [scored(NERFS)], LOOKUP);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('trijumeau');
+  });
+});

@@ -211,8 +211,19 @@ export interface Flashcard {
   due: ISODateTime;
   lastReview: ISODateTime | null;
 
-  /** Origine de la carte, utile pour l'audit et l'affichage. */
-  origin: 'manual' | 'ai' | 'quiz-error';
+  /**
+   * Origine de la carte, utile pour l'audit et l'affichage.
+   *
+   * `'local'` — produite par le moteur pédagogique local, sans aucun appel IA.
+   * Valeur AJOUTÉE après coup : `origin` n'est pas indexé, donc aucune
+   * migration Dexie n'est nécessaire (règle documentée dans `db.ts`).
+   *
+   * ATTENTION : les cartes créées AVANT cet ajout par le moteur local ont été
+   * enregistrées `'ai'` par erreur, et restent telles quelles. Rien ne permet
+   * de les distinguer après coup des vraies cartes IA — les réétiqueter
+   * reviendrait à deviner, ce que ce projet ne fait pas.
+   */
+  origin: 'manual' | 'local' | 'ai' | 'quiz-error';
   /** Chunks ayant servi à la générer, quand elle vient de l'IA. */
   sourceChunkIds: ID[];
   createdAt: ISODateTime;

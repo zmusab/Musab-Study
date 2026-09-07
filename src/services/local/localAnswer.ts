@@ -1,5 +1,6 @@
 import { extractFacts, type FactPredicate, type RawFact } from './relationExtraction';
 import { citationFromChunk } from './citation';
+import { significantWords } from '@/core/text';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 import type { Citation } from '@/types';
 
@@ -10,10 +11,23 @@ import type { Citation } from '@/types';
  * `ChatPage.tsx` (aucune nouvelle recherche).
  *
  * La réponse n'est JAMAIS reformulée : elle est l'assemblage d'extraits
- * exacts du cours dont le SUJET recoupe fortement les mots de la question.
- * Si rien ne recoupe suffisamment, la fonction renvoie `null` — mieux ne
- * rien répondre que d'inventer, exactement la même règle d'abstention que
- * pour les flashcards/notions locales.
+ * exacts du cours. Si rien ne répond vraiment, la fonction renvoie `null` —
+ * mieux ne rien répondre que d'inventer.
+ *
+ * ── POURQUOI CE MOTEUR RÉPONDAIT À CÔTÉ ──────────────────────────────────
+ * La version précédente ne mesurait qu'une chose : « la question couvre-t-elle
+ * le sujet du fait ? », en divisant par la taille du SUJET. Un fait dont le
+ * sujet tient en un mot générique (« le nerf ») obtenait donc un score PARFAIT
+ * face à n'importe quelle question contenant ce mot. À « c'est quoi les nerfs
+ * de Willis ? », le moteur renvoyait avec assurance des phrases sur le nerf
+ * facial : le terme qui distinguait réellement la question — « Willis » —
+ * n'entrait jamais dans le calcul.
+ *
+ * La correction inverse la logique : ce sont les termes DISTINCTIFS de la
+ * question qui commandent, et ils sont mesurés sur le cours lui-même plutôt
+ * que devinés — un terme rare dans les fragments retrouvés est distinctif, un
+ * terme présent partout ne l'est pas. Aucune liste de termes médicaux codée en
+ * dur : la mesure s'adapte au cours réellement importé.
  */
 
 export interface LocalAnswer {
@@ -21,42 +35,14 @@ export interface LocalAnswer {
   citations: Citation[];
 }
 
-const normalize = (text: string): string =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const STOPWORDS = new Set([
-  'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'ou', 'est', 'que', 'qui', 'pas',
-  'ne', 'je', 'tu', 'il', 'elle', 'on', 'nous', 'vous', 'ils', 'elles', 'ce', 'ces', 'mon',
-  'ma', 'mes', 'ton', 'ta', 'tes', 'son', 'sa', 'ses', 'pour', 'avec', 'dans', 'sur', 'par',
-  'comprends', 'comprend', 'comprendre',
-]);
-
-/** Retrait de pluriel très grossier ("nerfs" → "nerf") — même heuristique que `core/quiz`'s `overlapWords`, pas une vraie lemmatisation. */
-const singularize = (word: string): string => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word);
-
-function significantWords(text: string): Set<string> {
-  return new Set(
-    normalize(text)
-      .split(' ')
-      .filter((word) => word.length > 2 && !STOPWORDS.has(word))
-      .map(singularize),
-  );
-}
-
-/** Recouvrement orienté « la question couvre-t-elle bien le sujet du fait ? ». */
-function overlapScore(questionWords: Set<string>, subjectWords: Set<string>): number {
-  if (subjectWords.size === 0) return 0;
-  const intersection = [...subjectWords].filter((word) => questionWords.has(word)).length;
-  return intersection / subjectWords.size;
-}
-
-const MATCH_THRESHOLD = 0.6;
+/**
+ * Part du SUJET du fait que la question doit recouper. Volontairement bas :
+ * depuis que les termes distinctifs sont exigés séparément (ci-dessous), ce
+ * seuil n'a plus à faire le tri à lui seul. Le garder trop haut écarterait une
+ * bonne réponse dont le sujet est nommé autrement que dans la question
+ * (« polygone de Willis » interrogé par « les nerfs de Willis »).
+ */
+const SUBJECT_OVERLAP_FLOOR = 0.34;
 const MAX_FACTS_IN_ANSWER = 4;
 
 const PREDICATE_PRIORITY: Record<FactPredicate, number> = {
@@ -68,27 +54,81 @@ const PREDICATE_PRIORITY: Record<FactPredicate, number> = {
   location: 2,
 };
 
+/** Part du sujet du fait effectivement nommée par la question. */
+function subjectOverlap(questionTerms: Set<string>, subjectTerms: Set<string>): number {
+  if (subjectTerms.size === 0) return 0;
+  const shared = [...subjectTerms].filter((term) => questionTerms.has(term)).length;
+  return shared / subjectTerms.size;
+}
+
+/**
+ * Termes qui distinguent réellement la question, mesurés sur les fragments
+ * retrouvés : ceux qui apparaissent dans le MOINS de fragments. « nerf » est
+ * partout dans un cours de neuro-anatomie et ne distingue rien ; « trijumeau »
+ * n'est que dans quelques fragments et porte toute la question.
+ *
+ * Renvoie `null` quand un terme de la question n'apparaît NULLE PART dans le
+ * cours retrouvé : le cours ne parle pas de ce qui est demandé, et répondre
+ * avec le reste reviendrait à répondre à une autre question. C'est le cas
+ * « nerfs de Willis » quand aucun cours ne mentionne Willis.
+ */
+function distinctiveTerms(questionTerms: Set<string>, chunkTermSets: Set<string>[]): Set<string> | null {
+  let lowestFrequency = Number.POSITIVE_INFINITY;
+  const frequencies = new Map<string, number>();
+
+  for (const term of questionTerms) {
+    const frequency = chunkTermSets.filter((terms) => terms.has(term)).length;
+    if (frequency === 0) return null;
+    frequencies.set(term, frequency);
+    if (frequency < lowestFrequency) lowestFrequency = frequency;
+  }
+
+  const distinctive = new Set<string>();
+  for (const [term, frequency] of frequencies) {
+    if (frequency === lowestFrequency) distinctive.add(term);
+  }
+  return distinctive.size > 0 ? distinctive : null;
+}
+
 /**
  * Tente de répondre localement à `question`, à partir des fragments déjà
- * retrouvés par BM25 (`scoredChunks`, réutilisé tel quel — aucune nouvelle
- * recherche). `null` si aucun fait détecté ne recoupe assez la question.
+ * retrouvés par BM25 (`scoredChunks`, réutilisés tels quels — aucune nouvelle
+ * recherche). `null` dès qu'aucun fait ne répond réellement à ce qui est
+ * demandé : l'appelant affiche alors un message honnête et propose l'IA en
+ * option explicite, il ne comble jamais le vide.
  */
 export function findLocalAnswer(
   question: string,
   scoredChunks: readonly ScoredChunk[],
   lookup: ContextLookup,
 ): LocalAnswer | null {
-  const questionWords = significantWords(question);
-  if (questionWords.size === 0) return null;
+  const questionTerms = significantWords(question, true);
+  if (questionTerms.size === 0) return null;
+
+  const chunkTermSets = scoredChunks.map(({ chunk }) => significantWords(chunk.text));
+  const required = distinctiveTerms(questionTerms, chunkTermSets);
+  if (required === null) return null;
 
   const matches: { fact: RawFact; chunkId: string; score: number; order: number }[] = [];
   let order = 0;
   for (const { chunk } of scoredChunks) {
     for (const fact of extractFacts(chunk)) {
       order += 1;
+      // `'low'` n'est aujourd'hui jamais émis (l'abstention se fait à la
+      // source, dans `relationExtraction`), mais le garde-fou reste : si une
+      // règle future émet un fait douteux, il ne doit pas devenir une réponse.
       if (fact.confidence === 'low') continue;
-      const score = overlapScore(questionWords, significantWords(fact.subject));
-      if (score >= MATCH_THRESHOLD) matches.push({ fact, chunkId: chunk.id, score, order });
+
+      // Le fait doit traiter CE qui est demandé : tous les termes distinctifs
+      // de la question doivent s'y trouver, sujet ou phrase source.
+      const factTerms = significantWords(`${fact.subject} ${fact.sourceExcerpt}`);
+      if ([...required].some((term) => !factTerms.has(term))) continue;
+
+      // …et porter sur le bon sujet, pas seulement mentionner le terme au passage.
+      const score = subjectOverlap(questionTerms, significantWords(fact.subject));
+      if (score < SUBJECT_OVERLAP_FLOOR) continue;
+
+      matches.push({ fact, chunkId: chunk.id, score, order });
     }
   }
   if (matches.length === 0) return null;
@@ -104,7 +144,7 @@ export function findLocalAnswer(
   const citations: Citation[] = [];
 
   for (const { fact, chunkId } of matches) {
-    const key = normalize(fact.sourceExcerpt);
+    const key = fact.sourceExcerpt.trim().toLowerCase();
     if (seenExcerpts.has(key)) continue;
     seenExcerpts.add(key);
 

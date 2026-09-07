@@ -66,7 +66,9 @@ check('« Très faible » n’est jamais affiché pour une carte simplement neuv
   !(await main.getByText(/Très faible/).isVisible()));
 
 // ---------- Une seule bibliothèque, filtrable par origine ----------
-check('Le filtre « Toutes / IA / Manuelles » est proposé', await page.getByRole('tab', { name: /Toutes/ }).isVisible());
+check('Le filtre « Toutes / Locales / IA / Manuelles » est proposé', await page.getByRole('tab', { name: /Toutes/ }).isVisible());
+check('« Locales » est un filtre à part entière — une carte du moteur local n’est plus rangée sous « IA »',
+  await page.getByRole('tab', { name: /⚙️ Locales/ }).isVisible());
 await page.getByRole('tab', { name: /✍️ Manuelles/ }).click();
 await page.waitForTimeout(300);
 check('Le filtre « Manuelles » garde la carte créée à la main',
@@ -74,6 +76,10 @@ check('Le filtre « Manuelles » garde la carte créée à la main',
 await page.getByRole('tab', { name: /✨ IA/ }).click();
 await page.waitForTimeout(300);
 check('Le filtre « IA » masque une carte créée à la main (elle n’est pas d’origine IA)',
+  !(await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible()));
+await page.getByRole('tab', { name: /⚙️ Locales/ }).click();
+await page.waitForTimeout(300);
+check('Le filtre « Locales » masque lui aussi une carte créée à la main',
   !(await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible()));
 await page.getByRole('tab', { name: /Toutes/ }).click();
 await page.waitForTimeout(300);

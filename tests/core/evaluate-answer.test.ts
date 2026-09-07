@@ -99,3 +99,84 @@ describe('evaluateAnswer — n’importe jamais la couche IA', () => {
     expect(/from ['"]@\/services\/ai\//.test(source)).toBe(false);
   });
 });
+
+/**
+ * Correctifs du diagnostic : le moteur rendait le même verdict « partiel » à
+ * une reformulation juste, à une contradiction et à une négation. Ces tests
+ * verrouillent la distinction.
+ */
+describe('evaluateAnswer — ne réclame pas ce que la question donne déjà', () => {
+  const QUESTION = 'Qu’est-ce que le nerf trijumeau ?';
+  const EXPECTED = 'Le nerf trijumeau est sensitif et moteur';
+
+  it('une reformulation juste est CORRECTE, pas « partielle »', () => {
+    const result = evaluateAnswer('Il est à la fois sensitif et moteur', EXPECTED, QUESTION);
+    expect(result.verdict).toBe('correct');
+  });
+
+  it('une réponse télégraphique mais complète est CORRECTE', () => {
+    expect(evaluateAnswer('sensitif et moteur', EXPECTED, QUESTION).verdict).toBe('correct');
+  });
+
+  it('ne reproche jamais à l’étudiant d’avoir omis le sujet écrit dans la question', () => {
+    const result = evaluateAnswer('Il est sensitif', EXPECTED, QUESTION);
+    expect(result.verdict).toBe('partial');
+    expect(result.explanation).toContain('moteur');
+    expect(result.explanation).not.toContain('trijumeau');
+  });
+
+  it('les mots outils ne sont jamais comptés comme du contenu manquant', () => {
+    const result = evaluateAnswer('Il est sensitif', EXPECTED, QUESTION);
+    // Seule la LISTE après « il manque : » est examinée : le gabarit de phrase
+    // contient lui-même « est » (« la réponse est présente »), qui n'a rien à
+    // voir avec les mots réclamés à l'étudiant.
+    const missingList = result.explanation!.split('il manque :')[1]!;
+    const missingWords = missingList.split(',').map((word) => word.replace(/\W/g, ''));
+    expect(missingWords).toEqual(['moteur']);
+  });
+
+  it('quand la réponse attendue n’ajoute rien à la question, le moteur s’abstient', () => {
+    const result = evaluateAnswer('oui', 'Le nerf trijumeau', 'Quel est le nerf trijumeau ?');
+    expect(result.verdict).toBe('indeterminate');
+  });
+});
+
+describe('evaluateAnswer — contradictions : faux, jamais « partiellement correct »', () => {
+  const QUESTION = 'Qu’est-ce que le nerf trijumeau ?';
+  const EXPECTED = 'Le nerf trijumeau est sensitif et moteur';
+
+  it('une réponse exclusive qui omet une partie attendue est INCORRECTE', () => {
+    const result = evaluateAnswer('Le nerf trijumeau est uniquement sensitif', EXPECTED, QUESTION);
+    expect(result.verdict).toBe('incorrect');
+    expect(result.explanation).toContain('moteur');
+  });
+
+  it.each(['seulement sensitif', 'exclusivement sensitif'])(
+    '« %s » est également traité comme exclusif',
+    (attempt) => {
+      expect(evaluateAnswer(attempt, EXPECTED, QUESTION).verdict).toBe('incorrect');
+    },
+  );
+
+  it('une négation face à un énoncé affirmatif est INCORRECTE', () => {
+    const result = evaluateAnswer(
+      'Le nerf trijumeau ne possède pas de branche motrice',
+      EXPECTED,
+      QUESTION,
+    );
+    expect(result.verdict).toBe('incorrect');
+    expect(result.explanation).toContain('contraire');
+  });
+
+  it('deux énoncés négatifs concordants ne sont PAS traités comme une contradiction', () => {
+    const expected = 'L’émail ne contient aucune cellule vivante';
+    const result = evaluateAnswer('Il ne contient aucune cellule vivante', expected, 'Qu’est-ce que l’émail ?');
+    expect(result.verdict).toBe('correct');
+  });
+
+  it('omettre la négation d’une réponse attendue négative est INCORRECT', () => {
+    const expected = 'L’émail ne contient aucune cellule vivante';
+    const result = evaluateAnswer('Il contient des cellules vivantes', expected, 'Qu’est-ce que l’émail ?');
+    expect(result.verdict).toBe('incorrect');
+  });
+});

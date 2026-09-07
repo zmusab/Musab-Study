@@ -1,11 +1,7 @@
-const normalizeQuestion = (text: string): string =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+import { comparisonKey } from '@/core/text';
+
+/** Normalisation partagée — voir `core/text`, une seule définition pour tout le projet. */
+const normalizeQuestion = comparisonKey;
 
 /**
  * Vrai si `question` reformule, mot pour mot ou presque, une question déjà

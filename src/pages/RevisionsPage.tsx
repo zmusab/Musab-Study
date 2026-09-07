@@ -83,7 +83,10 @@ function ReviewSession({
   const current = queue[0];
   const progressPct = total > 0 ? Math.round((reviewed / total) * 100) : 0;
   const hasAttempt = attempt.trim().length > 0;
-  const evaluation = current && hasAttempt ? evaluateAnswer(attempt, current.answer) : null;
+  // La question est transmise à l'évaluation : ce qu'elle nomme déjà (le sujet
+  // de la carte) n'a pas à être répété par l'étudiant pour que sa réponse
+  // compte comme complète.
+  const evaluation = current && hasAttempt ? evaluateAnswer(attempt, current.answer, current.question) : null;
 
   const handleRate = async (rating: Rating) => {
     if (!current) return;

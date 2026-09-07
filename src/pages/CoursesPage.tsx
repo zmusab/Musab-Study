@@ -122,7 +122,7 @@ export function CoursesPage() {
                         <span>{stats.chapters} chapitre(s)</span>
                         <span>{stats.documents} document(s)</span>
                         <span>{stats.cards} carte(s)</span>
-                        <span>{stats.quizQuestions} question(s)</span>
+                        <span>{stats.notes} note(s)</span>
                       </>
                     ) : (
                       <span>Chargement…</span>

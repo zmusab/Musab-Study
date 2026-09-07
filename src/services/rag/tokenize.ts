@@ -11,29 +11,23 @@
  *     donc les nomenclatures dentaires.
  */
 
-const STOPWORDS = new Set([
-  'a', 'ai', 'au', 'aux', 'avec', 'ce', 'ces', 'cet', 'cette', 'dans', 'de', 'des', 'du', 'elle',
-  'en', 'est', 'et', 'eux', 'il', 'ils', 'je', 'la', 'le', 'les', 'leur', 'lui', 'ma', 'mais',
-  'me', 'meme', 'mes', 'moi', 'mon', 'ne', 'nos', 'notre', 'nous', 'on', 'ou', 'par', 'pas',
-  'pour', 'qu', 'que', 'qui', 'sa', 'se', 'ses', 'son', 'sont', 'sur', 'ta', 'te', 'tes', 'toi',
-  'ton', 'tu', 'un', 'une', 'vos', 'votre', 'vous', 'y', 'etre', 'avoir', 'plus', 'aussi',
-  'comme', 'tout', 'tous', 'toute', 'toutes', 'entre', 'sans', 'sous', 'ainsi', 'donc', 'car',
-  'dont', 'lors', 'apres', 'avant', 'chez', 'peut', 'cela', 'ils', 'nous',
-]);
+import { FRENCH_STOPWORDS, normalizeText } from '@/core/text';
+
+/**
+ * La liste de mots outils et la normalisation viennent désormais de
+ * `core/text` — une seule définition pour tout le projet. Le découpage
+ * ci-dessous reste PROPRE à l'indexation : aucune singularisation (l'index
+ * garde la forme réellement écrite dans le cours) et un seuil à 2 caractères.
+ */
 
 /** Minuscules + suppression des diacritiques. */
-export function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
+export const normalize = normalizeText;
 
 /** Découpe en termes significatifs (lettres et chiffres, mots outils exclus). */
 export function tokenize(text: string): string[] {
   return normalize(text)
     .split(/[^a-z0-9]+/)
-    .filter((token) => token.length >= 2 && !STOPWORDS.has(token));
+    .filter((token) => token.length >= 2 && !FRENCH_STOPWORDS.has(token));
 }
 
 /** Fréquence de chaque terme, pré-calculée à l'indexation. */

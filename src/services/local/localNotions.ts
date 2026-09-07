@@ -1,4 +1,5 @@
 import { extractFacts, type RawFact } from './relationExtraction';
+import { comparisonKey } from '@/core/text';
 import { splitIntoSentences } from './textStructure';
 import { citationFromChunk } from './citation';
 import type { ContextLookup } from '@/services/rag/retrieval';
@@ -33,14 +34,8 @@ export interface LocalNotion {
 // « ne pas confondre » seul suffit de toute façon à couvrir ce cas.
 const PITFALL_MARKERS = /\b(?:attention|ne pas confondre|piège|erreur fréquente)\b/i;
 
-const normalizeLabel = (text: string): string =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+/** Normalisation partagée — voir `core/text`, une seule définition pour tout le projet. */
+const normalizeLabel = comparisonKey;
 
 export interface GenerateLocalNotionsInput {
   chunks: DocumentChunk[];

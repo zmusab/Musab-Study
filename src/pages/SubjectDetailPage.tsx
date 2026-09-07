@@ -518,8 +518,8 @@ export function SubjectDetailPage() {
                 <p className="text-[0.76rem] text-[var(--ink-faint)]">À réviser</p>
               </div>
               <div>
-                <p className="text-[1.4rem] font-semibold">{stats?.quizQuestions ?? 0}</p>
-                <p className="text-[0.76rem] text-[var(--ink-faint)]">Questions de quiz</p>
+                <p className="text-[1.4rem] font-semibold">{stats?.notes ?? 0}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Notes</p>
               </div>
             </div>
           </Card>
