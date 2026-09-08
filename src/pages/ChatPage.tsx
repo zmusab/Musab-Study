@@ -39,11 +39,11 @@ type Mode = 'cours' | 'internet';
 /** Nombre de fragments transmis au modèle. */
 const RETRIEVAL_LIMIT = 8;
 
-const INTENTS: { category: AssistantCategory; label: string; icon: string }[] = [
-  { category: 'comprendre', label: 'Comprendre', icon: '🧠' },
-  { category: 'etudier', label: 'Étudier', icon: '📚' },
-  { category: 'memoriser', label: 'Mémoriser', icon: '🎴' },
-  { category: 'examen', label: "Préparer l'examen", icon: '🎯' },
+const INTENTS: { category: AssistantCategory; label: string }[] = [
+  { category: 'comprendre', label: 'Comprendre' },
+  { category: 'etudier', label: 'Étudier' },
+  { category: 'memoriser', label: 'Mémoriser' },
+  { category: 'examen', label: "Préparer l'examen" },
 ];
 
 /**
@@ -312,11 +312,11 @@ export function ChatPage() {
     const scopedChapterId = chapterId === 'all' ? null : chapterId;
     return [
       {
-        label: '🧠 Créer des flashcards',
+        label: 'Créer des flashcards',
         onClick: () => navigate(`/flashcards?subject=${subjectId}`),
       },
       {
-        label: '📝 Créer un quiz',
+        label: 'Créer un quiz',
         onClick: () => {
           const params = new URLSearchParams({ format: 'mixed', count: '10', subject: subjectId });
           if (scopedChapterId) {
@@ -329,7 +329,7 @@ export function ChatPage() {
         },
       },
       {
-        label: '📚 Ajouter aux notes',
+        label: 'Ajouter aux notes',
         onClick: () => {
           void createNote({
             subjectId,
@@ -396,7 +396,7 @@ export function ChatPage() {
               data-ai-intent={intent.category}
               className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-[0.85rem] font-medium transition-colors hover:bg-[var(--surface-2)] [-webkit-tap-highlight-color:transparent]"
             >
-              <span aria-hidden>{intent.icon}</span> {intent.label}
+              {intent.label}
             </button>
           ))}
         </div>
@@ -465,7 +465,7 @@ export function ChatPage() {
                 onClick={() => void handleAskAiExplicitly()}
                 data-ai-answer-with-ai
               >
-                🤖 Répondre avec l’IA
+                Répondre avec l’IA
               </Button>
             </FadeUp>
           )}
@@ -505,7 +505,7 @@ export function ChatPage() {
                       : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
                   )}
                 >
-                  {value === 'cours' ? '📚 Mes cours' : '🌐 Internet'}
+                  {value === 'cours' ? 'Mes cours' : 'Internet'}
                 </button>
               ))}
             </div>

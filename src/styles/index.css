@@ -30,98 +30,118 @@
 :root {
   color-scheme: light;
 
-  --bg: #f6f5f2;
-  --bg-elevated: #fbfaf8;
-  --surface: #ffffff;
-  --surface-2: #f1efea;
-  --surface-hover: #ebe9e3;
+  /*
+   * PAPIER CHAUD, ENCRE CHAUDE.
+   *
+   * L'ancienne palette annonçait « papier chaud et calme » mais tenait
+   * l'inverse : une encre bleu-noir (#17191c) et un accent indigo saturé
+   * (#4f5bd5) — des couleurs de tableau de bord SaaS, froides, qui donnaient à
+   * un outil de révision un air d'application de gestion. Tout est ici décalé
+   * vers le chaud : le fond tire sur le papier, l'encre sur le brun profond,
+   * et l'accent unique est une terre de Sienne — chaude et sérieuse, sans être
+   * enfantine.
+   */
+  --bg: #f5f1ea;
+  --bg-elevated: #faf7f1;
+  --surface: #fffdf9;
+  --surface-2: #efe9df;
+  --surface-hover: #e8e1d5;
 
-  --ink: #17191c;
-  --ink-soft: #5f646b;
-  --ink-faint: #8b9098;
+  --ink: #221e18;
+  --ink-soft: #6a6157;
+  --ink-faint: #968c7e;
 
-  --line: #e3e0d8;
-  --line-strong: #d3cfc4;
+  --line: #e2dace;
+  --line-strong: #cec4b4;
 
-  --accent: #4f5bd5;
-  --accent-hover: #4049bd;
-  --accent-tint: #eceefc;
-  --accent-ink: #3a45b8;
+  --accent: #a2542a;
+  --accent-hover: #8c4622;
+  --accent-tint: #f6e9df;
+  --accent-ink: #8a4622;
 
-  --success: #1f8a5f;
-  --success-tint: #e4f3ec;
-  --warning: #c2620f;
-  --warning-tint: #fbeddc;
-  --danger: #c33d3d;
-  --danger-tint: #fae7e7;
-
-  --mastery-0: #c9483f;
-  --mastery-1: #d4802f;
-  --mastery-2: #c9a520;
-  --mastery-3: #3f9459;
-  --mastery-4: #4f5bd5;
+  --success: #4a7c52;
+  --success-tint: #e6efe4;
+  --warning: #a8721c;
+  --warning-tint: #f7ecd8;
+  --danger: #a8443a;
+  --danger-tint: #f7e5e1;
 
   /*
-   * Couleurs de section, groupées par paire comme demandé : Accueil+Recherche
-   * en bleu, Cours+IA en turquoise, Révisions+Flashcards en mauve, Quiz seul
-   * en rose (le « QCM » demandé EST le Quiz, pas une section séparée),
-   * Podcast+Progression en vert, Anatomie+Calendrier en rouge, Notes+
-   * Paramètres en orange.
+   * Maîtrise : une seule rampe continue, de la terre cuite à la sauge. Elle
+   * remplace un arc-en-ciel (rouge, orange, jaune, vert, INDIGO) dont la
+   * dernière marche changeait carrément de famille de couleur — on ne lisait
+   * pas une progression, on lisait cinq étiquettes sans rapport.
    */
-  --nav-blue: #2568c4;
-  --nav-turquoise: #0e8f89;
-  --nav-purple: #7c3aed;
-  --nav-rose: #c22368;
-  --nav-green: #1a8a4e;
-  --nav-red: #c1272d;
-  --nav-orange: #c2540a;
+  --mastery-0: #a8443a;
+  --mastery-1: #b06a35;
+  --mastery-2: #a88a3e;
+  --mastery-3: #6c8a4e;
+  --mastery-4: #4a7c52;
 
-  --shadow-soft: 0 1px 2px rgb(23 25 28 / 0.04), 0 4px 16px rgb(23 25 28 / 0.05);
-  --shadow-lift: 0 2px 6px rgb(23 25 28 / 0.06), 0 12px 32px rgb(23 25 28 / 0.09);
+  /*
+   * Couleurs de section. Elles ne colorent PLUS la navigation — un rail dont
+   * chaque entrée portait sa propre teinte vive donnait un menu arc-en-ciel,
+   * fatigant et sans hiérarchie : rien n'y indiquait où l'on se trouvait. La
+   * navigation est désormais monochrome, l'accent signalant seul la page
+   * courante. Ces teintes servent encore à distinguer les TYPES de résultat
+   * dans la recherche et quelques barres de progression ; elles sont donc
+   * désaturées pour cohabiter sans crier.
+   */
+  --nav-blue: #4a6b8a;
+  --nav-turquoise: #3f7a72;
+  --nav-purple: #6b5b8a;
+  --nav-rose: #9c4f68;
+  --nav-green: #4a7c52;
+  --nav-red: #a8443a;
+  --nav-orange: #a2542a;
+
+  --shadow-soft: 0 1px 2px rgb(34 30 24 / 0.04), 0 4px 16px rgb(34 30 24 / 0.05);
+  --shadow-lift: 0 2px 6px rgb(34 30 24 / 0.06), 0 12px 32px rgb(34 30 24 / 0.09);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --bg: #121417;
-  --bg-elevated: #17191d;
-  --surface: #1c1f23;
-  --surface-2: #23272c;
-  --surface-hover: #2a2e34;
+  /* Même décalage vers le chaud : un brun très profond, jamais un bleu-noir. */
+  --bg: #16130f;
+  --bg-elevated: #1b1713;
+  --surface: #201c17;
+  --surface-2: #29241e;
+  --surface-hover: #322c25;
 
-  --ink: #eceded;
-  --ink-soft: #a0a6ad;
-  --ink-faint: #767c84;
+  --ink: #f0e9df;
+  --ink-soft: #b0a595;
+  --ink-faint: #857b6e;
 
-  --line: #2b2f35;
-  --line-strong: #3a3f46;
+  --line: #322c24;
+  --line-strong: #453d33;
 
-  --accent: #8b95f5;
-  --accent-hover: #9ba4f8;
-  --accent-tint: #242847;
-  --accent-ink: #a8b0f8;
+  --accent: #d98d5f;
+  --accent-hover: #e3a077;
+  --accent-tint: #33241a;
+  --accent-ink: #e3a077;
 
-  --success: #4cb384;
-  --success-tint: #172b23;
-  --warning: #e0a065;
-  --warning-tint: #2e2318;
-  --danger: #e07070;
-  --danger-tint: #2f1e1e;
+  --success: #7fb083;
+  --success-tint: #1b2a1d;
+  --warning: #d9a55f;
+  --warning-tint: #2e2517;
+  --danger: #d97b6e;
+  --danger-tint: #2f1d19;
 
-  --mastery-0: #e06a62;
-  --mastery-1: #e5a35c;
-  --mastery-2: #ddc257;
-  --mastery-3: #5cb87c;
-  --mastery-4: #8b95f5;
+  --mastery-0: #d97b6e;
+  --mastery-1: #d99a63;
+  --mastery-2: #c9b96a;
+  --mastery-3: #97b877;
+  --mastery-4: #7fb083;
 
-  /* Éclaircies pour rester lisibles sur fond sombre, même regroupement qu'en clair. */
-  --nav-blue: #5b9de6;
-  --nav-turquoise: #3ecfc4;
-  --nav-purple: #a884f5;
-  --nav-rose: #f2559c;
-  --nav-green: #4fc384;
-  --nav-red: #e8746f;
-  --nav-orange: #e8935a;
+  /* Mêmes teintes de section, éclaircies pour rester lisibles sur fond sombre. */
+  --nav-blue: #7d9cba;
+  --nav-turquoise: #6fb0a6;
+  --nav-purple: #a08fc0;
+  --nav-rose: #cc8199;
+  --nav-green: #7fb083;
+  --nav-red: #d97b6e;
+  --nav-orange: #d98d5f;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.28);
   --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);

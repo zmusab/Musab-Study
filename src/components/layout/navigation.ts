@@ -5,8 +5,6 @@ export interface NavEntry {
   to: string;
   label: string;
   icon: IconName;
-  /** Couleur de section — variable CSS définie dans styles/index.css (clair + sombre). */
-  color: string;
   /** Affiché dans la barre mobile compacte (l'espace y est très limité). */
   shortLabel?: string;
   /** Épinglé dans la barre du bas sur iPhone. */
@@ -14,24 +12,27 @@ export interface NavEntry {
 }
 
 /**
- * Ordre voulu : Accueil puis Recherche en tête, puis les sections groupées
- * par couleur (Accueil+Recherche en bleu, Cours+IA en turquoise,
- * Révisions+Flashcards en mauve, Quiz seul en rose, Podcast+Progression en
- * vert, Anatomie+Calendrier en rouge, Notes+Paramètres en orange) — un coup
- * d'œil au rail latéral doit suffire à voir les paires.
+ * Ordre voulu : Accueil et Recherche en tête, puis les sections par familles
+ * d'usage — les cours et l'assistant, la mémorisation, l'évaluation, le suivi,
+ * les outils.
+ *
+ * Ces entrées ne portent PLUS de couleur de section. Chacune arborait
+ * auparavant sa propre teinte vive, ce qui donnait un menu arc-en-ciel de
+ * treize couleurs où rien ne signalait la page courante. Le repérage se fait
+ * désormais par l'ordre et par l'accent unique de la page active.
  */
 export const NAV_ENTRIES: readonly NavEntry[] = [
-  { to: '/', label: 'Accueil', icon: 'home', color: 'var(--nav-blue)', primary: true },
-  { to: '/recherche', label: 'Recherche', icon: 'search', color: 'var(--nav-blue)', shortLabel: 'Rech.' },
-  { to: '/cours', label: 'Cours', icon: 'courses', color: 'var(--nav-turquoise)', primary: true },
-  { to: '/ia', label: 'IA', icon: 'ai', color: 'var(--nav-turquoise)', primary: true },
-  { to: '/revisions', label: 'Révisions', icon: 'review', color: 'var(--nav-purple)', shortLabel: 'Révis.' },
-  { to: '/flashcards', label: 'Flashcards', icon: 'cards', color: 'var(--nav-purple)', shortLabel: 'Cartes' },
-  { to: '/quiz', label: 'Quiz', icon: 'quiz', color: 'var(--nav-rose)' },
-  { to: '/podcast', label: 'Podcast', icon: 'podcast', color: 'var(--nav-green)', primary: true },
-  { to: '/progression', label: 'Progression', icon: 'progress', color: 'var(--nav-green)', shortLabel: 'Progrès' },
-  { to: '/anatomie', label: 'Anatomie', icon: 'anatomy', color: 'var(--nav-red)', shortLabel: 'Anat.' },
-  { to: '/calendrier', label: 'Calendrier', icon: 'calendar', color: 'var(--nav-red)', shortLabel: 'Agenda' },
-  { to: '/notes', label: 'Notes', icon: 'notes', color: 'var(--nav-orange)' },
-  { to: '/parametres', label: 'Paramètres', icon: 'settings', color: 'var(--nav-orange)', shortLabel: 'Réglages' },
+  { to: '/', label: 'Accueil', icon: 'home', primary: true },
+  { to: '/recherche', label: 'Recherche', icon: 'search', shortLabel: 'Rech.' },
+  { to: '/cours', label: 'Cours', icon: 'courses', primary: true },
+  { to: '/ia', label: 'IA', icon: 'ai', primary: true },
+  { to: '/revisions', label: 'Révisions', icon: 'review', shortLabel: 'Révis.' },
+  { to: '/flashcards', label: 'Flashcards', icon: 'cards', shortLabel: 'Cartes' },
+  { to: '/quiz', label: 'Quiz', icon: 'quiz' },
+  { to: '/podcast', label: 'Podcast', icon: 'podcast', primary: true },
+  { to: '/progression', label: 'Progression', icon: 'progress', shortLabel: 'Progrès' },
+  { to: '/anatomie', label: 'Anatomie', icon: 'anatomy', shortLabel: 'Anat.' },
+  { to: '/calendrier', label: 'Calendrier', icon: 'calendar', shortLabel: 'Agenda' },
+  { to: '/notes', label: 'Notes', icon: 'notes' },
+  { to: '/parametres', label: 'Paramètres', icon: 'settings', shortLabel: 'Réglages' },
 ];

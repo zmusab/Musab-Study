@@ -144,3 +144,80 @@ describe("generateLocalCardDrafts — ne produit jamais de carte depuis un artef
     expect(drafts).toHaveLength(0);
   });
 });
+
+/**
+ * Défauts constatés sur un vrai cours d'anatomie, en regardant les cartes
+ * réellement produites (pas en imaginant des cas) : un sujet anaphorique et un
+ * sujet qui avait avalé toute la proposition.
+ */
+describe('isPlausibleSubject — sujets inutilisables hors contexte', () => {
+  it.each([
+    'Son innervation motrice',
+    'Sa contraction',
+    'Ses branches',
+    'Leur insertion',
+    'Il',
+    'Elle',
+    'Cette structure',
+    'Ce muscle',
+    'Cela',
+  ])('rejette le sujet anaphorique « %s » — l’antécédent n’existe plus sur la carte', (subject) => {
+    expect(isPlausibleSubject(subject)).toBe(false);
+  });
+
+  it.each([
+    'Il se compose de deux faisceaux',
+    'Le nerf trijumeau possède trois branches',
+    'La dentine comprend des tubuli',
+  ])('rejette « %s » : c’est une proposition, pas un sujet', (subject) => {
+    expect(isPlausibleSubject(subject)).toBe(false);
+  });
+
+  it('accepte toujours un vrai groupe nominal', () => {
+    expect(isPlausibleSubject('Le muscle masséter')).toBe(true);
+    expect(isPlausibleSubject('L’émail dentaire')).toBe(true);
+  });
+});
+
+describe('generateLocalCardDrafts — qualité sur un cours réel', () => {
+  const REAL = makeChunk(
+    'Le muscle masséter est un muscle masticateur puissant et superficiel. ' +
+      'Il se compose de deux faisceaux : un faisceau superficiel et un faisceau profond. ' +
+      'Son innervation motrice est assurée par le nerf massétérique. ' +
+      'Le nerf trijumeau possède trois branches : le nerf ophtalmique, le nerf maxillaire et le nerf mandibulaire. ' +
+      'L’émail est le tissu le plus minéralisé de l’organisme.',
+  );
+
+  const drafts = generateLocalCardDrafts({
+    chunks: [REAL],
+    lookup: LOOKUP,
+    count: 12,
+    importance: 2,
+    difficulty: 2,
+    existingQuestions: [],
+  });
+
+  it('ne produit plus aucune carte au sujet anaphorique', () => {
+    for (const draft of drafts) {
+      expect(draft.question).not.toMatch(/Qu'est-ce que (Son|Sa|Ses|Il|Elle|Ce|Cette)\b/i);
+    }
+  });
+
+  it('ne produit plus de question à double verbe', () => {
+    for (const draft of drafts) {
+      expect(draft.question).not.toMatch(/De quoi se compose .*se compose/i);
+    }
+  });
+
+  it('n’insère jamais un déterminant capitalisé au milieu d’une question', () => {
+    for (const draft of drafts) {
+      expect(draft.question).not.toMatch(/que (Le|La|Les|L['’]|Un|Une|Des) /);
+    }
+  });
+
+  it('garde les cartes réellement exploitables', () => {
+    expect(drafts.length).toBeGreaterThanOrEqual(3);
+    expect(drafts.some((d) => /muscle masséter/i.test(d.question))).toBe(true);
+    expect(drafts.some((d) => /trijumeau/i.test(d.question))).toBe(true);
+  });
+});

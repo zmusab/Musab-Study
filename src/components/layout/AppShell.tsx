@@ -27,7 +27,10 @@ function NavItem({ entry, indicatorId, compact }: { entry: NavEntry; indicatorId
     <NavLink
       to={entry.to}
       end={entry.to === '/'}
-      style={{ color: entry.color }}
+      // Navigation MONOCHROME. Chaque entrée portait auparavant sa propre
+      // teinte vive : treize couleurs empilées dans un rail de 240 px, sans
+      // qu'aucune n'indique où l'on se trouve. La page courante se signale
+      // maintenant seule, par l'accent et son fond teinté.
       // En mode compact le libellé n'est plus rendu : `aria-label` et `title`
       // conservent le nom accessible, donc la navigation reste utilisable au
       // lecteur d'écran comme au survol.
@@ -37,6 +40,8 @@ function NavItem({ entry, indicatorId, compact }: { entry: NavEntry; indicatorId
         'group relative flex items-center rounded-[var(--radius-control)] py-2.5',
         'text-[0.9rem] font-medium transition-colors duration-150',
         '[-webkit-tap-highlight-color:transparent] hover:bg-[var(--surface-2)]',
+        'text-[var(--ink-soft)] hover:text-[var(--ink)]',
+        'aria-[current=page]:text-[var(--accent-ink)]',
         compact ? 'justify-center px-2' : 'gap-3 px-3',
       )}
     >
@@ -106,9 +111,8 @@ function MobileTabBar() {
   const primary = NAV_ENTRIES.filter((entry) => entry.primary);
   const tabs: NavEntry[] = [
     ...primary,
-    // « Plus » n'appartient à aucune des 7 paires de couleur : c'est un tiroir
-    // synthétique, pas une section — il suit la couleur du texte, neutre.
-    { to: '/plus', label: 'Plus', icon: 'more', color: 'var(--ink)' },
+    // « Plus » est un tiroir synthétique, pas une section.
+    { to: '/plus', label: 'Plus', icon: 'more' },
   ];
 
   return (
@@ -131,18 +135,18 @@ function MobileTabBar() {
                 'relative flex flex-1 flex-col items-center gap-0.5 py-2',
                 'text-[0.66rem] font-medium transition-colors duration-150',
                 '[-webkit-tap-highlight-color:transparent]',
-                !isActive && 'text-[var(--ink-faint)]',
+                // Même règle que le rail : neutre au repos, accent sur la
+                // page courante — jamais une couleur par section.
+                isActive ? 'text-[var(--accent-ink)]' : 'text-[var(--ink-faint)]',
               )
             }
-            style={({ isActive }) => (isActive ? { color: entry.color } : undefined)}
           >
             {({ isActive }) => (
               <>
                 {isActive && !reduced && (
                   <motion.span
                     layoutId={indicatorId}
-                    className="absolute inset-x-3 top-0 h-0.5 rounded-full"
-                    style={{ backgroundColor: entry.color }}
+                    className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-[var(--accent)]"
                     transition={springSoft}
                   />
                 )}

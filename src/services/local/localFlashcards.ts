@@ -25,13 +25,31 @@ const ITEMS_JOINER = (items: string[]): string => {
 
 const capitalize = (text: string): string => (text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text);
 
+/**
+ * Un sujet arrive tel qu'il est écrit dans le cours, donc avec la majuscule de
+ * début de phrase : inséré au milieu d'une question, il donnait
+ * « Qu'est-ce que Le muscle masséter ? ». La majuscule n'est retirée que
+ * lorsque le premier mot est un DÉTERMINANT — jamais sur « Willis » ni sur un
+ * terme qui porte légitimement sa capitale.
+ */
+/*
+ * Pas de `\b` après la forme élidée : en JavaScript, `\b` ne connaît que les
+ * caractères ASCII, donc dans « L'émail » la frontière entre l'apostrophe et
+ * le « é » n'existe pas et `l['’]\b` ne matche JAMAIS. La forme élidée est
+ * donc reconnue seule, et les déterminants pleins exigent l'espace qui suit.
+ */
+const LEADING_DETERMINER = /^(?:l['’]|(?:le|la|les|un|une|des|du|de)\s)/i;
+
+const inlineSubject = (subject: string): string =>
+  LEADING_DETERMINER.test(subject) ? subject[0]!.toLowerCase() + subject.slice(1) : subject;
+
 interface QuestionAnswer {
   question: string;
   answer: string;
 }
 
 function questionAnswerFor(fact: RawFact): QuestionAnswer | null {
-  const subject = fact.subject;
+  const subject = inlineSubject(fact.subject);
   switch (fact.predicate) {
     case 'definition':
       return { question: `Qu'est-ce que ${subject} ?`, answer: capitalize(fact.object) };

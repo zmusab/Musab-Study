@@ -20,8 +20,8 @@ export function MorePage() {
               to={entry.to}
               className="surface-card flex h-full flex-col gap-2 p-4 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
             >
-              <Icon name={entry.icon} size={24} style={{ color: entry.color }} />
-              <span className="text-[0.9rem] font-semibold" style={{ color: entry.color }}>
+              <Icon name={entry.icon} size={24} className="text-[var(--ink-soft)]" />
+              <span className="text-[0.9rem] font-semibold">
                 {entry.label}
               </span>
             </Link>

@@ -77,7 +77,7 @@ export function HomePage() {
       <PageTransition>
         <FadeUp>
           <h1 className="text-[1.9rem] leading-tight">
-            {profile.name ? `Bonjour ${profile.name}` : 'Bonjour'} <span aria-hidden>👋</span>
+            {profile.name ? `Bonjour ${profile.name}` : 'Bonjour'}
           </h1>
         </FadeUp>
         <div className="mt-6">
@@ -106,7 +106,7 @@ export function HomePage() {
     <StaggerItem key="weak">
       <Card>
         <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
-          <span aria-hidden>🎯</span> Ton attention aujourd’hui
+          Ton attention aujourd’hui
         </p>
         <ul className="mt-3 flex flex-col gap-3">
           {weakConcepts.map((w) => (
@@ -163,7 +163,7 @@ export function HomePage() {
     <StaggerItem key="podcast">
       <Card>
         <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
-          <span aria-hidden>🎙️</span> {inProgressPodcast ? 'Continuer l’écoute' : 'Podcast d’étude'}
+          {inProgressPodcast ? 'Continuer l’écoute' : 'Podcast d’étude'}
         </p>
         {inProgressPodcast ? (
           (() => {
@@ -203,7 +203,7 @@ export function HomePage() {
     <StaggerItem key="upcoming">
       <Card>
         <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
-          <span aria-hidden>📅</span> À venir
+          À venir
         </p>
         {upcomingEvents.length === 0 ? (
           <p className="mt-2 text-[0.85rem] text-[var(--ink-soft)]">Aucune échéance enregistrée.</p>
@@ -249,7 +249,7 @@ export function HomePage() {
       <Stagger className="flex flex-col gap-5">
         <StaggerItem>
           <h1 className="text-[1.9rem] leading-tight">
-            {profile.name ? `Bonjour ${profile.name}` : 'Bonjour'} <span aria-hidden>👋</span>
+            {profile.name ? `Bonjour ${profile.name}` : 'Bonjour'}
           </h1>
           <p className="mt-1.5 text-[1rem] text-[var(--ink-soft)]">{data.greeting}</p>
         </StaggerItem>
@@ -258,7 +258,7 @@ export function HomePage() {
         <StaggerItem>
           <Card className="border-[var(--accent)]/30 bg-[var(--accent-tint)]">
             <p className="flex items-center gap-2 text-[0.85rem] font-semibold text-[var(--accent-ink)]">
-              <span aria-hidden>🧠</span> Session recommandée
+              Session recommandée
             </p>
 
             {dueTriage.total === 0 ? (
@@ -280,7 +280,7 @@ export function HomePage() {
                 </p>
                 <Link to="/revisions?autostart=1" className="mt-4 block">
                   <Button size="lg" block>
-                    ▶️ Commencer ma session
+                    Commencer ma session
                   </Button>
                 </Link>
               </>
@@ -296,8 +296,8 @@ export function HomePage() {
             <p className="text-[0.95rem] font-semibold">Aujourd’hui</p>
             <p className="mt-2 text-[1.6rem] font-semibold leading-none">{dailySummary.minutesStudied} min étudiées</p>
             <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-[var(--ink-soft)]">
-              <span>🧠 {dailySummary.cardsReviewed} cartes</span>
-              <span>📚 {dailySummary.documentsOpened} cours</span>
+              <span>{dailySummary.cardsReviewed} cartes révisées</span>
+              <span>{dailySummary.documentsOpened} cours ouverts</span>
             </div>
             <div className="mt-4 flex items-center justify-between text-[0.78rem] text-[var(--ink-faint)]">
               <span>Objectif du jour</span>
@@ -315,7 +315,7 @@ export function HomePage() {
         <StaggerItem>
           <Card>
             <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
-              <span aria-hidden>🤖</span> Que veux-tu faire ?
+              Que veux-tu faire ?
             </p>
             <form
               className="mt-3 flex gap-2"
