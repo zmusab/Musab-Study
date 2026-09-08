@@ -75,7 +75,9 @@ await page.waitForTimeout(400);
 const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 check('Bascule en mode sombre', theme === 'dark', theme ?? 'null');
 const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-check('Le fond suit le thème sombre', bg === 'rgb(18, 20, 23)', bg);
+// Le fond sombre est désormais un brun très profond (#16130f), et non plus un
+// bleu-noir : la palette a été recalée vers le chaud (voir styles/index.css).
+check('Le fond suit le thème sombre', bg === 'rgb(22, 19, 15)', bg);
 
 await page.screenshot({ path: `${SHOT}/ipad-dark-settings.png`, fullPage: false });
 

@@ -103,7 +103,7 @@ check('La session recommandée affiche la carte due', await page.getByText('1 qu
 check('Une durée estimée est affichée', await page.getByText(/≈ \d+ min/).isVisible());
 
 // ---------- Commencer ma session depuis l'accueil ----------
-await page.getByRole('button', { name: '▶️ Commencer ma session' }).click();
+await page.getByRole('button', { name: 'Commencer ma session' }).click();
 await page.waitForTimeout(600);
 check('La session démarre directement, sans étape intermédiaire', await main.getByText('Quel est le rôle du nerf vague ?').isVisible());
 await page.locator('[data-review-see-answer]').click();
