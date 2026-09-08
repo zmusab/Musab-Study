@@ -168,7 +168,7 @@ await page.waitForTimeout(700);
 
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(600);
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 for (const [question, answer] of [
   ['Combien de racines a la première molaire mandibulaire ?', 'Deux.'],

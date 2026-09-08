@@ -60,3 +60,51 @@ describe('joinTextItems', () => {
     expect(out).toBe('Fin de ligne explicite\nSuite');
   });
 });
+
+/**
+ * Défaut RÉEL observé sur un cours d'anatomie importé : la réponse locale
+ * affichait « L e nerf ophtalmique de Willis ». pdf.js ne découpe pas le texte
+ * en mots mais aux changements de crénage ou de police — « Le » arrive donc en
+ * deux fragments « L » et « e », que l'ancien code séparait par un espace.
+ *
+ * Le helper `item` d'origine n'a jamais pu attraper ce cas : il n'émet pas de
+ * `width`, alors que c'est exactement la largeur qui dit si deux fragments se
+ * touchent. Ces fragments-ci en portent une, comme le vrai pdf.js.
+ */
+function glyph(str: string, x: number, y: number, width: number, fontSize = 12) {
+  return { str, hasEOL: false, width, height: fontSize, transform: [fontSize, 0, 0, fontSize, x, y] };
+}
+
+describe('joinTextItems — fragments d’un même mot', () => {
+  it('ne coupe plus « Le » en « L e » quand les glyphes se touchent', () => {
+    const out = joinTextItems([
+      glyph('L', 50, 700, 7),
+      glyph('e', 57, 700, 6),
+      glyph(' nerf', 63, 700, 24),
+    ]);
+    expect(out).toBe('Le nerf');
+    expect(out).not.toContain('L e');
+  });
+
+  it('sépare toujours deux vrais mots, dont l’écart dépasse le crénage', () => {
+    const out = joinTextItems([glyph('nerf', 50, 700, 22), glyph('ophtalmique', 76, 700, 55)]);
+    expect(out).toBe('nerf ophtalmique');
+  });
+
+  it('le seuil suit le corps du texte, il n’est pas absolu', () => {
+    // Un écart de 3 pt sépare deux mots en corps 12, mais reste du crénage en
+    // corps 24 : un seuil fixe se tromperait sur l’un des deux.
+    expect(joinTextItems([glyph('a', 50, 700, 6, 12), glyph('b', 59, 700, 6, 12)])).toBe('a b');
+    expect(joinTextItems([glyph('a', 50, 700, 12, 24), glyph('b', 64, 700, 12, 24)])).toBe('ab');
+  });
+
+  it('sans information de largeur, garde l’ancien comportement (un espace)', () => {
+    const out = joinTextItems([item('mot', 50, 700), item('suivant', 80, 700)]);
+    expect(out).toBe('mot suivant');
+  });
+
+  it('ignore les fragments vides que pdf.js émet parfois', () => {
+    const out = joinTextItems([glyph('Le', 50, 700, 13), glyph('', 63, 700, 0), glyph(' nerf', 63, 700, 24)]);
+    expect(out).toBe('Le nerf');
+  });
+});

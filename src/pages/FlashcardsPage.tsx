@@ -277,8 +277,8 @@ export function FlashcardsPage() {
         <SegmentedControl
           className="mb-4"
           segments={[
-            { value: 'ai', label: '✨ Générer automatiquement' },
-            { value: 'manual', label: '✍️ Créer manuellement' },
+            { value: 'ai', label: 'Générer automatiquement' },
+            { value: 'manual', label: 'Créer manuellement' },
           ]}
           value={creationMode}
           onChange={setCreationMode}
@@ -286,41 +286,50 @@ export function FlashcardsPage() {
 
         {creationMode === 'ai' ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Select
-                label="Nombre"
-                value={count}
-                onChange={(e) =>
-                  setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])
-                }
-              >
-                {COUNT_OPTIONS.map((n) => (
-                  <option key={n} value={n}>
-                    {n} cartes
-                  </option>
-                ))}
-              </Select>
-              <Select
-                label="Importance"
-                value={importance}
-                onChange={(e) => setImportance(Number(e.target.value) as Importance)}
-              >
-                <option value={1}>Normale</option>
-                <option value={2}>Importante</option>
-                <option value={3}>Examen</option>
-              </Select>
-              <Select
-                label="Difficulté"
-                value={difficulty}
-                onChange={(e) => setDifficulty(Number(e.target.value) as Difficulty)}
-              >
-                <option value={1}>Facile</option>
-                <option value={2}>Moyenne</option>
-                <option value={3}>Difficile</option>
-              </Select>
-            </div>
+            <Select
+              label="Nombre"
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])}
+            >
+              {COUNT_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n} cartes
+                </option>
+              ))}
+            </Select>
+            {/*
+              Importance et difficulté sont des RÉGLAGES FINS : leurs valeurs
+              par défaut conviennent presque toujours, et les afficher au même
+              rang que le nombre de cartes obligeait à trancher trois choix
+              avant de pouvoir appuyer sur le seul bouton qui compte.
+            */}
+            <details className="mt-3">
+              <summary className="cursor-pointer list-none text-[0.82rem] text-[var(--ink-soft)] underline underline-offset-2">
+                Réglages avancés
+              </summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Select
+                  label="Importance"
+                  value={importance}
+                  onChange={(e) => setImportance(Number(e.target.value) as Importance)}
+                >
+                  <option value={1}>Normale</option>
+                  <option value={2}>Importante</option>
+                  <option value={3}>Examen</option>
+                </Select>
+                <Select
+                  label="Difficulté"
+                  value={difficulty}
+                  onChange={(e) => setDifficulty(Number(e.target.value) as Difficulty)}
+                >
+                  <option value={1}>Facile</option>
+                  <option value={2}>Moyenne</option>
+                  <option value={3}>Difficile</option>
+                </Select>
+              </div>
+            </details>
             <Button className="mt-4" loading={generating} onClick={() => void handleGenerate('local')} block>
-              {generating ? 'Analyse du cours et génération des cartes…' : `⚙️ Générer ${count} cartes (local, sans IA)`}
+              {generating ? 'Analyse du cours et génération des cartes…' : `Générer ${count} cartes — local, sans IA`}
             </Button>
             <p className="mt-2 text-center text-[0.76rem] text-[var(--ink-faint)]">
               Analyse le texte réel de ton cours (définitions, énumérations…) — aucune clé API requise.{' '}
@@ -350,7 +359,7 @@ export function FlashcardsPage() {
                       Carte {draftIndex + 1}/{drafts.length}
                     </Chip>
                     <Chip color={draftsSource === 'ai' ? 'var(--accent)' : 'var(--ink-faint)'}>
-                      {draftsSource === 'ai' ? '✨ Générée par l’IA' : '⚙️ Générée localement'}
+                      {draftsSource === 'ai' ? 'Générée par l’IA' : 'Générée localement'}
                     </Chip>
                   </div>
                   <input
@@ -438,9 +447,9 @@ export function FlashcardsPage() {
           size="sm"
           segments={[
             { value: 'all', label: `Toutes (${cards?.length ?? 0})` },
-            { value: 'local', label: `⚙️ Locales (${localCount})` },
-            { value: 'ai', label: `✨ IA (${aiCount})` },
-            { value: 'manual', label: `✍️ Manuelles (${manualCount})` },
+            { value: 'local', label: `Locales (${localCount})` },
+            { value: 'ai', label: `IA (${aiCount})` },
+            { value: 'manual', label: `Manuelles (${manualCount})` },
           ]}
           value={originFilter}
           onChange={setOriginFilter}
@@ -499,8 +508,8 @@ export function FlashcardsPage() {
                           {status.label}
                         </Chip>
                         {card.chapterId && <Chip>{chapterName(card.chapterId)}</Chip>}
-                        {card.origin === 'ai' && <Chip>✨ IA</Chip>}
-                        {card.origin === 'local' && <Chip>⚙️ Locale</Chip>}
+                        {card.origin === 'ai' && <Chip>IA</Chip>}
+                        {card.origin === 'local' && <Chip>Locale</Chip>}
                       </div>
                       <Button size="sm" variant="danger" onClick={() => handleDelete(card)}>
                         Suppr.

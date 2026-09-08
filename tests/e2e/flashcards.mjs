@@ -51,7 +51,7 @@ check('L’écran Flashcards s’ouvre sur la matière importée',
 // ---------- Création manuelle ----------
 check('Le formulaire IA est affiché par défaut, jamais les deux formulaires ensemble',
   (await page.getByLabel('Question').count()) === 0);
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quelle est la fréquence cardiaque normale au repos ?');
 await page.getByLabel('Réponse').fill('Entre 60 et 100 battements par minute.');
@@ -68,16 +68,16 @@ check('« Très faible » n’est jamais affiché pour une carte simplement neuv
 // ---------- Une seule bibliothèque, filtrable par origine ----------
 check('Le filtre « Toutes / Locales / IA / Manuelles » est proposé', await page.getByRole('tab', { name: /Toutes/ }).isVisible());
 check('« Locales » est un filtre à part entière — une carte du moteur local n’est plus rangée sous « IA »',
-  await page.getByRole('tab', { name: /⚙️ Locales/ }).isVisible());
-await page.getByRole('tab', { name: /✍️ Manuelles/ }).click();
+  await page.getByRole('tab', { name: /Locales/ }).isVisible());
+await page.getByRole('tab', { name: /Manuelles/ }).click();
 await page.waitForTimeout(300);
 check('Le filtre « Manuelles » garde la carte créée à la main',
   await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible());
-await page.getByRole('tab', { name: /✨ IA/ }).click();
+await page.getByRole('tab', { name: /IA/ }).click();
 await page.waitForTimeout(300);
 check('Le filtre « IA » masque une carte créée à la main (elle n’est pas d’origine IA)',
   !(await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible()));
-await page.getByRole('tab', { name: /⚙️ Locales/ }).click();
+await page.getByRole('tab', { name: /Locales/ }).click();
 await page.waitForTimeout(300);
 check('Le filtre « Locales » masque lui aussi une carte créée à la main',
   !(await main.locator('input[value="Quelle est la fréquence cardiaque normale au repos ?"]').isVisible()));
@@ -110,7 +110,7 @@ check('La modification de la question est bien persistée après rechargement',
   await main.locator('input[value="Fréquence cardiaque au repos — adulte sain ?"]').isVisible());
 
 // ---------- Génération locale (par défaut, sans clé) et régénération IA explicite ----------
-await page.getByRole('tab', { name: '✨ Générer automatiquement' }).click();
+await page.getByRole('tab', { name: 'Générer automatiquement' }).click();
 await page.waitForTimeout(300);
 await page.getByRole('button', { name: /Générer \d+ cartes/ }).click();
 await page.waitForTimeout(900);

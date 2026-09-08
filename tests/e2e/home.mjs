@@ -90,7 +90,7 @@ check('Le document ouvert apparaît dans « Continuer à apprendre »', await pa
 // ---------- État 3 : une carte due → session recommandée ----------
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(500);
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quel est le rôle du nerf vague ?');
 await page.getByLabel('Réponse').fill('Il régule le système parasympathique.');

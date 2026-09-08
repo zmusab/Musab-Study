@@ -141,7 +141,7 @@ const CARDS = [
   ['Quel os forme le palais dur en arrière ?', 'L’os palatin.'],
   ['Combien de dents compte la denture permanente ?', '32.'],
 ];
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 for (const [question, answer] of CARDS) {
   await page.getByLabel('Question').fill(question);

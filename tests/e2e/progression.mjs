@@ -83,7 +83,7 @@ const CARDS = [
 
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(600);
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 await page.getByLabel('Question').fill(CARDS[0][0]);
 await page.getByLabel('Réponse').fill(CARDS[0][1]);
@@ -125,7 +125,7 @@ check(
 // ────────────────── 3. Assez de données ──────────────────
 await nav.getByRole('link', { name: 'Flashcards', exact: true }).first().click();
 await page.waitForTimeout(600);
-await page.getByRole('tab', { name: '✍️ Créer manuellement' }).click();
+await page.getByRole('tab', { name: 'Créer manuellement' }).click();
 await page.waitForTimeout(300);
 for (const [question, answer] of CARDS.slice(1)) {
   await page.getByLabel('Question').fill(question);

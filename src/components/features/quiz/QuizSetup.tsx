@@ -216,56 +216,88 @@ export function QuizSetup({
   const toggleSubject = (id: ID) =>
     setSubjectIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
 
+  /**
+   * Une portée est « prête » quand elle a réellement de quoi lancer un quiz.
+   * Les portées libres (matière, chapitre, plusieurs matières) le sont
+   * toujours ; les portées dérivées d'un état (points faibles, cartes dues,
+   * examens) ne le sont que si cet état existe.
+   */
+  const availabilityOf = (id: ScopeId): number | null =>
+    id === 'weak'
+      ? weakCardCount
+      : id === 'due'
+        ? dueCardCount
+        : id === 'exam'
+          ? examEvaluations.length
+          : id === 'exam-likely'
+            ? (examLikelySubjectId ? (cardCountBySubject.get(examLikelySubjectId) ?? 0) : 0)
+            : null;
+
+  const readyScopes = SCOPE_META.filter((meta) => (availabilityOf(meta.id) ?? 1) > 0);
+  const emptyScopes = SCOPE_META.filter((meta) => (availabilityOf(meta.id) ?? 1) === 0);
+
+  const renderScope = (meta: (typeof SCOPE_META)[number]) => {
+    const available = availabilityOf(meta.id);
+    const active = scopeId === meta.id;
+    return (
+      <button
+        key={meta.id}
+        type="button"
+        onClick={() => setScopeId(meta.id)}
+        aria-pressed={active}
+        data-quiz-scope={meta.id}
+        data-touch-target
+        className={
+          'rounded-[var(--radius-card)] border p-3.5 text-left transition-colors ' +
+          (active
+            ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
+            : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
+        }
+      >
+        <p className="text-[0.95rem] font-medium">{meta.label}</p>
+        <p className="mt-0.5 text-[0.78rem] leading-snug text-[var(--ink-faint)]">{meta.hint}</p>
+        {/*
+          Un mode sans contenu le DIT toujours — il est simplement rangé dans
+          le repli plutôt qu'affiché au même rang que les modes utilisables.
+          Regrouper n'est pas cacher : le résumé du repli annonce combien il y
+          en a, et chaque carte garde sa mention.
+        */}
+        {available !== null && (
+          <p
+            className="mt-1.5 text-[0.78rem] font-medium"
+            style={{ color: available > 0 ? 'var(--accent)' : 'var(--ink-faint)' }}
+          >
+            {available > 0
+              ? meta.id === 'exam'
+                ? `${available} évaluation${available > 1 ? 's' : ''} à venir`
+                : `${available} carte${available > 1 ? 's' : ''} disponible${available > 1 ? 's' : ''}`
+              : 'Rien pour l’instant'}
+          </p>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6" data-quiz-setup>
       <section>
         <h2 className="mb-3 text-[1.05rem]">Que veux-tu tester ?</h2>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {SCOPE_META.map((meta) => {
-            const available =
-              meta.id === 'weak'
-                ? weakCardCount
-                : meta.id === 'due'
-                  ? dueCardCount
-                  : meta.id === 'exam'
-                    ? examEvaluations.length
-                    : meta.id === 'exam-likely'
-                      ? (examLikelySubjectId ? (cardCountBySubject.get(examLikelySubjectId) ?? 0) : 0)
-                      : null;
-            const active = scopeId === meta.id;
-            return (
-              <button
-                key={meta.id}
-                type="button"
-                onClick={() => setScopeId(meta.id)}
-                aria-pressed={active}
-                data-quiz-scope={meta.id}
-                data-touch-target
-                className={
-                  'rounded-[var(--radius-card)] border p-3.5 text-left transition-colors ' +
-                  (active
-                    ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
-                    : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
-                }
-              >
-                <p className="text-[0.95rem] font-medium">{meta.label}</p>
-                <p className="mt-0.5 text-[0.78rem] leading-snug text-[var(--ink-faint)]">{meta.hint}</p>
-                {available !== null && (
-                  <p
-                    className="mt-1.5 text-[0.78rem] font-medium"
-                    style={{ color: available > 0 ? 'var(--accent)' : 'var(--ink-faint)' }}
-                  >
-                    {available > 0
-                      ? meta.id === 'exam'
-                        ? `${available} évaluation${available > 1 ? 's' : ''} à venir`
-                        : `${available} carte${available > 1 ? 's' : ''} disponible${available > 1 ? 's' : ''}`
-                      : 'Rien pour l’instant'}
-                  </p>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{readyScopes.map(renderScope)}</div>
+        {/*
+          Les portées SANS contenu (« Rien pour l'instant ») restent
+          accessibles mais ne s'affichent plus au même rang que les autres :
+          sur un compte qui débute, quatre des sept cartes annonçaient un vide,
+          et le choix réellement possible se perdait au milieu.
+        */}
+        {emptyScopes.length > 0 && (
+          <details className="mt-2">
+            <summary className="cursor-pointer list-none py-2 text-[0.85rem] text-[var(--ink-soft)] underline underline-offset-2">
+              {emptyScopes.length} autre{emptyScopes.length > 1 ? 's' : ''} type
+              {emptyScopes.length > 1 ? 's' : ''} de quiz, sans contenu pour l’instant
+            </summary>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">{emptyScopes.map(renderScope)}</div>
+          </details>
+        )}
       </section>
 
       {/* ── Précisions propres à chaque type ── */}
