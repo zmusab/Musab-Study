@@ -3,6 +3,7 @@ import { citationFromChunk } from './citation';
 import { stripBulletPrefix } from './textStructure';
 import { courseSections } from './courseLayout';
 import { significantWords } from '@/core/text';
+import { wordSimilarity } from '@/services/search/fuzzy';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 import type { Citation } from '@/types';
 
@@ -75,19 +76,78 @@ function subjectOverlap(questionTerms: Set<string>, subjectTerms: Set<string>): 
  * partout dans un cours de neuro-anatomie et ne distingue rien ; « trijumeau »
  * n'est que dans quelques fragments et porte toute la question.
  *
- * Renvoie `null` quand un terme de la question n'apparaît NULLE PART dans le
- * cours retrouvé : le cours ne parle pas de ce qui est demandé, et répondre
- * avec le reste reviendrait à répondre à une autre question. C'est le cas
- * « nerfs de Willis » quand aucun cours ne mentionne Willis.
+ * ── LA VARIANTE D'ÉCRITURE N'EST PAS UNE ABSENCE ──────────────────────────
+ * Le moteur renvoyait `null` dès qu'un terme de la question n'apparaissait pas
+ * TEL QUEL dans le cours. D'où le « Absent de tes cours » sur « Les nerfs
+ * infra orbitrales c'est quoi » : le cours écrit « infra-orbitaire »,
+ * l'étudiant a tapé « orbitrales », et cette seule différence d'orthographe
+ * faisait déclarer absent un sujet traité sur trois pages.
+ *
+ * Chaque terme est donc d'abord RAPPROCHÉ du vocabulaire réel du cours, avec
+ * le même moteur approximatif que la recherche du site (`services/search/
+ * fuzzy.ts`, celui qui fait retrouver « masséter » à partir de « masster »).
+ *
+ * ── MAIS UN TERME VRAIMENT INCONNU RESTE FATAL ────────────────────────────
+ * Une première tentative se contentait d'IGNORER les termes irréductibles.
+ * Elle rouvrait aussitôt le pire bug de ce moteur : « c'est quoi les nerfs de
+ * Willis ? » sur un cours qui ne mentionne pas Willis voyait le terme
+ * disparaître, ne gardait que « nerf », et répondait avec assurance des
+ * phrases sur le nerf facial. Le mot qui portait TOUTE la question était
+ * précisément celui qu'on jetait.
+ *
+ * La règle tient donc en une phrase : on corrige une graphie, on n'efface
+ * jamais un mot. Si un terme ne se rattache à rien du cours, même
+ * approximativement, on s'abstient.
  */
+
+/**
+ * Seuil de rapprochement. Volontairement au-dessus du bruit : « orbitrales »
+ * et « orbitaire » obtiennent 0,67 — deux graphies du même terme —, tandis que
+ * « willis » n'atteint rien face au vocabulaire d'un cours qui l'ignore.
+ */
+const TERM_MATCH_FLOOR = 0.6;
+/**
+ * …et il faut en plus un début de mot commun. Sans cette condition, la seule
+ * distance d'édition rapproche des mots qui n'ont rien à voir dès qu'ils sont
+ * courts : « palais » et « malaise » sont à deux éditions l'un de l'autre.
+ */
+const COMMON_PREFIX_CHARS = 3;
+
+function sharesPrefix(a: string, b: string): boolean {
+  return a.slice(0, COMMON_PREFIX_CHARS) === b.slice(0, COMMON_PREFIX_CHARS);
+}
+
+/** Terme du cours correspondant à `term`, ou `null` si le cours l'ignore. */
+function resolveTerm(term: string, corpusWords: readonly string[]): string | null {
+  // Correspondance exacte d'abord : le cas courant, et le moins coûteux.
+  if (corpusWords.includes(term)) return term;
+
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const word of corpusWords) {
+    if (!sharesPrefix(term, word)) continue;
+    const score = wordSimilarity(term, word);
+    if (score > bestScore) {
+      bestScore = score;
+      best = word;
+    }
+  }
+  return bestScore >= TERM_MATCH_FLOOR ? best : null;
+}
+
 function distinctiveTerms(questionTerms: Set<string>, chunkTermSets: Set<string>[]): Set<string> | null {
-  let lowestFrequency = Number.POSITIVE_INFINITY;
+  const corpusWords = [...new Set(chunkTermSets.flatMap((terms) => [...terms]))];
   const frequencies = new Map<string, number>();
+  let lowestFrequency = Number.POSITIVE_INFINITY;
 
   for (const term of questionTerms) {
-    const frequency = chunkTermSets.filter((terms) => terms.has(term)).length;
-    if (frequency === 0) return null;
-    frequencies.set(term, frequency);
+    const resolved = resolveTerm(term, corpusWords);
+    // Un mot que le cours ignore complètement peut être CELUI qui porte la
+    // question : on ne répond pas sur le reste.
+    if (resolved === null) return null;
+
+    const frequency = chunkTermSets.filter((terms) => terms.has(resolved)).length;
+    frequencies.set(resolved, frequency);
     if (frequency < lowestFrequency) lowestFrequency = frequency;
   }
 
@@ -106,22 +166,16 @@ function distinctiveTerms(questionTerms: Set<string>, chunkTermSets: Set<string>
  * deux infos », « ça n'explique rien ». Deux phrases sorties d'un PDF et
  * empilées ne sont pas une réponse, même quand elles sont justes.
  *
- * Ce qui change ici : les faits ne sont plus classés par score puis coupés à
- * quatre. Ils sont RANGÉS PAR NATURE DE SAVOIR, dans l'ordre où un enseignant
- * les donne — ce que c'est, quels types, de quoi c'est fait, à quoi ça sert,
- * où ça se trouve — chaque groupe sous son intertitre. Les énumérations
- * détectées (`fact.items`) deviennent de vraies sous-listes au lieu de rester
- * noyées dans la phrase. Un point « À retenir » ferme la réponse quand un
- * décompte explicite existe dans le cours (« trois branches »).
+ * Les faits sont donc RANGÉS PAR NATURE DE SAVOIR, dans l'ordre où un
+ * enseignant les donne — ce que c'est, quels types, de quoi c'est fait, à quoi
+ * ça sert, où ça se trouve — chaque groupe sous son intertitre.
  *
  * ── CE QUE ÇA N'EST PAS ────────────────────────────────────────────────────
  * Organiser n'est pas expliquer. Pas une phrase ci-dessous n'est reformulée :
- * la charpente (intertitres, ordre, puces, transitions) est ajoutée, le
- * CONTENU reste mot pour mot celui du cours. Un moteur à règles ne comprend
- * pas ce qu'il range. Reformuler avec ses propres mots, adapter le niveau,
- * répondre à une question qui n'est pas dans le cours : ça demande un modèle
- * de langue, c'est le bouton « Répondre avec l'IA ». La différence est dite
- * explicitement à l'utilisateur par le badge de provenance.
+ * la charpente (intertitres, ordre, puces) est ajoutée, le CONTENU reste mot
+ * pour mot celui du cours. Reformuler, adapter le niveau, répondre à une
+ * question absente du cours : ça demande un modèle de langue, c'est le bouton
+ * « Répondre avec l'IA ».
  */
 
 /** Intertitres, dans l'ordre pédagogique — pas dans l'ordre du document. */
@@ -143,14 +197,10 @@ function capitalize(text: string): string {
  * Une énumération du cours devient une vraie liste — mais SANS se répéter.
  *
  * Naïvement, on affiche la phrase entière puis ses éléments en sous-puces :
- * « Le nerf trijumeau possède trois branches : le nerf ophtalmique, le nerf
- * maxillaire et le nerf mandibulaire. » suivie des trois mêmes noms. Le
- * lecteur lit deux fois la même chose.
- *
- * On coupe donc AU DEUX-POINTS — un séparateur déjà présent dans le texte, pas
- * une décision de sens : l'annonce reste la puce, les éléments deviennent ses
- * sous-puces. Sans deux-points, il n'y a rien à découper proprement : la
- * phrase est rendue entière, sans sous-liste redondante.
+ * le lecteur lit alors deux fois la même chose. On coupe donc AU DEUX-POINTS —
+ * un séparateur déjà présent dans le texte, pas une décision de sens :
+ * l'annonce reste la puce, les éléments deviennent ses sous-puces. Sans
+ * deux-points, la phrase est rendue entière, sans sous-liste redondante.
  */
 function renderFact(fact: RawFact): string[] {
   const excerpt = fact.sourceExcerpt.trim();
@@ -191,9 +241,13 @@ function composeAnswer(subject: string, facts: RawFact[]): string {
     lines.push('');
   }
 
-  // « À retenir » n'apparaît que s'il y a réellement quelque chose de
-  // mémorisable et CHIFFRÉ dans le cours — un décompte explicite. Sans cela,
-  // la rubrique répéterait la réponse et ne serait qu'un remplissage.
+  /*
+   * « À retenir » n'apparaît que s'il y a réellement quelque chose de
+   * mémorisable et CHIFFRÉ dans le cours — un décompte explicite. C'est la
+   * SEULE ligne recomposée de toute la réponse, et elle l'est à partir de
+   * fragments eux-mêmes verbatim : le sujet du fait, et le décompte relevé
+   * dans le texte. Une contraction, jamais une paraphrase.
+   */
   const counted = facts.filter((fact) => fact.countWord && fact.countNoun);
   if (counted.length > 0) {
     lines.push('### À retenir');
@@ -206,30 +260,6 @@ function composeAnswer(subject: string, facts: RawFact[]): string {
   return lines.join('\n').trimEnd();
 }
 
-/**
- * PASSAGES DU COURS PORTANT SUR LA QUESTION.
- *
- * ── POURQUOI CET ÉTAGE EXISTE ─────────────────────────────────────────────
- * Mesuré sur un vrai cours de dentisterie (« Divisions du nerf trijumeau ») :
- * à la question « peux-tu expliquer le nerf trijumeau », l'assistant
- * répondait « Absent de tes cours » — sur un document qui porte ce titre.
- *
- * La cause n'était pas la recherche : le mot est bien là, dans plusieurs
- * fragments. C'était l'ARCHITECTURE. Le moteur ne savait répondre QUE si une
- * règle de relation avait produit un fait (« X est Y », « X se compose
- * de… »). Un polycopié réel est fait de listes à puces, de titres et de
- * phrases descriptives : la plupart de ses lignes ne déclenchent aucune
- * règle. Tout ce savoir devenait donc invisible, et l'application affirmait
- * une absence qui était fausse.
- *
- * Ce second étage répond à la seule question qui vaille : « qu'est-ce que mon
- * cours dit là-dessus ? ». Il rassemble les lignes qui portent réellement sur
- * le sujet demandé. Rien n'est reformulé, chaque ligne est un extrait exact.
- *
- * L'abstention reste entière : si aucun terme distinctif de la question
- * n'apparaît nulle part, on ne renvoie toujours RIEN. On ne remplace pas un
- * faux « absent » par un faux « présent ».
- */
 /*
  * Trois sections au plus. Le moteur en trouvait jusqu'à huit : la réponse à
  * « nerf frontal » commençait alors par la section « nerf ophtalmique », où le

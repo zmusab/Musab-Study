@@ -20,7 +20,8 @@ import { exportBackup, importBackup } from '@/services/backup';
 import { convertLegacyDump, isLegacyDump } from '@/services/legacyImport';
 import { clearAllData } from '@/data/db';
 import type { ThemePreference } from '@/types';
-import { plural } from '@/lib/plural';
+import { agree, plural } from '@/lib/plural';
+import { reindexAllDocuments } from '@/data/repositories/documents';
 
 const THEME_SEGMENTS = [
   { value: 'light' as const, label: 'Clair', icon: '☀️' },
@@ -40,6 +41,31 @@ function downloadJson(data: unknown, filename: string): void {
 }
 
 export function SettingsPage() {
+  const [reindexing, setReindexing] = useState(false);
+
+  /**
+   * Retraite toute la bibliothèque avec l'extraction corrigée. Le décompte
+   * annoncé est le nombre RÉEL de documents modifiés : dire « c'est fait »
+   * quand rien n'a changé laisserait croire à une correction qui n'a pas eu
+   * lieu.
+   */
+  const handleReindex = async () => {
+    setReindexing(true);
+    try {
+      const { changed, total } = await reindexAllDocuments();
+      notify(
+        changed === 0
+          ? total === 0
+            ? 'Aucun document à retraiter.'
+            : 'Tes documents étaient déjà à jour.'
+          : `${plural(changed, 'document')} sur ${total} ${agree(changed, 'remis')} à niveau.`,
+        changed === 0 ? 'info' : 'success',
+      );
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   const profile = useProfile();
   const { preference, setPreference } = useTheme();
   const { notify } = useToast();
@@ -183,6 +209,25 @@ export function SettingsPage() {
           <AiSettingsCard />
         </StaggerItem>
 
+
+        <StaggerItem>
+          <Card>
+            <CardTitle>Retraiter mes cours</CardTitle>
+            <CardSubtitle>
+              L’extraction des PDF a été corrigée : elle rend maintenant à tes documents la mise
+              en page que le PDF avait aplatie (titres, puces, accents détachés, en-têtes
+              répétés). Sans cette structure, l’assistant répondait « absent de tes cours » sur
+              des sujets pourtant traités. Les documents importés AVANT la correction gardent
+              l’ancien texte — ce bouton les remet à niveau sans rien réimporter, et sans
+              toucher à tes flashcards ni à ton historique.
+            </CardSubtitle>
+            <div className="mt-4">
+              <Button loading={reindexing} onClick={handleReindex} data-settings-reindex>
+                Retraiter tous mes documents
+              </Button>
+            </div>
+          </Card>
+        </StaggerItem>
 
         <StaggerItem>
           <Card>

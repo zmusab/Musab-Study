@@ -485,3 +485,79 @@ describe('buildQuiz — scope "cards", pour rejouer un ensemble précis (ex. « 
     expect(result.questions[0]!.examLikelihood).toBeNull();
   });
 });
+
+/**
+ * LE CLASSEMENT S'APPLIQUE MAINTENANT AUSSI AUX PÉRIMÈTRES ORDINAIRES.
+ *
+ * Reproche de l'utilisateur, mot pour mot : « le quiz pose les questions
+ * aléatoirement alors que j'aurais bien voulu qu'il les pose réellement en
+ * analysant mon cours avec les questions les plus probables à l'examen ».
+ * C'était littéralement le cas — `priorityOrder` renvoyait `shuffle(pool)`
+ * pour tout sauf « Avant un examen » et « Mes points faibles », donc y compris
+ * pour « Une matière », le périmètre proposé par défaut.
+ */
+describe('classement par probabilité d’examen sur un périmètre ordinaire', () => {
+  const SUBJECT = subject('s1', 'Anatomie');
+  const CH_FORT = chapter('c-fort', 's1', 'Chapitre analysé, notions capitales');
+  const CH_FAIBLE = chapter('c-faible', 's1', 'Chapitre sans analyse');
+
+  // Réutilise les fabriques du fichier plutôt que de recomposer un objet à la
+  // main : elles portent déjà les champs obligatoires du modèle.
+  const analyses: ChapterAnalysis[] = [
+    analysis({
+      id: 'a-fort',
+      subjectId: 's1',
+      chapterId: 'c-fort',
+      notions: [concept({ id: 'n-capitale', importance: 3, isPitfall: true, citations: citation(2) })],
+    }),
+  ];
+
+  const cards: Flashcard[] = [
+    card({ id: 'banale-1', subjectId: 's1', chapterId: 'c-faible', importance: 1 }),
+    card({ id: 'banale-2', subjectId: 's1', chapterId: 'c-faible', importance: 1 }),
+    card({ id: 'banale-3', subjectId: 's1', chapterId: 'c-faible', importance: 1 }),
+    card({ id: 'capitale', subjectId: 's1', chapterId: 'c-fort', importance: 3 }),
+  ];
+
+  const tables: QuizTables = {
+    cards,
+    subjects: [SUBJECT],
+    chapters: [CH_FORT, CH_FAIBLE],
+    logs: [] as ReviewLog[],
+    chapterAnalyses: analyses,
+    events: [] as CalendarEvent[],
+  };
+
+  it('met la carte du chapitre analysé comme capitale en tête, sans qu’on choisisse « Examen probable »', () => {
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      tables,
+      { count: 4, difficulty: 'mixed', format: 'qcm', now: NOW, random: () => 0.5 },
+    );
+    expect(result.questions.length).toBeGreaterThan(0);
+    expect(result.questions[0]!.cardId).toBe('capitale');
+  });
+
+  it('et la probabilité estimée est affichée sur ce périmètre aussi', () => {
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      tables,
+      { count: 4, difficulty: 'mixed', format: 'qcm', now: NOW, random: () => 0.5 },
+    );
+    expect(result.questions[0]!.examLikelihood).not.toBeNull();
+  });
+
+  it('une liste de cartes choisie à la main n’est PAS reclassée ni jugée', () => {
+    /*
+     * « Rejouer mes erreurs » est une sélection explicite : l'utilisateur a
+     * déjà décidé quelles cartes revoir. Y coller un badge de probabilité
+     * ajouterait un jugement là où il n'a rien demandé.
+     */
+    const result = buildQuiz(
+      { kind: 'cards', cardIds: ['banale-1', 'capitale'] },
+      tables,
+      { count: 2, difficulty: 'mixed', format: 'qcm', now: NOW, random: () => 0.5 },
+    );
+    expect(result.questions.every((question) => question.examLikelihood === null)).toBe(true);
+  });
+});

@@ -232,6 +232,34 @@ describe('findLocalAnswer — pertinence réelle, pas un simple partage de mots'
     expect(findLocalAnswer("C'est quoi les nerfs de Willis ?", [scored(willis)], LOOKUP)).toBeNull();
   });
 
+  /*
+   * Cas rapporté par l'utilisateur, capture à l'appui : « Les nerfs infra
+   * orbitrales c'est quoi » renvoyait « Absent de tes cours » sur un document
+   * qui traite le nerf infra-orbitaire sur trois pages. Le cours écrit
+   * « orbitaire », l'étudiant a tapé « orbitrales » : une seule différence de
+   * graphie effaçait toute la question.
+   */
+  it('une variante d’orthographe ne fait plus déclarer le sujet absent', () => {
+    const cours = makeChunk(
+      'Le nerf infra-orbitaire chemine dans le canal infra-orbitaire. ' +
+        'Il assure l’innervation sensitive de la paupière inférieure.',
+    );
+    const answer = findLocalAnswer("Les nerfs infra orbitrales c'est quoi", [scored(cours)], LOOKUP);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('infra-orbitaire');
+  });
+
+  it('mais un terme que le cours ignore vraiment reste un motif d’abstention', () => {
+    /*
+     * La garantie inverse, et elle compte autant. Rapprocher « orbitrales » de
+     * « orbitaire » est une correction de graphie ; ignorer « Willis » parce
+     * qu'il est introuvable serait effacer le mot qui porte toute la question,
+     * et répondre avec assurance sur le nerf facial — le bug d'origine.
+     */
+    const cours = makeChunk('Le nerf facial commande les muscles de la mimique faciale.');
+    expect(findLocalAnswer("C'est quoi les nerfs de Willis ?", [scored(cours)], LOOKUP)).toBeNull();
+  });
+
   it('un adverbe de politesse ou de remplissage ne fait pas abstenir le moteur', () => {
     const answer = findLocalAnswer('Explique-moi rapidement le nerf trijumeau stp', [scored(NERFS)], LOOKUP);
     expect(answer).not.toBeNull();

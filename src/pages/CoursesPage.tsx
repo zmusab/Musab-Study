@@ -10,10 +10,11 @@ import {
   Input,
   Modal,
   Swatch,
+  useConfirm,
   useToast,
 } from '@/components/ui';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
-import { createSubject, SUBJECT_COLORS } from '@/data/repositories/subjects';
+import { createSubject, deleteSubject, SUBJECT_COLORS } from '@/data/repositories/subjects';
 import { cn } from '@/lib/cn';
 import { plural } from '@/lib/plural';
 
@@ -42,6 +43,7 @@ export function CoursesPage() {
   const subjects = useSubjects();
   const overviews = useSubjectOverviews();
   const { notify } = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
 
   const [creating, setCreating] = useState(false);
@@ -56,6 +58,25 @@ export function CoursesPage() {
     navigate(`/recherche?q=${encodeURIComponent(query)}`);
   };
 
+  /**
+   * Supprime une matière depuis la LISTE. La confirmation rappelle ce qui part
+   * avec elle : une matière emporte ses chapitres, ses documents, ses
+   * flashcards et son historique de révision — c'est irréversible, et
+   * l'utilisateur doit le savoir avant de valider, pas après.
+   */
+  const handleDelete = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: `Supprimer « ${name} » ?`,
+      description:
+        'Ses chapitres, ses documents, ses flashcards et leur historique de révision seront supprimés. Cette action est définitive.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    });
+    if (!ok) return;
+    await deleteSubject(id);
+    notify(`Matière « ${name} » supprimée.`, 'info');
+  };
+
   const handleCreate = async () => {
     if (name.trim().length === 0) {
       notify('Donne un nom à cette matière.', 'error');
@@ -64,7 +85,9 @@ export function CoursesPage() {
     setSaving(true);
     try {
       await createSubject(name, color);
-      notify(`« ${name.trim()} » créée.`, 'success');
+      // « Matière » explicite : « « Cours » créée. » laissait croire à une
+      // faute d'accord alors que c'est bien la matière qui est créée.
+      notify(`Matière « ${name.trim()} » créée.`, 'success');
       setName('');
       setColor(SUBJECT_COLORS[(subjects?.length ?? 0) % SUBJECT_COLORS.length]!);
       setCreating(false);
@@ -124,10 +147,32 @@ export function CoursesPage() {
             const stats = overviews?.[subject.id];
             return (
               <StaggerItem key={subject.id}>
-                <Link
-                  to={`/cours/${subject.id}`}
-                  className="surface-card block p-5 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
-                >
+                <div className="surface-card relative">
+                  {/*
+                    La suppression vivait uniquement DANS la matière : il fallait
+                    l'ouvrir pour pouvoir la retirer. Le bouton est posé par-dessus
+                    le lien plutôt qu'à l'intérieur — un <button> imbriqué dans un
+                    <a> est invalide en HTML, et le clic déclencherait les deux.
+                  */}
+                  <button
+                    type="button"
+                    aria-label={`Supprimer la matière ${subject.name}`}
+                    title="Supprimer cette matière"
+                    data-subject-delete={subject.id}
+                    onClick={() => void handleDelete(subject.id, subject.name)}
+                    className={cn(
+                      'absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center',
+                      'rounded-full text-[var(--ink-faint)] transition-colors',
+                      'hover:bg-[var(--danger-tint)] hover:text-[var(--danger)]',
+                    )}
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+
+                  <Link
+                    to={`/cours/${subject.id}`}
+                    className="block rounded-[var(--radius-card)] p-5 pr-14 transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+                  >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <Swatch color={subject.color} size={11} />
@@ -145,7 +190,8 @@ export function CoursesPage() {
                       <span>Chargement…</span>
                     )}
                   </div>
-                </Link>
+                  </Link>
+                </div>
               </StaggerItem>
             );
           })}

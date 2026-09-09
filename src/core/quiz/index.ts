@@ -458,19 +458,56 @@ export function buildQuiz(
 
   const requestedFormat = options.format ?? 'qcm';
 
-  // « Examen probable » a son propre classement (probabilité de contenu +
-  // lacune réelle de l'étudiant, voir core/quiz/examLikely.ts) — calculé à
-  // part plutôt que d'alourdir `priorityOrder`, qui reste inchangé pour tous
-  // les autres scopes.
+  /*
+   * CLASSEMENT PAR PROBABILITÉ D'EXAMEN — PARTOUT, PLUS SEULEMENT DANS
+   * « EXAMEN PROBABLE ».
+   *
+   * Ce classement (probabilité de contenu × lacune réellement mesurée, voir
+   * `core/quiz/examLikely.ts`) était réservé au périmètre « Examen probable ».
+   * Tous les autres — dont « Une matière », celui proposé par défaut et donc
+   * celui que l'on lance neuf fois sur dix — passaient par un `shuffle` pur.
+   *
+   * Le reproche de l'utilisateur était donc exact au mot près : « le quiz pose
+   * les questions aléatoirement alors que j'aurais voulu qu'il les pose en
+   * analysant mon cours ». C'était littéralement le cas.
+   *
+   * Le périmètre décide QUELLES cartes sont candidates ; l'ordre, lui, n'a
+   * aucune raison d'être tiré au sort. On classe donc toujours — et le hasard
+   * ne sert plus qu'à départager les ex æquo, pour que deux séries lancées de
+   * suite ne soient pas identiques.
+   *
+   * Deux périmètres gardent leur ordre propre, parce qu'ils EXPRIMENT déjà une
+   * priorité : « Avant un examen » (ordre du programme, chapitres faibles en
+   * tête) et « Mes points faibles » (du plus faible au moins faible).
+   */
   let ordered: Flashcard[];
   let examInfoByCardId: Map<ID, { score: number; info: ExamLikelihoodInfo }> | null = null;
-  if (scope.kind === 'exam-likely') {
+
+  /*
+   * « cards » est exclu lui aussi : c'est une LISTE EXPLICITE (rejouer ses
+   * erreurs, refaire une série précise). L'utilisateur a déjà choisi les
+   * cartes — les reclasser par probabilité d'examen, et pire, leur coller un
+   * badge de probabilité, ajouterait un jugement là où il n'a rien demandé.
+   */
+  if (scope.kind === 'exam' || scope.kind === 'weak' || scope.kind === 'cards') {
+    ordered = priorityOrder(scope, effectivePool, tables, random);
+  } else {
     const chapterSignals = chapterSignalsFromAnalyses(tables.chapterAnalyses ?? []);
-    const evaluation = scope.evaluationEventId
-      ? (upcomingEvaluations(tables.events ?? [], tables.subjects, now).find(
-          (candidate) => candidate.event.id === scope.evaluationEventId,
-        ) ?? null)
-      : null;
+    const evaluation =
+      scope.kind === 'exam-likely' && scope.evaluationEventId
+        ? (upcomingEvaluations(tables.events ?? [], tables.subjects, now).find(
+            (candidate) => candidate.event.id === scope.evaluationEventId,
+          ) ?? null)
+        : /*
+           * Hors « Examen probable », aucune date n'est choisie par
+           * l'utilisateur : on prend la PROCHAINE évaluation enregistrée qui
+           * concerne les cartes du périmètre. Un contrôle mardi doit peser sur
+           * un quiz lancé lundi, même lancé depuis « Une matière ».
+           */
+          (upcomingEvaluations(tables.events ?? [], tables.subjects, now).find((candidate) =>
+            effectivePool.some((card) => card.subjectId === candidate.subjectId),
+          ) ?? null);
+
     const ranking = rankForExamLikely(
       effectivePool,
       chapterSignals,
@@ -480,8 +517,6 @@ export function buildQuiz(
     );
     ordered = ranking.ordered;
     examInfoByCardId = ranking.infoByCardId;
-  } else {
-    ordered = priorityOrder(scope, effectivePool, tables, random);
   }
 
   const questions: QuizQuestionInstance[] = [];
