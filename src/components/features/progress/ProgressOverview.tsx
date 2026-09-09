@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import { CountUp, useSeen } from '@/components/motion/Reveal';
+import { cn } from '@/lib/cn';
+import { plural } from '@/lib/plural';
 import { formatDuration, masteryBand, type AnswerStats, type Streak, type StudyTime } from '@/core/progress';
 import { readinessLevel } from '@/core/progress/exam';
 
@@ -50,13 +53,15 @@ export function ProgressOverview({
       <Tile
         label="Progression globale"
         value={masteryPct === null ? '—' : `${masteryPct} %`}
+        count={masteryPct}
+        countSuffix=" %"
         valueAttr="data-progress-mastery"
         caption={band?.label ?? null}
         color={band?.colorVar ?? null}
         bar={masteryPct}
         note={
           masteryPct === null
-            ? `Encore ${masteryMissing} carte${masteryMissing > 1 ? 's' : ''} à réviser pour la calculer.`
+            ? `Encore ${plural(masteryMissing, 'carte')} à réviser pour la calculer.`
             : null
         }
       />
@@ -64,6 +69,8 @@ export function ProgressOverview({
       <Tile
         label="Suffisance examen"
         value={readinessPct === null ? '—' : `${readinessPct} %`}
+        count={readinessPct}
+        countSuffix=" %"
         valueAttr="data-progress-hero-readiness"
         caption={level?.label ?? null}
         color={level?.colorVar ?? null}
@@ -96,18 +103,15 @@ export function ProgressOverview({
       <Tile
         label="Révisions"
         value={answers.total === 0 ? '—' : String(answers.total)}
+        count={answers.total === 0 ? null : answers.total}
         valueAttr="data-progress-overview-answers"
         caption={answers.total === 1 ? 'réponse' : 'réponses'}
         color={answers.total > 0 ? 'var(--ink)' : null}
         note={
           <span data-progress-counters className="flex flex-wrap gap-x-1.5">
-            <span>
-              {totalCards} flashcard{totalCards > 1 ? 's' : ''}
-            </span>
+            <span>{plural(totalCards, 'flashcard')}</span>
             <span aria-hidden>·</span>
-            <span>
-              {answers.total} réponse{answers.total > 1 ? 's' : ''}
-            </span>
+            <span>{plural(answers.total, 'réponse')}</span>
             {answers.successRate !== null && (
               <>
                 <span aria-hidden>·</span>
@@ -119,8 +123,13 @@ export function ProgressOverview({
       />
 
       <Tile
+        // Cinq tuiles sur deux colonnes laissent la dernière orpheline sur sa
+        // ligne, à moitié de largeur : elle s'étend plutôt que de laisser un
+        // trou. Dès cinq colonnes, elle reprend sa taille normale.
+        className="col-span-2 lg:col-span-1"
         label="Régularité"
         value={streak.current === 0 ? '—' : String(streak.current)}
+        count={streak.current === 0 ? null : streak.current}
         valueAttr="data-progress-overview-streak"
         caption={streak.current > 1 ? 'jours d’affilée' : 'jour d’affilée'}
         color={streak.current > 0 ? 'var(--mastery-3)' : null}
@@ -141,7 +150,7 @@ export function ProgressOverview({
               />
             ))}
             <span className="ml-1">
-              {activeThisWeek}/7 jour{activeThisWeek > 1 ? 's' : ''} cette semaine
+              {activeThisWeek}/7 {activeThisWeek > 1 ? 'jours' : 'jour'} cette semaine
             </span>
           </span>
         }
@@ -152,8 +161,11 @@ export function ProgressOverview({
 
 /** Une tuile : libellé, valeur, barre facultative, une ligne de contexte. */
 function Tile({
+  className,
   label,
   value,
+  count,
+  countSuffix = '',
   valueAttr,
   caption,
   color,
@@ -161,8 +173,16 @@ function Tile({
   info,
   note,
 }: {
+  className?: string;
   label: string;
   value: string;
+  /**
+   * Valeur numérique à faire monter depuis zéro. `null` quand la mesure n'est
+   * pas encore possible : un « — » ne se compte pas, et surtout il ne doit
+   * jamais devenir un « 0 » le temps d'une animation.
+   */
+  count?: number | null;
+  countSuffix?: string;
   valueAttr: string;
   caption: string | null;
   color: string | null;
@@ -171,8 +191,13 @@ function Tile({
   info?: string;
   note?: ReactNode;
 }) {
+  // La barre part de zéro au moment où la tuile entre à l'écran, pas au
+  // montage : sur une page de 6 000 px, la moitié des barres avaient fini de
+  // se remplir bien avant qu'on ne les regarde.
+  const [ref, seen] = useSeen<HTMLDivElement>();
+
   return (
-    <div className="surface-card flex min-w-0 flex-col p-3.5">
+    <div ref={ref} className={cn('surface-card flex min-w-0 flex-col p-3.5', className)}>
       {/* Le libellé s'enroule plutôt que de se tronquer : « PROGRESSION… »
           n'apprend rien, « PROGRESSION / GLOBALE » sur deux lignes, si. */}
       <p className="flex items-start gap-1.5 text-[0.7rem] font-medium uppercase leading-tight tracking-wide text-[var(--ink-faint)]">
@@ -194,7 +219,11 @@ function Tile({
           className="text-[1.55rem] font-semibold leading-none tabular-nums"
           style={{ color: color ?? 'var(--ink-faint)' }}
         >
-          {value}
+          {count === null || count === undefined ? (
+            value
+          ) : (
+            <CountUp value={count} suffix={countSuffix} />
+          )}
         </span>
         {caption && (
           <span className="min-w-0 text-[0.76rem] font-medium leading-tight" style={{ color: color ?? 'var(--ink-faint)' }}>
@@ -208,7 +237,7 @@ function Tile({
           <div
             className="h-full rounded-full"
             style={{
-              width: `${bar ?? 0}%`,
+              width: `${seen ? (bar ?? 0) : 0}%`,
               backgroundColor: color ?? 'var(--line-strong)',
               transition: 'width 800ms cubic-bezier(0.22, 0.61, 0.36, 1)',
             }}

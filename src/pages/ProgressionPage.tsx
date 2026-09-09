@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PageTransition } from '@/components/layout/PageTransition';
+import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
+import { Reveal } from '@/components/motion/Reveal';
 import { Button, Card, EmptyState, Icon, Input, Modal, useToast } from '@/components/ui';
 import { BandDot, EmptyHint, MasteryBar, SectionTitle } from '@/components/features/progress/ProgressBits';
 import { ProgressOverview } from '@/components/features/progress/ProgressOverview';
@@ -63,14 +64,14 @@ export function ProgressionPage() {
 
   if (!source || !view) return null;
 
+  // Le même en-tête que toutes les autres pages — surtitre scientifique et
+  // filet de séparation compris. Cette page dessinait le sien à la main, et
+  // c'était la seule à ne pas porter la marque de sa section.
   const hero = (
-    <FadeUp>
-      <h1 className="text-[1.9rem] leading-tight">Progression</h1>
-      <p className="mt-2 max-w-[46rem] text-[0.95rem] leading-relaxed text-[var(--ink-soft)]">
-        Suis ta progression, identifie tes points faibles et concentre tes révisions là où elles sont les plus
-        utiles.
-      </p>
-    </FadeUp>
+    <PageHeader
+      title="Progression"
+      subtitle="Suis ta progression, identifie tes points faibles et concentre tes révisions là où elles sont les plus utiles."
+    />
   );
 
   // ── Aucune matière : rien n'est mesurable, et le dire vaut mieux que
@@ -188,7 +189,16 @@ export function ProgressionPage() {
         </FadeUp>
       )}
 
-      {/* ═══ 1. VUE D'ENSEMBLE — où j'en suis, sans une seule action. ═══ */}
+      {/*
+        ═══ 1. VUE D'ENSEMBLE — où j'en suis, sans une seule action. ═══
+
+        À partir d'ici, chaque section est enveloppée d'un `<Reveal>` : elle
+        monte en fondu au moment où elle entre dans la fenêtre. Sur une page de
+        cette longueur, une animation jouée au montage se termine plusieurs
+        écrans avant qu'on ne l'atteigne — autant ne pas en avoir. Seuls
+        `opacity` et `transform` bougent : le texte et les chiffres restent
+        dans le DOM, exacts, même sans avoir jamais défilé jusqu'à eux.
+      */}
       <FadeUp className="mt-5">
         <ProgressOverview
           masteryPct={mastery.pct}
@@ -206,7 +216,7 @@ export function ProgressionPage() {
              La recommandation dit QUOI et POURQUOI en deux phrases ; les trois
              priorités détaillent le classement, chacune avec sa raison mesurée
              et son bouton de révision. */}
-      <section className="mt-7">
+      <Reveal className="mt-7">
         <SectionTitle
           hint={
             view.evaluations.length > 0
@@ -217,8 +227,12 @@ export function ProgressionPage() {
           À faire maintenant
         </SectionTitle>
 
+        {/* Même signal que la session recommandée de l'accueil : un filet
+            d'accent épais sur le bord gauche, comme une marque de correcteur.
+            La carte la plus importante de la page doit se distinguer sans
+            qu'on ait à lire son titre. */}
         {view.recommendation !== null && (
-          <Card data-progress-reco className="mb-2 border-[var(--accent)]/40">
+          <Card data-progress-reco className="mb-2 border-l-[3px] border-l-[var(--accent)] bg-[var(--accent-tint)]">
             <p className="flex items-center gap-2 text-[0.78rem] font-medium uppercase tracking-wide text-[var(--accent)]">
               <Icon name="sparkles" size={14} /> Priorité du jour
             </p>
@@ -246,10 +260,10 @@ export function ProgressionPage() {
         ) : (
           <PriorityList items={view.priorities} />
         )}
-      </section>
+      </Reveal>
 
       {/* ═══ 3. PROCHAINES ÉVALUATIONS — dans l'ordre du calendrier. ═══ */}
-      <section className="mt-7">
+      <Reveal className="mt-7">
         <SectionTitle hint="Lues dans ton calendrier, avec ton niveau de préparation en regard. Aucune date n’est déduite.">
           Prochaines évaluations
         </SectionTitle>
@@ -283,10 +297,10 @@ export function ProgressionPage() {
             />
           </div>
         )}
-      </section>
+      </Reveal>
 
       {/* ═══ 4. PROGRESSION PAR MATIÈRE ═══ */}
-      <section className="mt-7">
+      <Reveal className="mt-7">
         <SectionTitle hint="Touche une matière pour ouvrir le détail de ses chapitres.">
           Progression par matière
         </SectionTitle>
@@ -316,21 +330,24 @@ export function ProgressionPage() {
             ))}
           </ul>
         )}
-      </section>
+      </Reveal>
 
       {/* ═══ 5. POINTS FAIBLES ET POINTS FORTS — compacts, côte à côte. ═══ */}
-      <section className="mt-7">
-        <SectionTitle hint="Les chapitres où tu perds le plus, et ceux qui sont acquis.">
-          Points faibles et points forts
-        </SectionTitle>
+      <Reveal className="mt-7">
+        {/* Sans phrase d'accroche : les deux cartes juste en dessous
+            s'intitulent « Tes points faibles » et « Tes points forts » et
+            portent chacune son propre critère chiffré. La redire ici ne
+            faisait qu'ajouter une ligne de préambule avant la première
+            donnée. */}
+        <SectionTitle>Points faibles et points forts</SectionTitle>
         <WeakStrongPair weak={weak} strengths={view.strengths} />
-      </section>
+      </Reveal>
 
       {/* ═══ 6. ACTIVITÉ ET ÉVOLUTION — la progression dans le temps. ═══ */}
-      <section className="mt-8 mb-4">
-        <SectionTitle hint="Ce qui se mesure dans la durée : séances, temps, évolution, objectifs et échéances.">
-          Activité et évolution
-        </SectionTitle>
+      <Reveal className="mt-8 mb-4">
+        {/* Idem : la phrase se contentait d'énumérer les titres des cartes
+            qui suivent immédiatement. */}
+        <SectionTitle>Activité et évolution</SectionTitle>
         <SecondaryPanels
           activity={activity}
           time={time}
@@ -345,7 +362,7 @@ export function ProgressionPage() {
           periodMs={periodMs}
           onEditGoals={() => setGoalsOpen(true)}
         />
-      </section>
+      </Reveal>
 
       <GoalsModal
         open={goalsOpen}

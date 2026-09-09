@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useSeen } from '@/components/motion/Reveal';
 import type { TrendPoint } from '@/core/progress';
 
 /**
@@ -11,13 +11,11 @@ import type { TrendPoint } from '@/core/progress';
  * révisions, elle ne s'affiche pas du tout.
  */
 export function TrendChart({ points }: { points: TrendPoint[] }) {
-  const [progress, setProgress] = useState(0);
-  const pathRef = useRef<SVGPolylineElement>(null);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setProgress(1));
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  // Le tracé se dessine quand la courbe entre à l'écran. Les crochets sont
+  // appelés avant tout retour anticipé : `points.length < 2` ne doit pas
+  // changer le NOMBRE de crochets exécutés d'un rendu à l'autre.
+  const [ref, seen] = useSeen<HTMLDivElement>();
+  const progress = seen ? 1 : 0;
 
   if (points.length < 2) return null;
 
@@ -42,7 +40,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
   const delta = last.masteryPct - first.masteryPct;
 
   return (
-    <div>
+    <div ref={ref}>
       <div className="flex items-baseline gap-3">
         <span className="text-[1.9rem] font-semibold leading-none tabular-nums text-[var(--ink)]">
           {last.masteryPct} %
@@ -78,7 +76,6 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
         </defs>
         <polygon points={area} fill="url(#trend-fill)" style={{ opacity: progress, transition: 'opacity 700ms ease' }} />
         <polyline
-          ref={pathRef}
           points={line}
           fill="none"
           stroke="var(--accent)"

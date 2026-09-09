@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { PageTransition } from '@/components/layout/PageTransition';
+import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { Button, Card, Icon, SegmentedControl, useConfirm, useToast } from '@/components/ui';
 import { MonthGrid } from '@/components/features/calendar/MonthGrid';
@@ -405,15 +405,14 @@ export function CalendarPage() {
 
   return (
     <PageTransition>
-      <FadeUp>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-[1.9rem] leading-tight">Calendrier</h1>
-            <p className="mt-1.5 max-w-[42rem] text-[0.92rem] leading-relaxed text-[var(--ink-soft)]">
-              Tes évaluations, tes séances et les cartes que la répétition espacée programme — au même endroit.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      {/* Même en-tête que toutes les autres sections — surtitre scientifique
+          et filet de séparation compris. Le Calendrier dessinait le sien à la
+          main, avec sa propre taille de titre. */}
+      <PageHeader
+        title="Calendrier"
+        subtitle="Tes évaluations, tes séances et les cartes que la répétition espacée programme — au même endroit."
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setAvailabilityOpen(true)} data-calendar-availability>
               Mes disponibilités
             </Button>
@@ -424,8 +423,8 @@ export function CalendarPage() {
               Nouvel événement
             </Button>
           </div>
-        </div>
-      </FadeUp>
+        }
+      />
 
       {/* ── Prochaines évaluations : ce qui commande l'agenda ── */}
       {upcoming.length > 0 && (

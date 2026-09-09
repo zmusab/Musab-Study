@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useSeen } from '@/components/motion/Reveal';
+import { plural } from '@/lib/plural';
 import { formatDuration, type DayBucket } from '@/core/progress';
 
 const LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -15,17 +16,15 @@ const LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
  * le jour existe et qu'il est vide, au lieu de disparaître du graphique.
  */
 export function StudyTimeChart({ week, todayIndex }: { week: DayBucket[]; todayIndex: number }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  // Les barres poussent quand le graphique arrive à l'écran, pas au montage :
+  // il est situé très bas dans la page.
+  const [ref, seen] = useSeen<HTMLDivElement>();
 
   const max = Math.max(...week.map((bucket) => bucket.ms), 1);
   const hasAny = week.some((bucket) => bucket.ms > 0);
 
   return (
-    <div>
+    <div ref={ref}>
       <div className="flex h-32 items-end justify-between gap-2" data-progress-week-chart>
         {week.map((bucket, index) => {
           const ratio = bucket.ms / max;
@@ -37,14 +36,16 @@ export function StudyTimeChart({ week, todayIndex }: { week: DayBucket[]; todayI
                 {bucket.ms > 0 ? formatDuration(bucket.ms) : ''}
               </span>
               <div
-                title={`${bucket.day} — ${formatDuration(bucket.ms)}, ${bucket.reviews} réponse${bucket.reviews > 1 ? 's' : ''}`}
+                title={`${bucket.day} — ${formatDuration(bucket.ms)}, ${plural(bucket.reviews, 'réponse')}`}
                 className="w-full rounded-t-[5px]"
                 style={{
-                  height: mounted ? height : 3,
+                  height: seen ? height : 3,
                   backgroundColor:
                     bucket.ms === 0 ? 'var(--line)' : isToday ? 'var(--accent)' : 'var(--accent-soft, var(--accent))',
                   opacity: bucket.ms === 0 ? 1 : isToday ? 1 : 0.55,
-                  transition: 'height 650ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+                  // Décalage par jour : les sept barres montent en vague au
+                  // lieu de se lever d'un bloc.
+                  transition: `height 650ms cubic-bezier(0.22, 0.61, 0.36, 1) ${index * 55}ms`,
                 }}
               />
             </div>

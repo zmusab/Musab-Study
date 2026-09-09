@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { useSeen } from '@/components/motion/Reveal';
 import { cn } from '@/lib/cn';
 import { masteryBand } from '@/core/progress';
 
@@ -11,21 +12,16 @@ import { masteryBand } from '@/core/progress';
  * ne sait pas encore », et cette page ne doit jamais confondre les deux.
  */
 
-/**
- * Déclenche l'animation d'entrée une image après le montage. Les barres
- * partent de zéro et rejoignent leur valeur : la progression se voit, sans
- * animer autre chose que `width`/`height`/`stroke-dashoffset`. La règle
- * globale `prefers-reduced-motion` ramène toutes ces transitions à 0,01 ms,
- * la valeur finale reste donc correcte et immédiate.
+/*
+ * Les barres partent de zéro et rejoignent leur valeur quand elles ENTRENT à
+ * l'écran (`useSeen`), et non au montage. La page mesure 6 000 px : déclenchée
+ * au montage, une barre du bas avait fini de se remplir plusieurs écrans avant
+ * qu'on ne l'atteigne — le mouvement existait dans le code, jamais à l'œil.
+ *
+ * On n'anime que `width` / `height` / `stroke-dashoffset`, et la règle globale
+ * `prefers-reduced-motion` ramène ces transitions à 0,01 ms : la valeur finale
+ * reste donc correcte et immédiate pour qui a désactivé les animations.
  */
-function useMounted(): boolean {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  return mounted;
-}
 
 export function SectionTitle({
   children,
@@ -97,10 +93,11 @@ export function StatTile({
 
 /** Barre de maîtrise horizontale, colorée par palier. */
 export function MasteryBar({ pct, height = 6 }: { pct: number | null; height?: number }) {
-  const mounted = useMounted();
+  const [ref, seen] = useSeen<HTMLDivElement>();
   const color = pct === null ? 'var(--line-strong)' : masteryBand(pct).colorVar;
   return (
     <div
+      ref={ref}
       className="w-full overflow-hidden rounded-full bg-[var(--surface-2)]"
       style={{ height }}
       role="presentation"
@@ -108,7 +105,7 @@ export function MasteryBar({ pct, height = 6 }: { pct: number | null; height?: n
       <div
         className="h-full rounded-full"
         style={{
-          width: `${mounted ? (pct ?? 0) : 0}%`,
+          width: `${seen ? (pct ?? 0) : 0}%`,
           backgroundColor: color,
           transition: 'width 700ms cubic-bezier(0.22, 0.61, 0.36, 1)',
         }}
@@ -119,13 +116,13 @@ export function MasteryBar({ pct, height = 6 }: { pct: number | null; height?: n
 
 /** Barre d'objectif — même mécanique, teinte d'accent, valeur plafonnée à 100 %. */
 export function GoalBar({ pct }: { pct: number }) {
-  const mounted = useMounted();
+  const [ref, seen] = useSeen<HTMLDivElement>();
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
+    <div ref={ref} className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
       <div
         className="h-full rounded-full bg-[var(--accent)]"
         style={{
-          width: `${mounted ? Math.min(100, pct) : 0}%`,
+          width: `${seen ? Math.min(100, pct) : 0}%`,
           transition: 'width 700ms cubic-bezier(0.22, 0.61, 0.36, 1)',
         }}
       />

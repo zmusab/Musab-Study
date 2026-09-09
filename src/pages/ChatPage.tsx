@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { PageTransition } from '@/components/layout/PageTransition';
+import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { Button, EmptyState, Icon, Input, Spinner, useToast } from '@/components/ui';
 import { ChatMessageView, type AnswerAction } from '@/components/features/chat/ChatMessageView';
@@ -365,7 +365,7 @@ export function ChatPage() {
   if (subjects && subjects.length === 0) {
     return (
       <PageTransition>
-        <h1 className="text-[1.75rem] leading-tight">IA</h1>
+        <PageHeader title="IA" />
         <div className="mt-6">
           <EmptyState
             icon={<Icon name="ai" size={30} />}
@@ -387,13 +387,15 @@ export function ChatPage() {
   return (
     <PageTransition>
       <div className="mx-auto flex w-full max-w-[46rem] flex-col">
-        <h1 className="text-[1.75rem] leading-tight">IA</h1>
-        <p className="mt-1 text-[0.95rem] text-[var(--ink-soft)]">
-          {profile.name ? `Bonjour ${profile.name}, que veux-tu travailler ?` : 'Que veux-tu travailler ?'}
-        </p>
+        <PageHeader
+          title="IA"
+          subtitle={
+            profile.name ? `Bonjour ${profile.name}, que veux-tu travailler ?` : 'Que veux-tu travailler ?'
+          }
+        />
 
         {/* Quatre intentions. Tout le reste des actions vit derrière elles. */}
-        <div className="mt-4 flex flex-wrap gap-2" data-ai-intents>
+        <div className="flex flex-wrap gap-2" data-ai-intents>
           {INTENTS.map((intent) => (
             <button
               key={intent.category}
