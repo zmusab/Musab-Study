@@ -23,8 +23,14 @@
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
 
-  --radius-card: 0.875rem;
-  --radius-control: 0.625rem;
+  /*
+   * Rayons légèrement augmentés. À 0,875 rem, les cartes lisaient comme des
+   * champs de formulaire ; le geste plus ample les rapproche d'une feuille
+   * posée sur un bureau — c'est l'impression recherchée pour un outil où l'on
+   * passe des heures.
+   */
+  --radius-card: 1.1rem;
+  --radius-control: 0.7rem;
 }
 
 :root {
@@ -163,6 +169,14 @@
     background-color: var(--bg);
     color: var(--ink);
     font-family: var(--font-sans);
+    /*
+     * CONFORT DE LECTURE. Un étudiant lit ici pendant des heures : le corps de
+     * texte est légèrement agrandi et surtout aéré (1,6 d'interligne contre le
+     * 1,5 par défaut). C'est le réglage qui change le plus la fatigue ressentie,
+     * bien avant n'importe quelle couleur.
+     */
+    font-size: 1.02rem;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     /* Évite le rebond de défilement du document en PWA plein écran. */
@@ -173,7 +187,20 @@
     font-family: var(--font-serif);
     font-weight: 600;
     letter-spacing: -0.015em;
+    /* Un titre serré respire mal ; celui-ci reste compact sans être écrasé. */
+    line-height: 1.25;
     color: var(--ink);
+  }
+
+  /*
+   * Anneau de focus commun, visible mais calme — et surtout UNIFORME. Chaque
+   * contrôle dessinait le sien, ce qui donnait autant de styles de focus que
+   * de composants.
+   */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-control);
   }
 
   /*
@@ -261,10 +288,26 @@
 }
 
 @layer utilities {
+  /*
+   * LA CARTE — une feuille posée, plus une boîte dessinée.
+   *
+   * Chaque carte portait un trait de 1 px sur tout son pourtour. Empilées par
+   * dizaines sur une page comme « Progression », ces bordures produisaient une
+   * grille de cadres qui écrasait la hiérarchie : tout avait exactement le même
+   * poids visuel. Une ombre très douce suffit à décoller la carte du fond, sans
+   * rien cerner. La bordure ne subsiste qu'en thème sombre, où l'ombre ne
+   * sépare plus rien.
+   */
   .surface-card {
     background-color: var(--surface);
-    border: 1px solid var(--line);
+    border: 1px solid transparent;
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  [data-theme='dark'] .surface-card {
+    border-color: var(--line);
+    box-shadow: none;
   }
 
   /*
