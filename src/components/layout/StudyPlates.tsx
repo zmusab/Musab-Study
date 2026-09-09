@@ -478,6 +478,70 @@ function Calculations() {
   );
 }
 
+/**
+ * PLANCHE DE PHYSIQUE — les lois qui gouvernent réellement ce qu'un dentiste
+ * manipule.
+ *
+ * Aucune n'est décorative et aucune n'est inventée : ce sont des lois
+ * établies, écrites sous leur forme standard, avec la grandeur qu'elles
+ * décrivent et le domaine de dentisterie ou de physiologie où elles servent.
+ * Dans un outil d'étude, une formule fausse en filigrane serait pire
+ * qu'un fond vide — un étudiant finit par la lire, et par la retenir.
+ *
+ * Les valeurs numériques citées sont des ordres de grandeur classiques de
+ * la littérature (module de Young de l'émail et de la dentine, pKa du
+ * couple bicarbonate), signalés comme approximatifs par le signe ≈.
+ */
+function Physics() {
+  const laws: readonly { name: string; formula: string; note: string }[] = [
+    { name: 'Beer–Lambert', formula: 'I = I₀ · e^(−μx)', note: 'atténuation des rayons X' },
+    { name: 'Bragg', formula: 'n λ = 2 d sin θ', note: 'diffraction, hydroxyapatite' },
+    { name: 'Young', formula: 'E = σ / ε', note: 'émail ≈ 84 GPa · dentine ≈ 18 GPa' },
+    { name: 'Contrainte', formula: 'σ = F / A', note: 'charge occlusale' },
+    { name: 'Henderson–Hasselbalch', formula: 'pH = pKa + log([A⁻]/[AH])', note: 'tampon salivaire, pKa ≈ 6,1' },
+    { name: 'Nernst', formula: 'E = (RT / zF) · ln(Cₑ / Cᵢ)', note: 'potentiel de membrane' },
+    { name: 'Fick', formula: 'J = −D · (dC/dx)', note: 'diffusion à travers la dentine' },
+    { name: 'Poiseuille', formula: 'Q = π ΔP r⁴ / (8 η L)', note: 'écoulement, canal radiculaire' },
+    { name: 'Planck', formula: 'E = h ν = h c / λ', note: 'h = 6,626 × 10⁻³⁴ J·s' },
+    { name: 'Décroissance', formula: 'N(t) = N₀ e^(−λt)', note: 't½ = ln 2 / λ' },
+  ];
+
+  const LINE = 20;
+  const height = 12 + laws.length * LINE;
+
+  return (
+    <svg viewBox={`0 0 300 ${height}`} className="h-full w-full" {...{ 'aria-hidden': true }}>
+      {/* Filet de marge, comme sur une page de cahier. */}
+      <path d={`M6 2 V${height - 2}`} stroke="currentColor" strokeWidth={0.9} fill="none" opacity={0.7} />
+      <g fill="currentColor" stroke="none" fontFamily="var(--font-serif, Georgia, serif)">
+        {laws.map((law, index) => {
+          const y = 14 + index * LINE;
+          return (
+            <g key={law.name}>
+              {/* Le nom de la loi, droit : c'est une étiquette, pas une variable. */}
+              <text x={13} y={y} fontSize={7} letterSpacing="0.06em">
+                {law.name.toUpperCase()}
+              </text>
+              <text x={13} y={y + 9} fontSize={9} fontStyle="italic">
+                {law.formula}
+              </text>
+              {/*
+                Ce que la loi sert à calculer ICI — sans quoi une formule n'est
+                qu'un alignement de symboles. La colonne est posée à 160, pas
+                132 : en serif italique, « pH = pKa + log([A⁻]/[AH]) » dépassait
+                et les deux textes se chevauchaient.
+              */}
+              <text x={160} y={y + 9} fontSize={6.5} fontStyle="italic" opacity={0.75}>
+                {law.note}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
 export function StudyPlates() {
   return (
     <div
@@ -541,12 +605,23 @@ export function StudyPlates() {
       </div>
 
       {/*
-        Formules — en haut, contre le rail. C'est la seule planche faite de
-        texte : elle a besoin d'une zone calme, et le haut de page est occupé
-        par l'en-tête, qui est étroit.
+        Formules de l'application — en haut, contre le rail. C'est une planche
+        faite de texte : elle a besoin d'une zone calme, et le haut de page est
+        occupé par l'en-tête, qui est étroit.
       */}
-      <div className="absolute left-[14.5rem] top-[5vh] hidden h-[19vh] w-[22vh] xl:block">
+      <div className="absolute left-[14.5rem] top-[4vh] hidden h-[19vh] w-[22vh] xl:block">
         <Calculations />
+      </div>
+
+      {/*
+        Lois de physique — la BANDE MÉDIANE À GAUCHE, seule zone de la page qui
+        restait vide : entre l'en-tête (en haut) et le crâne (en bas), le
+        contenu est centré et laisse là une colonne entière inoccupée.
+        Elle n'apparaît qu'à partir de `xl` : en dessous, cette colonne
+        n'existe pas et la planche passerait sous le texte.
+      */}
+      <div className="absolute left-[14.5rem] top-[26vh] hidden h-[46vh] w-[34vh] xl:block">
+        <Physics />
       </div>
     </div>
   );
