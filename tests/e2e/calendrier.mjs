@@ -639,9 +639,25 @@ check(
 await page.getByRole('tab', { name: 'Semaine' }).click();
 await page.waitForTimeout(600);
 check('La vue Semaine affiche sept jours', (await page.locator('[data-calendar-week] button').count()) === 7);
+
+// L'intitulé doit dire DE QUELLE semaine il s'agit. Il affichait le mois et
+// l'année dans les trois vues : on avançait de sept jours sans que le titre
+// bouge, donc sans savoir où l'on venait d'arriver.
+const weekTitle = await page.locator('[data-calendar-title]').innerText();
+check(
+  'En vue Semaine, l’intitulé donne la plage de dates et non le seul mois',
+  /^\d{1,2}(\s+\w+)?\s+–\s+\d{1,2}\s+\w+\s+\d{4}$/.test(weekTitle.trim()),
+  weekTitle,
+);
 const titleBefore = await page.locator('[data-calendar-title]').innerText();
 await page.getByRole('button', { name: 'Période précédente' }).click();
 await page.waitForTimeout(500);
+const previousWeekTitle = await page.locator('[data-calendar-title]').innerText();
+check(
+  'Changer de semaine change réellement l’intitulé',
+  previousWeekTitle !== titleBefore,
+  `${titleBefore} → ${previousWeekTitle}`,
+);
 await page.getByRole('button', { name: 'Période suivante' }).click();
 await page.waitForTimeout(500);
 check(
@@ -652,6 +668,11 @@ check(
 await page.getByRole('tab', { name: 'Jour' }).click();
 await page.waitForTimeout(500);
 check('La vue Jour n’affiche qu’une journée', (await page.locator('[data-calendar-week] button').count()) === 1);
+check(
+  'En vue Jour, l’intitulé nomme le jour affiché, pas son mois',
+  /^[A-ZÀ-Þ][a-zà-ÿ]+\s+\d{1,2}\s+\w+$/.test((await page.locator('[data-calendar-title]').innerText()).trim()),
+  await page.locator('[data-calendar-title]').innerText(),
+);
 check(
   'La charge du jour reste lisible dans chaque vue',
   (await page.locator('[data-calendar-load]').count()) === 1,

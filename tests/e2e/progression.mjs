@@ -291,6 +291,24 @@ check(
   `${readinessPct} → ${readinessAfter}`,
 );
 
+// ── Le temps qu'il reste VRAIMENT, calculé sur l'emploi du temps déclaré ──
+// « Examen dans 4 jours » ne dit pas si quatre jours suffisent. Cette ligne
+// croise les plages déclarées, les cours du calendrier et les séances déjà
+// planifiées. Sans plages déclarées elle doit le DIRE, jamais annoncer zéro
+// minute — ce sont deux affirmations opposées.
+const budgetText = await page.locator('[data-progress-budget]').innerText();
+check(
+  'Le temps réellement disponible d’ici l’examen est annoncé, en heures et en séances',
+  /Il te reste .+ réellement libres d’ici là, soit \d+ séance/.test(budgetText)
+    || /aucune plage de travail/.test(budgetText)
+    || /entièrement prises/.test(budgetText),
+  budgetText.replace(/\n/g, ' '),
+);
+check(
+  'Le budget ne confond jamais « aucune plage déclarée » avec « zéro minute libre »',
+  !(/aucune plage de travail/.test(budgetText) && /Il te reste/.test(budgetText)),
+);
+
 // Retirer la date : la page doit revenir au fonctionnement sans échéance.
 await page.getByRole('button', { name: /^Supprimer / }).first().click();
 await page.waitForTimeout(900);

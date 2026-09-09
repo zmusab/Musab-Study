@@ -402,6 +402,36 @@ export const formatMonthYear = (date: Date) => capitalize(MONTH_YEAR.format(date
 export const formatDayLong = (day: DayKey) => capitalize(DAY_LONG.format(parseDayKey(day)));
 export const formatDayShort = (day: DayKey) => capitalize(DAY_SHORT.format(parseDayKey(day)));
 
+const RANGE_DAY_MONTH = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' });
+const RANGE_DAY = new Intl.DateTimeFormat('fr-FR', { day: 'numeric' });
+
+/**
+ * INTITULÉ D'UNE SEMAINE — « 7 – 13 septembre 2026 ».
+ *
+ * L'en-tête du calendrier affichait le mois et l'année quelle que soit la vue.
+ * En vue Semaine, « Septembre 2026 » ne dit pas DE QUELLE semaine il s'agit :
+ * on avance de sept jours et le titre ne bouge pas. On ne sait donc plus où
+ * l'on est, ce qui est précisément le reproche fait à cette page.
+ *
+ * Le mois n'est répété sur la première date que si la semaine change de mois
+ * (« 28 septembre – 4 octobre 2026 »), et l'année seulement si elle change
+ * aussi. Rien n'est deviné : les deux bornes viennent des jours réellement
+ * affichés.
+ */
+export function formatWeekRange(days: readonly DayKey[]): string {
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (!first || !last) return '';
+  const from = parseDayKey(first);
+  const to = parseDayKey(last);
+  const sameMonth = from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear();
+  const sameYear = from.getFullYear() === to.getFullYear();
+
+  const left = sameMonth ? RANGE_DAY.format(from) : RANGE_DAY_MONTH.format(from);
+  const leftWithYear = sameYear ? left : `${left} ${from.getFullYear()}`;
+  return capitalize(`${leftWithYear} – ${RANGE_DAY_MONTH.format(to)} ${to.getFullYear()}`);
+}
+
 /** « 1 h 30 » à partir de deux heures « HH:MM » — null si l'une manque. */
 export function durationLabel(startTime: string | null, endTime: string | null): string | null {
   if (!startTime || !endTime) return null;

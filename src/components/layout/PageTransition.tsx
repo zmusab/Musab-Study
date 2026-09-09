@@ -54,8 +54,18 @@ export function PageHeader({
 
   return (
     <header className="mb-6 border-b border-[var(--line)] pb-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+      {/*
+        Le bloc d'actions passe À LA LIGNE quand il ne tient plus à côté du
+        titre, au lieu de comprimer celui-ci.
+        Sans `flex-wrap` ni largeur minimale sur la colonne de texte, un
+        `shrink-0` réclamait toute sa largeur intrinsèque : sur le Calendrier
+        (trois boutons), la colonne du titre tombait à quelques dizaines de
+        pixels sur un iPad en portrait, le sous-titre s'écrivait un mot par
+        ligne sur quinze lignes, et les boutons débordaient par-dessus. La
+        grille du mois commençait alors sous la ligne de flottaison.
+      */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-[15rem] flex-1">
           {notation && (
             <p
               aria-hidden
@@ -71,7 +81,7 @@ export function PageHeader({
             </p>
           )}
         </div>
-        {action && <div className="shrink-0">{action}</div>}
+        {action && <div className="shrink-0 max-w-full">{action}</div>}
       </div>
     </header>
   );

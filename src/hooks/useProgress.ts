@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/data/db';
 import { DEFAULT_PROFILE } from '@/data/repositories/profile';
-import type { ProgressGoals, ProgressTables } from '@/core/progress/view';
+import type { ProgressGoals, ProgressSchedule, ProgressTables } from '@/core/progress/view';
+import { normalizeAvailability } from '@/core/calendar/availability';
 
 /**
  * Charge, en UNE requête réactive, les seules tables dont « Progression » a
@@ -16,6 +17,11 @@ import type { ProgressGoals, ProgressTables } from '@/core/progress/view';
 export interface ProgressSource {
   tables: ProgressTables;
   goals: ProgressGoals;
+  /**
+   * L'emploi du temps déclaré — ce qui permet de dire non seulement « examen
+   * dans 6 jours » mais « et il te reste 4 h réellement libres d'ici là ».
+   */
+  schedule: ProgressSchedule;
   loadedAt: number;
 }
 
@@ -38,6 +44,10 @@ export function useProgress(): ProgressSource | undefined {
       goals: {
         weeklyStudyMinutes: profile.weeklyStudyMinutesGoal,
         weeklyReviews: profile.weeklyReviewGoal,
+      },
+      schedule: {
+        availability: normalizeAvailability(profile.availability),
+        sessionMinutes: profile.sessionMinutes ?? 45,
       },
       loadedAt: Date.now(),
     };

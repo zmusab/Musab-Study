@@ -53,6 +53,7 @@ export function ProgressionPage() {
     return progressView(source.tables, {
       subjectId,
       goals: source.goals,
+      schedule: source.schedule,
       now: new Date(source.loadedAt),
     });
   }, [source, subjectId]);
@@ -299,6 +300,7 @@ export function ProgressionPage() {
               subjectName={readinessFocus.subject.name}
               readiness={readinessFocus.readiness}
               evaluation={readinessFocus.evaluation}
+              budget={readinessFocus.budget}
               chapters={focusChapters}
               chapterCardIds={focusChapterCards}
               reviseHref={focusReviseHref}

@@ -33,6 +33,7 @@ import {
   isFixedBlock,
   isLecture,
   formatMonthYear,
+  formatWeekRange,
   monthMatrix,
   upcomingEvents,
   weekOf,
@@ -492,8 +493,19 @@ export function CalendarPage() {
           >
             <Icon name="chevronRight" size={16} />
           </button>
+          {/*
+            L'INTITULÉ SUIT LA VUE. Il affichait le mois et l'année dans les
+            trois cas : en Semaine, on avançait de sept jours sans que le titre
+            ne bouge, et en Jour on lisait « Septembre 2026 » au-dessus d'une
+            seule journée. On ne savait plus où l'on était — le reproche même
+            fait à cette page.
+          */}
           <h2 className="ml-2 text-[1.05rem]" data-calendar-title>
-            {view === 'day' ? formatMonthYear(parseDayKey(selected)) : formatMonthYear(anchor)}
+            {view === 'day'
+              ? formatDayLong(selected)
+              : view === 'week'
+                ? formatWeekRange(weekDays)
+                : formatMonthYear(anchor)}
           </h2>
           <Button size="sm" variant="ghost" onClick={goToday} data-calendar-today>
             Aujourd’hui

@@ -1,4 +1,6 @@
 import type { CalendarEvent, Chapter, Flashcard, ID, ReviewLog, Subject } from '@/types';
+import { studyBudgetUntil, type StudyBudget } from '@/core/calendar/examBudget';
+import type { WeeklyAvailability } from '@/core/calendar/availability';
 import {
   answerStats,
   computeStreak,
@@ -56,6 +58,16 @@ export interface ProgressTables {
   events: CalendarEvent[];
 }
 
+/**
+ * Emploi du temps de l'utilisateur. Facultatif : sans lui, la vue reste
+ * exactement ce qu'elle était, sans budget de temps — on ne devine pas des
+ * disponibilités qui n'ont pas été déclarées.
+ */
+export interface ProgressSchedule {
+  availability: WeeklyAvailability;
+  sessionMinutes: number;
+}
+
 export interface ProgressGoals {
   weeklyStudyMinutes: number;
   weeklyReviews: number;
@@ -66,6 +78,13 @@ export interface SubjectReadiness {
   readiness: ExamReadiness;
   /** Évaluation réellement inscrite au calendrier — null si aucune. */
   evaluation: Evaluation | null;
+  /**
+   * Temps RÉELLEMENT disponible d'ici cette évaluation, calculé sur l'emploi
+   * du temps déclaré moins les cours et les séances déjà planifiées.
+   * `null` quand il n'y a pas d'évaluation datée, ou quand l'appelant n'a pas
+   * fourni de disponibilités — un budget se mesure ou ne se donne pas.
+   */
+  budget: StudyBudget | null;
 }
 
 export interface ProgressView {
@@ -101,7 +120,7 @@ export interface ProgressView {
 
 export function progressView(
   tables: ProgressTables,
-  options: { subjectId?: ID | null; goals: ProgressGoals; now?: Date },
+  options: { subjectId?: ID | null; goals: ProgressGoals; now?: Date; schedule?: ProgressSchedule },
 ): ProgressView {
   const now = options.now ?? new Date();
   const subjectId = options.subjectId ?? null;
@@ -118,13 +137,31 @@ export function progressView(
   const weak = weakPoints(subjects, chapters, cards, logs);
   const evaluations = upcomingEvaluations(events, subjects, now);
 
+  const schedule = options.schedule ?? null;
   const readiness: SubjectReadiness[] = subjects
     .filter((subject) => cards.some((card) => card.subjectId === subject.id))
-    .map((subject) => ({
-      subject,
-      readiness: examReadiness(subject.id, chapters, cards, logs, now),
-      evaluation: nextEvaluationFor(evaluations, subject.id),
-    }));
+    .map((subject) => {
+      const evaluation = nextEvaluationFor(evaluations, subject.id);
+      return {
+        subject,
+        readiness: examReadiness(subject.id, chapters, cards, logs, now),
+        evaluation,
+        // Le budget se calcule sur TOUS les événements du calendrier, pas
+        // seulement ceux de la matière filtrée : un cours d'anatomie occupe
+        // le mardi après-midi même quand la page est restreinte à la
+        // physiologie.
+        budget:
+          evaluation && schedule
+            ? studyBudgetUntil(
+                evaluation.event.day,
+                tables.events,
+                schedule.availability,
+                schedule.sessionMinutes,
+                now,
+              )
+            : null,
+      };
+    });
 
   const measured = readiness.filter((entry) => entry.readiness.pct !== null);
   const priorities = priorityItems(subjects, chapters, cards, logs, evaluations, now);

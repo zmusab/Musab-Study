@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Button, Card, Icon } from '@/components/ui';
 import { MasteryBar } from './ProgressBits';
 import { CountUp, useSeen } from '@/components/motion/Reveal';
+import { formatDuration } from '@/core/progress';
+import type { StudyBudget } from '@/core/calendar/examBudget';
 import type { ExamReadiness } from '@/core/progress/exam';
 import type { Evaluation } from '@/core/progress/exam';
 import type { ChapterProgress } from '@/core/progress';
@@ -25,6 +27,7 @@ export function ReadinessPanel({
   subjectName,
   readiness,
   evaluation,
+  budget,
   chapters,
   reviseHref,
   chapterCardIds,
@@ -32,6 +35,12 @@ export function ReadinessPanel({
   subjectName: string;
   readiness: ExamReadiness;
   evaluation: Evaluation | null;
+  /**
+   * Temps réellement disponible d'ici l'évaluation, tiré de l'emploi du temps
+   * déclaré. `null` quand il n'y a pas de date : on ne budgète pas un examen
+   * qui n'existe pas au calendrier.
+   */
+  budget: StudyBudget | null;
   /** Chapitres de la matière, pour montrer ce qui doit être renforcé. */
   chapters: ChapterProgress[];
   reviseHref: string | null;
@@ -96,6 +105,8 @@ export function ReadinessPanel({
           <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
             Niveau de préparation estimé à partir de tes révisions — ce n’est pas un pronostic de résultat.
           </p>
+
+          <StudyBudgetLine budget={budget} />
 
           {toReinforce.length > 0 && (
             <div className="mt-4">
@@ -201,6 +212,63 @@ export function ReadinessPanel({
         </>
       )}
     </Card>
+  );
+}
+
+/**
+ * TEMPS QU'IL RESTE VRAIMENT.
+ *
+ * « Préparation 55 %, examen dans 6 jours » laisse la question la plus utile
+ * sans réponse : six jours de quoi ? Cette ligne croise les plages déclarées
+ * dans « Mes disponibilités » avec les cours du calendrier et les séances déjà
+ * planifiées, et dit ce qu'il reste — en heures et en séances.
+ *
+ * Trois situations, trois phrases DIFFÉRENTES, parce qu'elles ne veulent pas
+ * dire la même chose :
+ *  - aucune plage déclarée → on le dit, on ne prétend pas mesurer ;
+ *  - des plages, mais entièrement occupées → un vrai zéro, avec sa cause ;
+ *  - du temps libre → le chiffre, et combien de séances il représente.
+ */
+function StudyBudgetLine({ budget }: { budget: StudyBudget | null }) {
+  if (budget === null || budget.isOver) return null;
+
+  if (!budget.hasDeclaredAvailability) {
+    return (
+      <p data-progress-budget className="mt-3 text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
+        Tu n’as déclaré aucune plage de travail : impossible de dire combien de temps il te reste
+        réellement d’ici là.{' '}
+        <Link to="/calendrier" className="underline underline-offset-2">
+          Déclare tes disponibilités
+        </Link>{' '}
+        et ce calcul apparaîtra.
+      </p>
+    );
+  }
+
+  return (
+    <p data-progress-budget className="mt-3 text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
+      {budget.remainingMinutes === 0 ? (
+        <>
+          Tes plages des {budget.days} prochains jours sont déjà entièrement prises par tes cours et tes
+          séances planifiées — il ne reste aucun créneau libre d’ici l’évaluation.
+        </>
+      ) : (
+        <>
+          Il te reste{' '}
+          <span className="font-semibold text-[var(--ink)]">
+            {formatDuration(budget.remainingMinutes * 60_000)}
+          </span>{' '}
+          réellement libres d’ici là, soit{' '}
+          <span className="font-semibold text-[var(--ink)]">
+            {budget.remainingSessions} séance{budget.remainingSessions > 1 ? 's' : ''}
+          </span>
+          {budget.plannedMinutes > 0 && (
+            <> — {formatDuration(budget.plannedMinutes * 60_000)} sont déjà planifiées</>
+          )}
+          .
+        </>
+      )}
+    </p>
   );
 }
 
