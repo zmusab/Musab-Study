@@ -1,13 +1,13 @@
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { extractJsonArray } from '@/services/ai/parsing';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
-import { validateConcepts, type RawConcept } from '@/services/podcast/validate';
-import { generateLocalNotions, localNotionsToPodcastConcepts } from '@/services/local/localNotions';
-import type { DocumentChunk, PodcastConcept } from '@/types';
+import { validateConcepts, type RawConcept } from '@/services/courses/validateNotions';
+import { generateLocalNotions, localNotionsToNotions } from '@/services/local/localNotions';
+import type { DocumentChunk, Notion } from '@/types';
 
 /**
  * Détection des notions d'un chapitre — réutilise EXACTEMENT le mécanisme de
- * vérification du pipeline podcast (`PodcastConcept`, `validateConcepts`) :
+ * vérification du pipeline podcast (`Notion`, `validateConcepts`) :
  * une notion sourcée et vérifiée est la même chose, qu'elle serve à préparer
  * un podcast ou à peupler l'onglet « Notions » d'une matière. Seul le prompt
  * change, parce que le cadrage n'est pas le même (ici on identifie les
@@ -67,14 +67,14 @@ export interface AnalyzeChapterInput {
 }
 
 /** Analyse un chapitre et renvoie ses notions, sourcées et vérifiées — jamais de simulation en cas d'échec. */
-export async function analyzeChapter(input: AnalyzeChapterInput): Promise<PodcastConcept[]> {
+export async function analyzeChapter(input: AnalyzeChapterInput): Promise<Notion[]> {
   if (input.chunks.length === 0) throw new InsufficientChapterContentError();
 
   const count = input.count ?? 15;
 
   if ((input.source ?? 'local') === 'local') {
     const notions = generateLocalNotions({ chunks: input.chunks, count });
-    const concepts = localNotionsToPodcastConcepts(notions, input.chunks, input.lookup);
+    const concepts = localNotionsToNotions(notions, input.chunks, input.lookup);
     if (concepts.length === 0) throw new InsufficientChapterContentError();
     return concepts;
   }

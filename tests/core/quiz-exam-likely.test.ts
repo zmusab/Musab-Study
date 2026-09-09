@@ -9,7 +9,7 @@ import {
 import type { Evaluation } from '@/core/progress/exam';
 import { DEFAULT_EASE } from '@/core/srs';
 import { dayKey } from '@/lib/date';
-import type { CalendarEvent, Chapter, ChapterAnalysis, Flashcard, PodcastConcept, ReviewLog, Subject } from '@/types';
+import type { CalendarEvent, Chapter, ChapterAnalysis, Flashcard, Notion, ReviewLog, Subject } from '@/types';
 
 /**
  * « EXAMEN PROBABLE » — une ESTIMATION, jamais une prédiction.
@@ -75,7 +75,7 @@ function log(overrides: Partial<ReviewLog> & { id: string; itemId: string; subje
   };
 }
 
-const concept = (overrides: Partial<PodcastConcept> & { id: string }): PodcastConcept => ({
+const concept = (overrides: Partial<Notion> & { id: string }): Notion => ({
   label: `Notion ${overrides.id}`,
   importance: 2,
   isPitfall: false,

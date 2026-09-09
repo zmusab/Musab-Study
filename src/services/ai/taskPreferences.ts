@@ -23,8 +23,6 @@ export const CONFIGURABLE_TASKS: { task: AITask; label: string }[] = [
   { task: 'chat-internet', label: 'Assistant IA — mode internet' },
   { task: 'flashcards-generate', label: 'Génération de flashcards' },
   { task: 'course-notions', label: 'Notions de cours' },
-  { task: 'podcast-analysis', label: 'Analyse de podcast' },
-  { task: 'podcast-dialogue', label: 'Dialogue de podcast' },
   { task: 'pdf-explain-page', label: 'Explication d’une page de cours' },
   { task: 'pdf-summarize-chapter', label: 'Résumé de chapitre' },
   { task: 'anatomy-explain', label: 'Explication anatomique' },

@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { generateLocalNotions, toPodcastConcept, localNotionsToPodcastConcepts } from '@/services/local/localNotions';
+import { generateLocalNotions, toNotion, localNotionsToNotions } from '@/services/local/localNotions';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { DocumentChunk } from '@/types';
 
 /**
  * `localNotions.ts` — notions de chapitre sans IA. `LocalNotion` est un type
  * propre (contrainte obligatoire) : ces tests vérifient d'abord le moteur en
- * lui-même, SANS jamais référencer `PodcastConcept`, puis séparément
- * l'adaptateur `toPodcastConcept`/`localNotionsToPodcastConcepts`, appelé
+ * lui-même, SANS jamais référencer `Notion`, puis séparément
+ * l'adaptateur `toNotion`/`localNotionsToNotions`, appelé
  * seulement au moment de la persistance.
  */
 
@@ -95,11 +95,11 @@ describe('generateLocalNotions', () => {
   });
 });
 
-describe('toPodcastConcept / localNotionsToPodcastConcepts — adaptateur, appelé seulement à la persistance', () => {
-  it('convertit une notion locale en PodcastConcept avec une citation vérifiable', () => {
+describe('toNotion / localNotionsToNotions — adaptateur, appelé seulement à la persistance', () => {
+  it('convertit une notion locale en Notion avec une citation vérifiable', () => {
     const chunk = makeChunk("L'émail dentaire est le tissu le plus minéralisé de l'organisme.");
     const [notion] = generateLocalNotions({ chunks: [chunk], count: 10 });
-    const concept = toPodcastConcept(notion!, chunk, LOOKUP);
+    const concept = toNotion(notion!, chunk, LOOKUP);
 
     expect(concept.label).toBe(notion!.label);
     expect(concept.importance).toBe(notion!.importance);
@@ -108,12 +108,12 @@ describe('toPodcastConcept / localNotionsToPodcastConcepts — adaptateur, appel
     expect(concept.id).toMatch(/^cpt/);
   });
 
-  it('localNotionsToPodcastConcepts retrouve le bon chunk source par id, même avec plusieurs chunks', () => {
+  it('localNotionsToNotions retrouve le bon chunk source par id, même avec plusieurs chunks', () => {
     const chunkA = makeChunk("L'émail dentaire est le tissu le plus minéralisé de l'organisme.", 'chk-a');
     const chunkB = makeChunk('La dentine se compose de tubules dentinaires et de collagène.', 'chk-b');
     const notions = generateLocalNotions({ chunks: [chunkA, chunkB], count: 10 });
 
-    const concepts = localNotionsToPodcastConcepts(notions, [chunkA, chunkB], LOOKUP);
+    const concepts = localNotionsToNotions(notions, [chunkA, chunkB], LOOKUP);
     expect(concepts).toHaveLength(notions.length);
     for (const concept of concepts) {
       expect(concept.citations[0]!.chunkId === 'chk-a' || concept.citations[0]!.chunkId === 'chk-b').toBe(true);
@@ -123,7 +123,7 @@ describe('toPodcastConcept / localNotionsToPodcastConcepts — adaptateur, appel
   it('ignore silencieusement une notion dont le chunk source est introuvable (défensif)', () => {
     const chunk = makeChunk("L'émail dentaire est le tissu le plus minéralisé de l'organisme.");
     const [notion] = generateLocalNotions({ chunks: [chunk], count: 10 });
-    const concepts = localNotionsToPodcastConcepts([notion!], [], LOOKUP);
+    const concepts = localNotionsToNotions([notion!], [], LOOKUP);
     expect(concepts).toHaveLength(0);
   });
 });

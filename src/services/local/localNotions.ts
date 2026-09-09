@@ -4,16 +4,16 @@ import { splitIntoSentences } from './textStructure';
 import { citationFromChunk } from './citation';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import { uid } from '@/lib/id';
-import type { DocumentChunk, ID, Importance, PodcastConcept } from '@/types';
+import type { DocumentChunk, ID, Importance, Notion } from '@/types';
 
 /**
  * Notions de chapitre SANS IA — moteur à règles, à partir des mêmes relations
  * détectées par `relationExtraction.ts`.
  *
- * `LocalNotion` est un type PROPRE, indépendant de `PodcastConcept` (imposé
+ * `LocalNotion` est un type PROPRE, indépendant de `Notion` (imposé
  * après revue) : le moteur local ne doit pas se coupler à une forme pensée
  * pour un pipeline IA différent simplement parce que `ChapterAnalysis`
- * l'utilise aujourd'hui. `toPodcastConcept`/`localNotionsToPodcastConcepts`
+ * l'utilise aujourd'hui. `toNotion`/`localNotionsToNotions`
  * ne convertissent vers cette forme persistante qu'au moment d'écrire dans
  * `ChapterAnalysis` — aucun changement de schéma Dexie.
  */
@@ -96,7 +96,7 @@ export function generateLocalNotions(input: GenerateLocalNotionsInput): LocalNot
 }
 
 /** Adaptateur — appelé UNIQUEMENT au moment de persister dans `ChapterAnalysis`. */
-export function toPodcastConcept(notion: LocalNotion, chunk: DocumentChunk, lookup: ContextLookup): PodcastConcept {
+export function toNotion(notion: LocalNotion, chunk: DocumentChunk, lookup: ContextLookup): Notion {
   return {
     id: uid('cpt'),
     label: notion.label,
@@ -107,16 +107,16 @@ export function toPodcastConcept(notion: LocalNotion, chunk: DocumentChunk, look
 }
 
 /** Convertit un lot de notions locales — retrouve chaque chunk source par id. */
-export function localNotionsToPodcastConcepts(
+export function localNotionsToNotions(
   notions: readonly LocalNotion[],
   chunks: readonly DocumentChunk[],
   lookup: ContextLookup,
-): PodcastConcept[] {
+): Notion[] {
   const chunksById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
   return notions
     .map((notion) => {
       const chunk = chunksById.get(notion.sourceChunkId);
-      return chunk ? toPodcastConcept(notion, chunk, lookup) : null;
+      return chunk ? toNotion(notion, chunk, lookup) : null;
     })
-    .filter((concept): concept is PodcastConcept => concept !== null);
+    .filter((concept): concept is Notion => concept !== null);
 }

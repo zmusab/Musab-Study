@@ -1,7 +1,7 @@
 /**
  * Vocabulaire commun de la couche IA — le seul endroit où « tâche »,
  * « fournisseur » et « capacité » sont définis. Aucun fichier de
- * fonctionnalité (flashcards, podcast, chat, PDF) ne doit connaître un
+ * fonctionnalité (flashcards, chat, PDF) ne doit connaître un
  * détail propre à un fournisseur particulier ; tout passe par ces types.
  */
 
@@ -19,8 +19,6 @@ export type AITask =
   | 'chat-course'
   | 'chat-internet'
   | 'flashcards-generate'
-  | 'podcast-analysis'
-  | 'podcast-dialogue'
   | 'pdf-explain-page'
   | 'pdf-summarize-chapter'
   | 'course-notions'
@@ -69,7 +67,7 @@ export interface ProviderAskOptions {
   signal?: AbortSignal;
   onText?: (delta: string) => void;
   tier?: QualityTier;
-  /** Force un modèle précis, indépendamment du réglage général de l'utilisateur — voir podcast-analysis. */
+  /** Force un modèle précis, indépendamment du réglage général de l'utilisateur. */
   preferredModel?: string;
 }
 

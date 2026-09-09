@@ -70,7 +70,6 @@ await nav.getByRole('link', { name: 'Accueil', exact: true }).first().click();
 await page.waitForTimeout(600);
 check('Accroche affichée', await page.getByText('Bonjour').isVisible());
 check('Aucune carte due : message honnête plutôt qu’une file vide', await page.getByText('Aucune carte due pour l’instant').isVisible());
-check('Aucun podcast en cours : invitation à en créer un', await page.getByText('Créer un podcast →').isVisible());
 
 // ---------- Continuer mes cours : ouvrir le document une fois (depuis Cours, pas encore visité) ----------
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();

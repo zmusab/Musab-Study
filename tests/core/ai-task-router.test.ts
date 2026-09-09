@@ -41,8 +41,8 @@ describe('TASK_ROUTES', () => {
       'chat-course',
       'chat-internet',
       'flashcards-generate',
-      'podcast-analysis',
-      'podcast-dialogue',
+      'course-notions',
+      'note-summarize',
       'pdf-explain-page',
       'pdf-summarize-chapter',
     ] as const) {
@@ -50,10 +50,6 @@ describe('TASK_ROUTES', () => {
     }
   });
 
-  it('impose le modèle rapide pour l’analyse podcast, comme le faisait le pipeline avant le passage par l’orchestrateur', () => {
-    expect(TASK_ROUTES['podcast-analysis'].preferredModel?.anthropic).toBe('claude-haiku-4-5');
-    expect(TASK_ROUTES['podcast-analysis'].tier).toBe('fast');
-  });
 
   /**
    * Un identifiant de modèle n'a de sens que chez son propre fournisseur :

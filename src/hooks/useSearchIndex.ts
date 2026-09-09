@@ -17,7 +17,6 @@ export function useSearchIndex(): SearchableItem[] | undefined {
       notes,
       flashcards,
       quizQuestions,
-      podcastEpisodes,
       anatomyStructures,
       anatomySheets,
       calendarEvents,
@@ -28,7 +27,6 @@ export function useSearchIndex(): SearchableItem[] | undefined {
       db.notes.toArray(),
       db.flashcards.toArray(),
       db.quizQuestions.toArray(),
-      db.podcastEpisodes.toArray(),
       db.anatomyStructures.toArray(),
       db.anatomySheets.toArray(),
       db.calendarEvents.toArray(),
@@ -104,16 +102,6 @@ export function useSearchIndex(): SearchableItem[] | undefined {
       });
     }
 
-    for (const episode of podcastEpisodes) {
-      items.push({
-        id: episode.id,
-        kind: 'podcast',
-        title: episode.title,
-        subtitle: breadcrumb(episode.subjectId, episode.chapterId) || 'Podcast',
-        body: episode.segments.map((segment) => segment.text).join(' '),
-        to: `/podcast/${episode.id}`,
-      });
-    }
 
     for (const structure of anatomyStructures) {
       items.push({

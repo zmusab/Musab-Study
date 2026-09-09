@@ -33,11 +33,11 @@ describe('taskPreferences — par tâche, jamais une supposition par défaut', (
   });
 
   it('revenir à "auto" efface réellement la préférence enregistrée', () => {
-    setTaskProviderPreference('podcast-dialogue', 'openai');
-    expect(getTaskProviderPreference('podcast-dialogue')).toBe('openai');
-    setTaskProviderPreference('podcast-dialogue', 'auto');
-    expect(getTaskProviderPreference('podcast-dialogue')).toBe('auto');
-    expect(getAllTaskProviderPreferences()).not.toHaveProperty('podcast-dialogue');
+    setTaskProviderPreference('note-summarize', 'openai');
+    expect(getTaskProviderPreference('note-summarize')).toBe('openai');
+    setTaskProviderPreference('note-summarize', 'auto');
+    expect(getTaskProviderPreference('note-summarize')).toBe('auto');
+    expect(getAllTaskProviderPreferences()).not.toHaveProperty('note-summarize');
   });
 
   it('les tâches réservées (jamais encore appelées) ne sont pas proposées au réglage', () => {

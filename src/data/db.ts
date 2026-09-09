@@ -12,7 +12,6 @@ import type {
   DocumentFile,
   Flashcard,
   Note,
-  PodcastEpisode,
   Profile,
   QuizQuestion,
   ReviewLog,
@@ -46,7 +45,6 @@ export class MusabStudyDatabase extends Dexie {
   anatomyStructures!: EntityTable<AnatomyStructure, 'id'>;
   anatomySheets!: EntityTable<AnatomySheet, 'id'>;
   chatMessages!: EntityTable<ChatMessage, 'id'>;
-  podcastEpisodes!: EntityTable<PodcastEpisode, 'id'>;
   chapterAnalyses!: EntityTable<ChapterAnalysis, 'id'>;
   aiCache!: EntityTable<AiCacheEntry, 'key'>;
   aiUsage!: EntityTable<AiUsageDay, 'day'>;
@@ -70,6 +68,9 @@ export class MusabStudyDatabase extends Dexie {
       anatomyStructures: 'id, category, subjectId, name',
       anatomySheets: 'id, structureId, origin, [structureId+origin]',
       chatMessages: 'id, subjectId, at',
+      // Table conservée telle quelle : la fonctionnalité podcast a été
+      // retirée, mais SUPPRIMER un store demanderait une migration
+      // destructrice. Plus rien ne l'écrit ni ne la lit.
       podcastEpisodes: 'id, subjectId, chapterId, createdAt',
     });
 

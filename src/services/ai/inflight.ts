@@ -10,7 +10,7 @@
  * dédupliquer priverait un deuxième appelant de ses fragments de texte. Seul
  * le chat en mode « cours » diffuse (`AskOptions.onText`, voir
  * `orchestrator.ts`) ; toutes les générations en un bloc (flashcards,
- * résumés, notions, podcast, préparation d'examen) passent par ici.
+ * résumés, notions, préparation d'examen) passent par ici.
  */
 const inFlight = new Map<string, Promise<string>>();
 

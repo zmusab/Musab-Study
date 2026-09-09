@@ -91,6 +91,31 @@ function distinctiveTerms(questionTerms: Set<string>, chunkTermSets: Set<string>
 }
 
 /**
+ * Met en FORME les extraits retenus. Rien n'est reformulé : chaque puce est
+ * une phrase exacte du cours. Seule la charpente — le titre qui nomme le
+ * sujet, le décompte, les puces — est ajoutée.
+ *
+ * L'ancienne version renvoyait `excerpts.join('\n\n')` : deux phrases brutes
+ * collées, sans rien dire de ce qu'elles répondaient. Ça se lisait comme un
+ * copier-coller de PDF, et l'apparition en cascade de l'interface n'avait
+ * que deux blocs à échelonner, donc paraissait instantanée.
+ *
+ * La limite reste entière et assumée : organiser n'est pas expliquer. Une
+ * vraie explication reformulée demande un modèle de langue, c'est le rôle du
+ * bouton « Répondre avec l'IA ».
+ */
+function composeAnswer(facts: RawFact[]): string {
+  const [first] = facts;
+  if (!first) return '';
+  if (facts.length === 1) return first.sourceExcerpt;
+
+  // Le sujet du fait le mieux classé nomme la réponse — verbatim du cours.
+  const heading = `**${first.subject}** — ${facts.length} éléments trouvés dans tes cours :`;
+  const bullets = facts.map((fact) => `- ${fact.sourceExcerpt}`);
+  return [heading, '', ...bullets].join('\n');
+}
+
+/**
  * Tente de répondre localement à `question`, à partir des fragments déjà
  * retrouvés par BM25 (`scoredChunks`, réutilisés tels quels — aucune nouvelle
  * recherche). `null` dès qu'aucun fait ne répond réellement à ce qui est
@@ -140,7 +165,7 @@ export function findLocalAnswer(
 
   const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
   const seenExcerpts = new Set<string>();
-  const excerpts: string[] = [];
+  const kept: RawFact[] = [];
   const citations: Citation[] = [];
 
   for (const { fact, chunkId } of matches) {
@@ -151,12 +176,12 @@ export function findLocalAnswer(
     const chunk = chunkById.get(chunkId);
     if (!chunk) continue;
 
-    excerpts.push(fact.sourceExcerpt);
+    kept.push(fact);
     citations.push(citationFromChunk(chunk, lookup, fact.sourceExcerpt));
-    if (excerpts.length >= MAX_FACTS_IN_ANSWER) break;
+    if (kept.length >= MAX_FACTS_IN_ANSWER) break;
   }
 
-  if (excerpts.length === 0) return null;
+  if (kept.length === 0) return null;
 
-  return { text: excerpts.join('\n\n'), citations };
+  return { text: composeAnswer(kept), citations };
 }

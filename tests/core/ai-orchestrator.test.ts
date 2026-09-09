@@ -147,7 +147,7 @@ describe('createOrchestrator — sélection du fournisseur (HUB)', () => {
     // Les préférences vivent dans localStorage (jsdom) : jamais de fuite d'un test à l'autre.
     setPreferredProvider('auto');
     setTaskProviderPreference('chat-course', 'auto');
-    setTaskProviderPreference('podcast-analysis', 'auto');
+    setTaskProviderPreference('course-notions', 'auto');
   });
 
   it('en mode « auto » par défaut (aucun réglage touché), l’ordre reste exactement celui d’enregistrement', async () => {
@@ -171,7 +171,7 @@ describe('createOrchestrator — sélection du fournisseur (HUB)', () => {
     const orchestrator = createOrchestrator([makeProvider('anthropic'), makeProvider('openai')]);
     expect(await orchestrator.ask(BASE_OPTIONS)).toBe('réponse de anthropic');
     // Une autre tâche, sans préférence propre, retombe sur la préférence générale.
-    expect(await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' })).toBe('réponse de openai');
+    expect(await orchestrator.ask({ ...BASE_OPTIONS, task: 'course-notions' })).toBe('réponse de openai');
   });
 
   /**
@@ -304,7 +304,7 @@ describe('createOrchestrator — la sélection de l’utilisateur est strictemen
     expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de gemini');
     expect(calls).toEqual(['gemini']);
     // Une tâche SANS réglage propre suit bien, elle, le choix général.
-    expect(await createOrchestrator(providers).ask({ ...BASE_OPTIONS, task: 'podcast-analysis' })).toBe('réponse de openai');
+    expect(await createOrchestrator(providers).ask({ ...BASE_OPTIONS, task: 'course-notions' })).toBe('réponse de openai');
   });
 
   it('resolveProviderChoice dit exactement quel fournisseur sera utilisé, et d’où vient ce choix', () => {
@@ -391,26 +391,21 @@ describe('createOrchestrator — testProvider', () => {
 describe('createOrchestrator — le modèle imposé ne traverse jamais vers un autre fournisseur', () => {
   afterEach(() => {
     setPreferredProvider('auto');
-    setTaskProviderPreference('podcast-analysis', 'auto');
+    setTaskProviderPreference('course-notions', 'auto');
   });
 
-  it('le modèle Anthropic de podcast-analysis n’est transmis qu’à Anthropic', async () => {
-    setTaskProviderPreference('podcast-analysis', 'anthropic');
-    let received: string | undefined = 'jamais renseigné';
-    const orchestrator = createOrchestrator([
-      makeProvider('anthropic', {
-        ask: async (options) => {
-          received = options.preferredModel;
-          return 'ok';
-        },
-      }),
-    ]);
-    await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' });
-    expect(received).toBe('claude-haiku-4-5');
-  });
+  /*
+   * Le test jumeau — « le modèle imposé arrive bien au bon fournisseur » —
+   * a été retiré avec le podcast : `podcast-analysis` était la seule tâche à
+   * imposer un modèle. La capacité reste offerte par le routeur
+   * (`TaskRoute.preferredModel`), simplement plus aucune tâche ne s'en sert
+   * aujourd'hui. La garantie qui compte, elle, est toujours vérifiée
+   * ci-dessous : aucun identifiant de modèle ne doit FUITER vers un
+   * fournisseur qui ne le publie pas.
+   */
 
   it('Gemini ne reçoit AUCUN identifiant de modèle Anthropic — la cause du « Gemini a refusé la requête (400) »', async () => {
-    setTaskProviderPreference('podcast-analysis', 'gemini');
+    setTaskProviderPreference('course-notions', 'gemini');
     let received: string | undefined = 'jamais renseigné';
     const orchestrator = createOrchestrator([
       makeProvider('gemini', {
@@ -420,7 +415,7 @@ describe('createOrchestrator — le modèle imposé ne traverse jamais vers un a
         },
       }),
     ]);
-    await orchestrator.ask({ ...BASE_OPTIONS, task: 'podcast-analysis' });
+    await orchestrator.ask({ ...BASE_OPTIONS, task: 'course-notions' });
     expect(received).toBeUndefined();
   });
 });

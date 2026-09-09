@@ -33,13 +33,6 @@ function ProgressBar({ value, max, color = 'var(--accent)' }: { value: number; m
   );
 }
 
-/** Format « m:ss », pour un rendu type lecteur audio (« 12:43 / 24:18 »). */
-function formatClock(totalSeconds: number): string {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
 function eventTimingLabel(days: number): string {
   if (days <= 0) return 'Aujourd’hui';
   if (days === 1) return 'Demain';
@@ -96,10 +89,9 @@ export function HomePage() {
     );
   }
 
-  const { dueTriage, weakConcepts, recentDocuments, upcomingEvents, nextExam, inProgressPodcast, dailySummary, dailyCardGoal } = data;
+  const { dueTriage, weakConcepts, recentDocuments, upcomingEvents, nextExam, dailySummary, dailyCardGoal } = data;
 
   // Personnalisation : sans révision urgente, mettre en avant les cours et le
-  // podcast plutôt que la file de révision et les points faibles.
   const prioritizeSession = dueTriage.total > 0;
 
   const weakConceptsCard = weakConcepts.length > 0 && (
@@ -159,45 +151,6 @@ export function HomePage() {
     </StaggerItem>
   );
 
-  const podcastCard = (
-    <StaggerItem key="podcast">
-      <Card>
-        <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
-          {inProgressPodcast ? 'Continuer l’écoute' : 'Podcast d’étude'}
-        </p>
-        {inProgressPodcast ? (
-          (() => {
-            const elapsed = inProgressPodcast.segments
-              .slice(0, inProgressPodcast.lastSegmentIndex)
-              .reduce((sum, s) => sum + s.estimatedDurationSec, 0);
-            return (
-              <>
-                <p className="mt-2 truncate text-[0.88rem]">{inProgressPodcast.title}</p>
-                <p className="mt-0.5 font-mono text-[0.78rem] text-[var(--ink-faint)]">
-                  {formatClock(elapsed)} / {formatClock(inProgressPodcast.estimatedDurationSec)}
-                </p>
-                <div className="mt-1.5">
-                  <ProgressBar value={elapsed} max={inProgressPodcast.estimatedDurationSec} color="var(--nav-green)" />
-                </div>
-                <Link to={`/podcast/${inProgressPodcast.id}`} className="mt-3 inline-block text-[0.85rem] font-semibold text-[var(--accent)] hover:underline">
-                  Continuer →
-                </Link>
-              </>
-            );
-          })()
-        ) : (
-          <>
-            <p className="mt-2 text-[0.85rem] text-[var(--ink-soft)]">
-              Écoute tes cours sous forme de dialogue à deux voix, sourcé comme le reste.
-            </p>
-            <Link to="/podcast" className="mt-3 inline-block text-[0.85rem] font-semibold text-[var(--accent)] hover:underline">
-              Créer un podcast →
-            </Link>
-          </>
-        )}
-      </Card>
-    </StaggerItem>
-  );
 
   const upcomingCard = (
     <StaggerItem key="upcoming">
@@ -232,8 +185,8 @@ export function HomePage() {
 
   const orderedCards = (
     prioritizeSession
-      ? [weakConceptsCard, coursesCard, podcastCard, upcomingCard]
-      : [coursesCard, podcastCard, weakConceptsCard, upcomingCard]
+      ? [weakConceptsCard, coursesCard, upcomingCard]
+      : [coursesCard, weakConceptsCard, upcomingCard]
   ).filter((card): card is ReactElement<{ className?: string }> => isValidElement(card));
 
   // Une dernière carte seule sur sa ligne casserait la respiration voulue —

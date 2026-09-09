@@ -16,7 +16,7 @@ import type { AIProvider, AITask, AskOptions, ProviderId } from './types';
 
 /**
  * Point d'entrée UNIQUE de la couche IA — le HUB. Aucune fonctionnalité
- * (chat, flashcards, podcast, panneau IA du lecteur PDF) n'appelle plus un
+ * (chat, flashcards, panneau IA du lecteur PDF) n'appelle plus un
  * fournisseur directement — tout passe par `ask()` ici, qui consulte le
  * routeur de tâches puis applique la préférence de l'utilisateur.
  *

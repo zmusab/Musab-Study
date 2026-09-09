@@ -61,6 +61,21 @@ export function PdfPageCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
 
+  /*
+   * Quand la page s'éloigne, `nearViewport` repasse à false et le `<canvas>`
+   * est DÉMONTÉ. Le souvenir « déjà rendu à cette largeur » porte alors sur un
+   * élément qui n'existe plus : au retour sur la page, React monte un canevas
+   * NEUF et VIDE, l'effet de rendu sortait aussitôt en le croyant à jour, et
+   * `rendered` restant à true, pas même un indicateur de chargement ne
+   * s'affichait. La page restait blanche — exactement ce qui se produisait en
+   * remontant vers les pages déjà lues.
+   */
+  useEffect(() => {
+    if (nearViewport) return;
+    renderedAtWidthRef.current = null;
+    setRendered(false);
+  }, [nearViewport]);
+
   useEffect(() => {
     if (!nearViewport || !canvasRef.current) return undefined;
     if (renderedAtWidthRef.current === renderWidth) return undefined;

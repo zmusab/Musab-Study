@@ -18,7 +18,7 @@ export interface TaskRoute {
    * identifiant de modèle n'a de sens que chez celui qui le publie.
    *
    * Avant, ce champ était une simple chaîne, transmise au fournisseur
-   * RÉELLEMENT retenu : `podcast-analysis` imposait `claude-haiku-4-5`, et
+   * RÉELLEMENT retenu : une tâche pouvait imposer un modèle précis, et
    * si Gemini (ou OpenAI) traitait la tâche, cet identifiant Anthropic
    * partait tel quel dans l'URL du relais Gemini
    * (`…/models/claude-haiku-4-5:generateContent`) — le fournisseur ne
@@ -51,13 +51,11 @@ export const TASK_ROUTES: Record<AITask, TaskRoute> = {
   // que soit le modèle choisi par l'utilisateur pour la qualité du
   // dialogue — la validation après coup (validateConcepts) est le vrai
   // filet de sécurité, pas la prudence du modèle.
-  'podcast-analysis': { tier: 'fast', preferredModel: { anthropic: 'claude-haiku-4-5' } },
   // Ici la qualité compte (c'est le contenu que l'étudiant écoute) : le
   // niveau reste néanmoins « balanced » plutôt que « deep », sans
   // dégradation notable, car la structure est déjà contrainte par les
   // notions validées à l'étape d'analyse — moins de place à l'improvisation
   // qu'une génération libre.
-  'podcast-dialogue': { tier: 'balanced' },
   'pdf-explain-page': { tier: 'balanced' },
   'pdf-summarize-chapter': { tier: 'balanced' },
   // Même logique que flashcards-generate : extraire des notions d'un texte

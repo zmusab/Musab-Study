@@ -80,9 +80,17 @@ describe('findLocalAnswer', () => {
     );
     const answer = findLocalAnswer('nerf trijumeau', [scored(chunk)], LOOKUP);
     expect(answer).not.toBeNull();
-    const parts = answer!.text.split('\n\n');
-    expect(parts.length).toBeGreaterThanOrEqual(2);
-    for (const part of parts) expect(chunk.text.includes(part)).toBe(true);
+
+    // La réponse est désormais CHARPENTÉE : un titre qui nomme le sujet, puis
+    // une puce par fait. La garantie de fond ne change pas — chaque puce reste
+    // une phrase EXACTE du cours, jamais une reformulation.
+    const bullets = answer!.text
+      .split('\n')
+      .filter((line) => line.startsWith('- '))
+      .map((line) => line.slice(2));
+    expect(bullets.length).toBeGreaterThanOrEqual(2);
+    for (const bullet of bullets) expect(chunk.text.includes(bullet)).toBe(true);
+    expect(answer!.text).toContain('trouvés dans tes cours');
   });
 
   it('ne répète pas deux fois le même extrait entre plusieurs fragments qui se recouvrent', () => {

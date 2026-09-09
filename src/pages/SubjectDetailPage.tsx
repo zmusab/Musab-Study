@@ -41,7 +41,7 @@ import { springSoft } from '@/components/motion/transitions';
 import { formatRelativePast } from '@/lib/date';
 import type { Chapter, ID } from '@/types';
 
-type TabKey = 'documents' | 'notes' | 'notions' | 'flashcards' | 'quiz' | 'podcast' | 'progression';
+type TabKey = 'documents' | 'notes' | 'notions' | 'flashcards' | 'quiz' | 'progression';
 
 const TABS: Segment<TabKey>[] = [
   { value: 'documents', label: 'Documents' },
@@ -49,11 +49,10 @@ const TABS: Segment<TabKey>[] = [
   { value: 'notions', label: 'Notions' },
   { value: 'flashcards', label: 'Flashcards' },
   { value: 'quiz', label: 'Quiz' },
-  { value: 'podcast', label: 'Podcast' },
   { value: 'progression', label: 'Progression' },
 ];
 
-/** Détail d'une matière — le centre documentaire : documents, notes, notions, et les portes d'entrée vers flashcards/quiz/podcast/progression. */
+/** Détail d'une matière — le centre documentaire : documents, notes, notions, et les portes d'entrée vers flashcards/quiz/progression. */
 export function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const navigate = useNavigate();
@@ -483,18 +482,6 @@ export function SubjectDetailPage() {
         />
       )}
 
-      {tab === 'podcast' && (
-        <EmptyState
-          icon={<Icon name="podcast" size={30} />}
-          title="Podcast de cette matière"
-          description="Génère un épisode basé sur le contenu de cette matière ou d'un chapitre précis."
-          action={
-            <Button onClick={() => navigate(`/podcast?subject=${subjectId}`)}>
-              🎙️ Créer un podcast
-            </Button>
-          }
-        />
-      )}
 
       {tab === 'progression' && (
         <div className="flex flex-col gap-4">

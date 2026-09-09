@@ -13,7 +13,7 @@ import type { Chapter, ID } from '@/types';
 /**
  * Détection des notions par chapitre — réutilise `analyzeChapter`
  * (services/courses/notions.ts), lui-même bâti sur le pipeline de validation
- * du podcast. Rien n'est affiché avant que l'analyse soit réellement
+ * de validation des notions. Rien n'est affiché avant que l'analyse soit réellement
  * terminée : pas de nombre de notions inventé pendant le chargement.
  *
  * SOURCE PAR DÉFAUT : le moteur local (aucune clé requise). `lastSource`

@@ -17,7 +17,7 @@ import { MorePage } from '@/pages/MorePage';
  * installée.
  *
  * Les écrans qui embarquent une dépendance lourde (pdf.js pour les Cours, le
- * SDK Anthropic pour l'IA et le Podcast) sont chargés à la demande : ouvrir
+ * SDK Anthropic pour l'IA) sont chargés à la demande : ouvrir
  * l'application pour réviser des flashcards ne doit pas télécharger
  * l'extracteur PDF. `Suspense` affiche un indicateur cohérent avec le reste de
  * l'interface pendant le chargement du code de la page.
@@ -28,10 +28,6 @@ const SubjectDetailPage = lazy(() =>
   import('@/pages/SubjectDetailPage').then((m) => ({ default: m.SubjectDetailPage })),
 );
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((m) => ({ default: m.ChatPage })));
-const PodcastPage = lazy(() => import('@/pages/PodcastPage').then((m) => ({ default: m.PodcastPage })));
-const PodcastEpisodePage = lazy(() =>
-  import('@/pages/PodcastEpisodePage').then((m) => ({ default: m.PodcastEpisodePage })),
-);
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const FlashcardsPage = lazy(() =>
   import('@/pages/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage })),
@@ -79,8 +75,6 @@ function AnimatedRoutes() {
           <Route path="/revisions" element={<RevisionsPage />} />
           <Route path="/flashcards" element={<FlashcardsPage />} />
           <Route path="/quiz" element={<QuizPage />} />
-          <Route path="/podcast" element={<PodcastPage />} />
-          <Route path="/podcast/:episodeId" element={<PodcastEpisodePage />} />
           <Route path="/progression" element={<ProgressionPage />} />
           <Route path="/anatomie" element={<AnatomyPage />} />
           <Route path="/calendrier" element={<CalendarPage />} />

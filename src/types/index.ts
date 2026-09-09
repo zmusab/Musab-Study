@@ -481,76 +481,32 @@ export interface ChatMessage {
   providerId?: 'anthropic' | 'openai' | 'gemini' | null;
 }
 
-// ──────────────────────── Podcast d'étude ────────────────────────
+// ──────────────────────────── Notions ────────────────────────────
 
-export type PodcastLength = 'quick' | 'normal' | 'deep';
-export type PodcastSpeakerId = 'A' | 'B';
-
-/** Notion identifiée dans le cours comme méritant d'être retenue. */
-export interface PodcastConcept {
+/**
+ * Notion identifiée dans un cours comme méritant d'être retenue.
+ *
+ * Ce type s'appelait `Notion` : les notions étaient nées avec la
+ * fonctionnalité podcast, et en avaient gardé le nom bien après être devenues
+ * la matière de l'onglet « Notions » et du quiz « Examen probable ». Le
+ * podcast retiré, le vocabulaire du domaine redevient juste.
+ */
+export interface Notion {
   id: string;
   label: string;
   importance: Importance;
-  /** Vrai si l'IA l'a signalée comme source de confusion fréquente. */
+  /** Vrai si signalée comme source de confusion fréquente. */
   isPitfall: boolean;
   citations: Citation[];
 }
 
-/**
- * Analyse d'un chapitre — les notions qu'il contient. Réutilise
- * `PodcastConcept` : une notion sourcée et vérifiée est la même chose,
- * qu'elle serve à préparer un podcast ou à peupler l'onglet « Notions »
- * d'une matière.
- */
+/** Analyse d'un chapitre — les notions qu'il contient. */
 export interface ChapterAnalysis {
   id: ID;
   subjectId: ID;
   chapterId: ID;
-  notions: PodcastConcept[];
+  notions: Notion[];
   generatedAt: ISODateTime;
-}
-
-export type PodcastSegmentType =
-  | 'intro'
-  | 'concept'
-  | 'explanation'
-  | 'example'
-  | 'pitfall'
-  | 'connection'
-  | 'recap'
-  | 'quiz';
-
-export interface PodcastSegment {
-  id: string;
-  speaker: PodcastSpeakerId;
-  type: PodcastSegmentType;
-  text: string;
-  /**
-   * Provenance établie par vérification des citations, jamais déclarée par le
-   * modèle — même principe que pour l'assistant IA. Null pour les répliques
-   * qui ne portent pas d'affirmation factuelle (transition, exemple fictif).
-   */
-  provenance: AnswerProvenance | null;
-  citations: Citation[];
-  /** Durée estimée en secondes, pour la barre de progression du lecteur. */
-  estimatedDurationSec: number;
-}
-
-export interface PodcastEpisode {
-  id: ID;
-  subjectId: ID;
-  chapterId: ID | null;
-  title: string;
-  length: PodcastLength;
-  enrichedWithInternet: boolean;
-  concepts: PodcastConcept[];
-  segments: PodcastSegment[];
-  estimatedDurationSec: number;
-  /** Réplique où la lecture s'est arrêtée — reprend l'écoute au bon endroit. */
-  lastSegmentIndex: number;
-  /** Dernière écoute — alimente « Continuer l'écoute » sur l'accueil. Null si jamais lancé. */
-  lastPlayedAt: ISODateTime | null;
-  createdAt: ISODateTime;
 }
 
 // ─────────────────────────── Sauvegarde ───────────────────────────
@@ -571,7 +527,6 @@ export interface BackupBundle {
   anatomyStructures: AnatomyStructure[];
   anatomySheets: AnatomySheet[];
   chatMessages: ChatMessage[];
-  podcastEpisodes: PodcastEpisode[];
 }
 
 // ────────────────────────── Couche IA — cache et usage ──────────────────────────

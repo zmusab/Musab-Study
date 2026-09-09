@@ -25,7 +25,6 @@ export async function exportBackup(): Promise<BackupBundle> {
     anatomyStructures,
     anatomySheets,
     chatMessages,
-    podcastEpisodes,
   ] = await Promise.all([
     db.profile.get('me'),
     db.subjects.toArray(),
@@ -39,7 +38,6 @@ export async function exportBackup(): Promise<BackupBundle> {
     db.anatomyStructures.toArray(),
     db.anatomySheets.toArray(),
     db.chatMessages.toArray(),
-    db.podcastEpisodes.toArray(),
   ]);
 
   return {
@@ -67,7 +65,6 @@ export async function exportBackup(): Promise<BackupBundle> {
     anatomyStructures,
     anatomySheets,
     chatMessages,
-    podcastEpisodes,
   };
 }
 
@@ -128,7 +125,6 @@ export async function importBackup(bundle: BackupBundle): Promise<ImportReport> 
       db.anatomyStructures.bulkAdd(bundle.anatomyStructures),
       db.anatomySheets.bulkAdd(bundle.anatomySheets),
       db.chatMessages.bulkAdd(bundle.chatMessages),
-      db.podcastEpisodes.bulkAdd(bundle.podcastEpisodes),
     ]);
   });
 

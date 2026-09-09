@@ -8,7 +8,6 @@ export type SearchItemKind =
   | 'note'
   | 'flashcard'
   | 'quiz'
-  | 'podcast'
   | 'anatomy'
   | 'calendar';
 

@@ -25,7 +25,6 @@ const KIND_ORDER: SearchItemKind[] = [
   'note',
   'flashcard',
   'quiz',
-  'podcast',
   'anatomy',
   'calendar',
 ];
@@ -37,7 +36,6 @@ const KIND_META: Record<SearchItemKind, { label: string; plural: string; icon: I
   note: { label: 'Note', plural: 'Notes', icon: 'notes', color: 'var(--nav-orange)' },
   flashcard: { label: 'Flashcard', plural: 'Flashcards', icon: 'cards', color: 'var(--nav-purple)' },
   quiz: { label: 'Question de quiz', plural: 'Quiz', icon: 'quiz', color: 'var(--nav-rose)' },
-  podcast: { label: 'Podcast', plural: 'Podcasts', icon: 'podcast', color: 'var(--nav-green)' },
   anatomy: { label: 'Structure anatomique', plural: 'Anatomie', icon: 'anatomy', color: 'var(--nav-red)' },
   calendar: { label: 'Événement', plural: 'Calendrier', icon: 'calendar', color: 'var(--nav-red)' },
 };
@@ -113,7 +111,7 @@ export function RecherchePage() {
 
   return (
     <PageTransition>
-      <PageHeader title="Recherche" subtitle="Cours, notes, flashcards, quiz, podcasts, anatomie, calendrier — tout d'un coup." />
+      <PageHeader title="Recherche" subtitle="Cours, notes, flashcards, quiz, anatomie, calendrier — tout d'un coup." />
 
       <div className="relative mb-6">
         <Icon
@@ -139,7 +137,7 @@ export function RecherchePage() {
         <EmptyState
           icon={<Icon name="search" size={30} />}
           title="Cherche un terme, même approximatif"
-          description="Une faute de frappe n'empêche rien : « masster » retrouve « masséter ». La recherche porte sur tes matières, chapitres, documents, notes, flashcards, quiz, podcasts, structures anatomiques et événements du calendrier."
+          description="Une faute de frappe n'empêche rien : « masster » retrouve « masséter ». La recherche porte sur tes matières, chapitres, documents, notes, flashcards, quiz, structures anatomiques et événements du calendrier."
         />
       ) : groups.length === 0 ? (
         <EmptyState

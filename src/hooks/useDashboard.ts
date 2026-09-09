@@ -2,7 +2,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/data/db';
 import { listAllDueCards } from '@/data/repositories/cards';
 import { listRecentlyOpenedDocuments, type DocumentSummary } from '@/data/repositories/documents';
-import { getMostRecentUnfinishedEpisode } from '@/data/repositories/podcasts';
 import { DEFAULT_PROFILE } from '@/data/repositories/profile';
 import { dayKey } from '@/lib/date';
 import { averageMastery } from '@/core/mastery';
@@ -17,7 +16,7 @@ import {
   type DueTriage,
   type WeakConcept,
 } from '@/core/dashboard';
-import type { CalendarEvent, PodcastEpisode } from '@/types';
+import type { CalendarEvent } from '@/types';
 
 export interface UpcomingExam {
   event: CalendarEvent;
@@ -34,7 +33,6 @@ export interface DashboardData {
   recentDocuments: DocumentSummary[];
   upcomingEvents: CalendarEvent[];
   nextExam: UpcomingExam | null;
-  inProgressPodcast: PodcastEpisode | null;
   dailySummary: DailySummary;
   dailyCardGoal: number;
 }
@@ -57,7 +55,6 @@ export function useDashboard(): DashboardData | undefined {
       allCards,
       logs,
       recentDocuments,
-      inProgressPodcast,
       upcomingEvents,
       profile,
     ] = await Promise.all([
@@ -66,7 +63,6 @@ export function useDashboard(): DashboardData | undefined {
       db.flashcards.toArray(),
       db.reviewLogs.toArray(),
       listRecentlyOpenedDocuments(RECENT_DOCUMENTS_SCAN),
-      getMostRecentUnfinishedEpisode(),
       db.calendarEvents.where('day').aboveOrEqual(today).sortBy('day'),
       db.profile.get('me'),
     ]);
@@ -109,7 +105,6 @@ export function useDashboard(): DashboardData | undefined {
       recentDocuments: recentDocuments.slice(0, 3),
       upcomingEvents: upcomingEvents.slice(0, 3),
       nextExam,
-      inProgressPodcast: inProgressPodcast ?? null,
       dailySummary,
       dailyCardGoal: (profile ?? DEFAULT_PROFILE).dailyCardGoal,
     };

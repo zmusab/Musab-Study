@@ -1,7 +1,7 @@
 import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { nowISO } from '@/lib/date';
-import type { ChapterAnalysis, ID, PodcastConcept } from '@/types';
+import type { ChapterAnalysis, ID, Notion } from '@/types';
 
 export async function getChapterAnalysis(chapterId: ID): Promise<ChapterAnalysis | undefined> {
   return db.chapterAnalyses.where('chapterId').equals(chapterId).first();
@@ -19,7 +19,7 @@ export async function listSubjectAnalyses(subjectId: ID): Promise<ChapterAnalysi
 export async function saveChapterAnalysis(
   subjectId: ID,
   chapterId: ID,
-  notions: PodcastConcept[],
+  notions: Notion[],
 ): Promise<ChapterAnalysis> {
   const existing = await getChapterAnalysis(chapterId);
   const analysis: ChapterAnalysis = {
