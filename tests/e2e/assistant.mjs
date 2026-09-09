@@ -95,7 +95,7 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(300);
 
 await goFlashcards();
-await page.getByRole('tab', { name: 'Créer manuellement' }).click();
+await page.getByRole('button', { name: 'Écrire une carte moi-même' }).click();
 await page.waitForTimeout(300);
 for (const [q, a] of [
   ['Combien de nerfs crâniens ?', 'Douze paires.'],

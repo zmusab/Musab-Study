@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
@@ -33,6 +33,37 @@ import { agree, plural } from '@/lib/plural';
 
 const COUNT_OPTIONS = [5, 8, 12] as const;
 
+/**
+ * Action SECONDAIRE : un lien, pas un bouton. Trois `Button` alignés sous le
+ * bouton principal se lisent comme trois choix de même importance — c'est
+ * exactement ce que cette page reprochait à sa version précédente. La
+ * hiérarchie visuelle porte ici l'information : un seul geste compte, les
+ * autres sont des replis.
+ */
+function SubtleAction({
+  children,
+  expanded,
+  disabled,
+  onClick,
+}: {
+  children: ReactNode;
+  expanded?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-expanded={expanded}
+      onClick={onClick}
+      className="underline underline-offset-2 text-[var(--ink-soft)] transition-colors hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function FlashcardsPage() {
   const subjects = useSubjects();
   const { notify } = useToast();
@@ -56,10 +87,22 @@ export function FlashcardsPage() {
   const [manualChapterId, setManualChapterId] = useState<ID | ''>('');
   const [search, setSearch] = useState('');
   const [originFilter, setOriginFilter] = useState<'all' | 'local' | 'ai' | 'manual'>('all');
-  const [creationMode, setCreationMode] = useState<'ai' | 'manual'>('ai');
+  /**
+   * Les deux panneaux secondaires sont FERMÉS au départ. Le reproche fait à
+   * cette page était d'imposer une file de décisions (mode, nombre,
+   * importance, difficulté) avant le seul geste qui compte : produire des
+   * cartes depuis le cours. Tout ce qui a une valeur par défaut raisonnable
+   * est désormais replié — accessible en un clic, jamais un préalable.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
+
+  // Un choix n'est un choix que s'il a au moins deux issues.
+  const hasSubjectChoice = (subjects ?? []).length > 1;
+  const hasChapterChoice = (chapters ?? []).length > 0;
 
   // Une matière passée depuis la page de cours (« 🃏 Flashcards ») présélectionne
   // directement cette matière plutôt que la première de la liste.
@@ -79,9 +122,20 @@ export function FlashcardsPage() {
     setFilterChapterId('all');
     setManualChapterId('');
     setDrafts([]);
+    setDraftIndex(0);
   }, [subjectId]);
 
   const chapterName = (id: ID | null) => chapters?.find((c) => c.id === id)?.name ?? '';
+
+  /**
+   * Ce sur quoi la génération va RÉELLEMENT porter, écrit en toutes lettres
+   * sous le bouton : sans les sélecteurs affichés en permanence, la portée
+   * doit rester visible quelque part, sinon on clique à l'aveugle.
+   */
+  const scopeLabel =
+    chapterId === 'all'
+      ? (subjects ?? []).find((s) => s.id === subjectId)?.name ?? 'ton cours'
+      : chapterName(chapterId);
 
   const filteredCards = useMemo(() => {
     if (!cards) return [];
@@ -255,66 +309,96 @@ export function FlashcardsPage() {
 
       <WisdomQuote className="mb-6" />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <Select label="Matière" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-          {(subjects ?? []).map((subject) => (
-            <option key={subject.id} value={subject.id}>
-              {subject.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Portée"
-          value={chapterId}
-          onChange={(e) => setChapterId(e.target.value as ID | 'all')}
-        >
-          <option value="all">Toute la matière</option>
-          {(chapters ?? []).map((chapter) => (
-            <option key={chapter.id} value={chapter.id}>
-              {chapter.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      <Card className="mb-6">
-        {/* Un seul formulaire de création à la fois — jamais « Générer » et
-            « Créer manuellement » empilés l'un sur l'autre, qui donnaient
-            l'impression de deux systèmes distincts. */}
-        <SegmentedControl
-          className="mb-4"
-          segments={[
-            { value: 'ai', label: 'Générer automatiquement' },
-            { value: 'manual', label: 'Créer manuellement' },
-          ]}
-          value={creationMode}
-          onChange={setCreationMode}
-        />
-
-        {creationMode === 'ai' ? (
-          <>
-            <Select
-              label="Nombre"
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])}
-            >
-              {COUNT_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n} cartes
+      {/*
+        PORTÉE — et rien d'autre. Un sélecteur dont la liste ne contient qu'une
+        seule entrée ne pose pas de question : il occupe une ligne, exige un
+        regard, et n'offre aucun choix. La matière ne s'affiche donc que s'il y
+        en a plusieurs, la portée que si le cours a réellement des chapitres.
+      */}
+      {(hasSubjectChoice || hasChapterChoice) && (
+        <FadeUp className="mb-4 grid gap-3 sm:grid-cols-2">
+          {hasSubjectChoice && (
+            <Select label="Matière" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+              {(subjects ?? []).map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
                 </option>
               ))}
             </Select>
-            {/*
-              Importance et difficulté sont des RÉGLAGES FINS : leurs valeurs
-              par défaut conviennent presque toujours, et les afficher au même
-              rang que le nombre de cartes obligeait à trancher trois choix
-              avant de pouvoir appuyer sur le seul bouton qui compte.
-            */}
-            <details className="mt-3">
-              <summary className="cursor-pointer list-none text-[0.82rem] text-[var(--ink-soft)] underline underline-offset-2">
-                Réglages avancés
-              </summary>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          )}
+          {hasChapterChoice && (
+            <Select
+              label="Portée"
+              value={chapterId}
+              onChange={(e) => setChapterId(e.target.value as ID | 'all')}
+            >
+              <option value="all">Toute la matière</option>
+              {(chapters ?? []).map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FadeUp>
+      )}
+
+      <Card className="mb-6">
+        {/*
+          UN SEUL BOUTON de premier rang. La version précédente empilait un
+          sélecteur de mode (2 onglets), un sélecteur de nombre, deux réglages
+          repliés et deux boutons : il fallait trancher quatre questions avant
+          d'obtenir la moindre carte. Tout ce qui suit ce bouton est secondaire
+          et se lit comme tel — des liens, jamais des boutons de même poids.
+        */}
+        <Button
+          size="lg"
+          block
+          loading={generating}
+          onClick={() => void handleGenerate('local')}
+          data-flashcards-generate
+        >
+          {generating ? 'Analyse de ton cours…' : 'Créer mes flashcards'}
+        </Button>
+        <p className="mt-2.5 text-center text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+          {plural(count, 'carte')} {agree(count, 'tirée')} du texte réel de {scopeLabel} — aucune clé
+          API requise.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[0.78rem]">
+          <SubtleAction expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+            Réglages
+          </SubtleAction>
+          <SubtleAction expanded={manualOpen} onClick={() => setManualOpen((open) => !open)}>
+            Écrire une carte moi-même
+          </SubtleAction>
+          <SubtleAction disabled={generating} onClick={() => void handleGenerate('ai')}>
+            Régénérer avec l’IA
+          </SubtleAction>
+        </div>
+
+        <AnimatePresence initial={false}>
+          {settingsOpen && (
+            <motion.div
+              key="settings"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              transition={springSoft}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4 sm:grid-cols-3">
+                <Select
+                  label="Nombre"
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value) as (typeof COUNT_OPTIONS)[number])}
+                >
+                  {COUNT_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} cartes
+                    </option>
+                  ))}
+                </Select>
                 <Select
                   label="Importance"
                   value={importance}
@@ -334,116 +418,116 @@ export function FlashcardsPage() {
                   <option value={3}>Difficile</option>
                 </Select>
               </div>
-            </details>
-            <Button className="mt-4" loading={generating} onClick={() => void handleGenerate('local')} block>
-              {generating ? 'Analyse du cours et génération des cartes…' : `Générer ${count} cartes — local, sans IA`}
-            </Button>
-            <p className="mt-2 text-center text-[0.76rem] text-[var(--ink-faint)]">
-              Analyse le texte réel de ton cours (définitions, énumérations…) — aucune clé API requise.{' '}
-              <button
-                type="button"
-                className="underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={generating}
-                onClick={() => void handleGenerate('ai')}
-              >
-                Régénérer avec l’IA
-              </button>{' '}
-              pour une reformulation plus naturelle, si un fournisseur est configuré.
-            </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-            <AnimatePresence mode="wait">
-              {currentDraft && (
-                <motion.div
-                  key={draftIndex}
-                  initial={reduced ? { opacity: 0 } : { opacity: 0, x: 16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={reduced ? { opacity: 0 } : { opacity: 0, x: -16 }}
-                  transition={springSoft}
-                  className="mt-5 rounded-[var(--radius-card)] border border-[var(--accent)] bg-[var(--accent-tint)] p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Chip>
-                      Carte {draftIndex + 1}/{drafts.length}
-                    </Chip>
-                    <Chip color={draftsSource === 'ai' ? 'var(--accent)' : 'var(--ink-faint)'}>
-                      {draftsSource === 'ai' ? 'Générée par l’IA' : 'Générée localement'}
-                    </Chip>
-                  </div>
-                  <input
-                    className="mt-2 w-full bg-transparent text-[0.98rem] font-semibold outline-none"
-                    value={currentDraft.question}
-                    onChange={(e) =>
-                      setDrafts((list) =>
-                        list.map((d, i) => (i === draftIndex ? { ...d, question: e.target.value } : d)),
-                      )
-                    }
-                  />
-                  <textarea
-                    className="mt-2 w-full resize-y bg-transparent text-[0.9rem] leading-relaxed outline-none"
-                    rows={3}
-                    value={currentDraft.answer}
-                    onChange={(e) =>
-                      setDrafts((list) =>
-                        list.map((d, i) => (i === draftIndex ? { ...d, answer: e.target.value } : d)),
-                      )
-                    }
-                  />
-                  <p className="mt-2 flex items-center gap-1.5 text-[0.74rem] text-[var(--ink-faint)]">
-                    <Icon name="courses" size={13} className="shrink-0" />
-                    {currentDraft.citations[0]?.documentName}
-                    {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
-                      ? ` — page ${currentDraft.citations[0].page}`
-                      : ''}
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <Button size="sm" icon={<Icon name="check" size={15} />} onClick={handleAcceptDraft}>
-                      Accepter
-                    </Button>
-                    {/* « Rejeter » et non « Supprimer » : la proposition n'a
-                        jamais été enregistrée, il n'y a rien à supprimer. */}
-                    <Button size="sm" variant="ghost" icon={<Icon name="close" size={15} />} onClick={handleRejectDraft}>
-                      Rejeter
-                    </Button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {drafts.length > 0 && draftIndex >= drafts.length && (
-              <FadeUp className="mt-4 text-center text-[0.85rem] text-[var(--ink-soft)]">
-                Toutes les cartes proposées ont été traitées.
-              </FadeUp>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <Input
-              label="Question"
-              value={manualQuestion}
-              onChange={(e) => setManualQuestion(e.target.value)}
-            />
-            <Textarea
-              label="Réponse"
-              rows={3}
-              value={manualAnswer}
-              onChange={(e) => setManualAnswer(e.target.value)}
-            />
-            <Select
-              label="Chapitre"
-              value={manualChapterId}
-              onChange={(e) => setManualChapterId(e.target.value)}
+        <AnimatePresence initial={false}>
+          {manualOpen && (
+            <motion.div
+              key="manual"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              transition={springSoft}
+              className="overflow-hidden"
             >
-              <option value="">Aucun</option>
-              {(chapters ?? []).map((chapter) => (
-                <option key={chapter.id} value={chapter.id}>
-                  {chapter.name}
-                </option>
-              ))}
-            </Select>
-            <Button variant="secondary" onClick={handleManualCreate}>
-              Ajouter la carte
-            </Button>
-          </div>
+              <div className="mt-4 flex flex-col gap-3 border-t border-[var(--line)] pt-4">
+                <Input
+                  label="Question"
+                  value={manualQuestion}
+                  onChange={(e) => setManualQuestion(e.target.value)}
+                />
+                <Textarea
+                  label="Réponse"
+                  rows={3}
+                  value={manualAnswer}
+                  onChange={(e) => setManualAnswer(e.target.value)}
+                />
+                {hasChapterChoice && (
+                  <Select
+                    label="Chapitre"
+                    value={manualChapterId}
+                    onChange={(e) => setManualChapterId(e.target.value)}
+                  >
+                    <option value="">Aucun</option>
+                    {(chapters ?? []).map((chapter) => (
+                      <option key={chapter.id} value={chapter.id}>
+                        {chapter.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                <Button variant="secondary" onClick={handleManualCreate}>
+                  Ajouter la carte
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence mode="wait">
+          {currentDraft && (
+            <motion.div
+              key={draftIndex}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, x: -16 }}
+              transition={springSoft}
+              className="mt-5 rounded-[var(--radius-card)] border border-[var(--accent)] bg-[var(--accent-tint)] p-4"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip>
+                  Carte {draftIndex + 1}/{drafts.length}
+                </Chip>
+                <Chip color={draftsSource === 'ai' ? 'var(--accent)' : 'var(--ink-faint)'}>
+                  {draftsSource === 'ai' ? 'Générée par l’IA' : 'Générée localement'}
+                </Chip>
+              </div>
+              <input
+                className="mt-2 w-full bg-transparent text-[0.98rem] font-semibold outline-none"
+                value={currentDraft.question}
+                onChange={(e) =>
+                  setDrafts((list) =>
+                    list.map((d, i) => (i === draftIndex ? { ...d, question: e.target.value } : d)),
+                  )
+                }
+              />
+              <textarea
+                className="mt-2 w-full resize-y bg-transparent text-[0.9rem] leading-relaxed outline-none"
+                rows={3}
+                value={currentDraft.answer}
+                onChange={(e) =>
+                  setDrafts((list) =>
+                    list.map((d, i) => (i === draftIndex ? { ...d, answer: e.target.value } : d)),
+                  )
+                }
+              />
+              <p className="mt-2 flex items-center gap-1.5 text-[0.74rem] text-[var(--ink-faint)]">
+                <Icon name="courses" size={13} className="shrink-0" />
+                {currentDraft.citations[0]?.documentName}
+                {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
+                  ? ` — page ${currentDraft.citations[0].page}`
+                  : ''}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" icon={<Icon name="check" size={15} />} onClick={handleAcceptDraft}>
+                  Accepter
+                </Button>
+                {/* « Rejeter » et non « Supprimer » : la proposition n'a
+                    jamais été enregistrée, il n'y a rien à supprimer. */}
+                <Button size="sm" variant="ghost" icon={<Icon name="close" size={15} />} onClick={handleRejectDraft}>
+                  Rejeter
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {drafts.length > 0 && draftIndex >= drafts.length && (
+          <FadeUp className="mt-4 text-center text-[0.85rem] text-[var(--ink-soft)]">
+            Toutes les cartes proposées ont été traitées.
+          </FadeUp>
         )}
       </Card>
 

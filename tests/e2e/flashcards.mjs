@@ -49,9 +49,24 @@ check('L’écran Flashcards s’ouvre sur la matière importée',
   await page.getByRole('heading', { name: 'Flashcards' }).isVisible());
 
 // ---------- Création manuelle ----------
-check('Le formulaire IA est affiché par défaut, jamais les deux formulaires ensemble',
-  (await page.getByLabel('Question').count()) === 0);
-await page.getByRole('tab', { name: 'Créer manuellement' }).click();
+// Un seul geste de premier rang au départ : le bouton de génération. La
+// saisie manuelle et les réglages sont repliés — présents, jamais imposés.
+check('Un seul bouton de premier rang au départ — la saisie manuelle est repliée',
+  (await page.getByLabel('Question').count()) === 0
+    && (await page.locator('main').getByRole('button', { name: 'Créer mes flashcards' }).isVisible()));
+check('Nombre, importance et difficulté ne sont plus des préalables — ils sont sous « Réglages »',
+  (await page.getByLabel('Nombre').count()) === 0
+    && (await page.getByLabel('Importance').count()) === 0
+    && (await page.getByLabel('Difficulté').count()) === 0);
+await page.getByRole('button', { name: 'Réglages' }).click();
+await page.waitForTimeout(400);
+check('« Réglages » déplie bien les trois réglages fins, sans quitter la page',
+  (await page.getByLabel('Nombre').isVisible())
+    && (await page.getByLabel('Importance').isVisible())
+    && (await page.getByLabel('Difficulté').isVisible()));
+await page.getByRole('button', { name: 'Réglages' }).click();
+await page.waitForTimeout(400);
+await page.getByRole('button', { name: 'Écrire une carte moi-même' }).click();
 await page.waitForTimeout(300);
 await page.getByLabel('Question').fill('Quelle est la fréquence cardiaque normale au repos ?');
 await page.getByLabel('Réponse').fill('Entre 60 et 100 battements par minute.');
@@ -110,9 +125,7 @@ check('La modification de la question est bien persistée après rechargement',
   await main.locator('input[value="Fréquence cardiaque au repos — adulte sain ?"]').isVisible());
 
 // ---------- Génération locale (par défaut, sans clé) et régénération IA explicite ----------
-await page.getByRole('tab', { name: 'Générer automatiquement' }).click();
-await page.waitForTimeout(300);
-await page.getByRole('button', { name: /Générer \d+ cartes/ }).click();
+await page.getByRole('button', { name: 'Créer mes flashcards' }).click();
 await page.waitForTimeout(900);
 check('La génération locale ne demande jamais de clé API — seul le manque de contenu est signalé',
   await page.getByText(/document indexé/).isVisible() && !(await page.getByText(/clé API dans Paramètres/).isVisible()));
