@@ -180,9 +180,14 @@ export function ChatPage() {
         await appendChatMessage({
           subjectId,
           role: 'assistant',
+          // Le conseil s'adapte à la portée RÉELLEMENT interrogée : proposer
+          // « élargis à toute la matière » à quelqu'un qui interroge déjà toute
+          // la matière lui demandait de faire ce qu'il faisait déjà.
           text:
-            '⚠️ Aucun passage de tes cours ne correspond à cette question.\n\n' +
-            `Portée interrogée : ${scopeLabel}. Essaie d’élargir à toute la matière, de reformuler avec les termes du cours, ou d’importer le document concerné.`,
+            'Aucun passage de tes cours ne correspond à cette question.\n\n' +
+            (chapterId === 'all'
+              ? 'Reformule avec les termes employés dans ton cours, ou importe le document concerné.'
+              : `Recherche limitée à ${scopeLabel}. Élargis à toute la matière, reformule avec les termes du cours, ou importe le document concerné.`),
           provenance: 'insufficient',
         });
         setAwaitingAiChoice(null);
