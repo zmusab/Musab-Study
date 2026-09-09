@@ -73,12 +73,25 @@ check('La réponse tapée par l’étudiant est rappelée avant la bonne répons
 check('Un verdict d’évaluation locale s’affiche avant la réponse attendue',
   await page.locator('[data-review-verdict]').isVisible());
 check('La réponse attendue se révèle', await main.getByText('Environ 22 mm.').isVisible());
-check('Les 4 boutons de notation sont visibles', await page.getByRole('button', { name: 'Facile' }).isVisible());
+// La note n'est plus RÉCLAMÉE : elle est déduite de la réponse et du temps mis.
+check('La note est déduite automatiquement, avec sa raison',
+  await page.locator('[data-review-auto-rating]').isVisible());
+check('La note déduite reste corrigeable — jamais imposée en silence',
+  await page.locator('[data-review-override]').isVisible());
+// « Environ 20 mm, je crois » partage « environ » et « mm » avec la réponse
+// attendue : le moteur la juge INCOMPLÈTE, pas absurde, et note « Difficile ».
+// La carte revient donc vite — ce qui est le comportement voulu. (Limite
+// connue : sur une réponse chiffrée, le moteur ne sait pas que « 22 » est le
+// cœur de la réponse et que « 20 » la rend franchement fausse.)
+const autoRating = await page.locator('[data-review-auto-rating]').getAttribute('data-review-auto-rating');
+check('Une réponse ratée n’est jamais notée comme une réussite', Number(autoRating) < 2, `note ${autoRating}`);
 
-await page.getByRole('button', { name: 'Bien' }).click();
+await page.locator('[data-review-next]').click();
 await page.waitForTimeout(500);
 check('La séance se termine après la dernière carte', await page.getByText('Révision terminée').isVisible());
-check('Le résumé compte la carte réussie', await page.getByText(/1\/1 carte réussie/).isVisible());
+// « Environ 20 mm, je crois » face à « Environ 22 mm. » est faux : la séance
+// se termine donc sur 0 réussite, ce qui est la bonne réponse pédagogique.
+check('Le résumé reflète la note réellement déduite', await page.getByText(/0\/1 carte/).isVisible());
 
 // ---------- Plus rien à réviser ----------
 check('Le point d’entrée « Commencer ma révision » disparaît une fois à jour',

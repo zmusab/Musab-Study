@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
-import { Button, Card, Chip, EmptyState, Icon, SegmentedControl, Swatch, Textarea } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, Swatch, Textarea } from '@/components/ui';
 import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import { springSoft } from '@/components/motion/transitions';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
@@ -12,6 +12,7 @@ import { db } from '@/data/db';
 import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
 import { evaluateAnswer, type AnswerVerdict } from '@/core/revisions/evaluateAnswer';
+import { deriveRating, type AutoRating } from '@/core/revisions/autoRating';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 
 /**
@@ -36,11 +37,18 @@ const RATING_LABELS: Record<Rating, string> = {
   3: 'Facile',
 };
 
-const CONFIDENCE_SEGMENTS = [
-  { value: 'low' as const, label: 'Peu sûr' },
-  { value: 'medium' as const, label: 'Moyen' },
-  { value: 'high' as const, label: 'Sûr' },
-];
+/**
+ * La confiance n'est plus demandée séparément : elle découle de la note. Un
+ * étudiant qui note « Facile » était sûr de lui, un « Encore » ne l'était pas.
+ * Poser les deux questions revenait à lui faire saisir deux fois la même
+ * information — et `scheduleNext` attend toujours les deux.
+ */
+const CONFIDENCE_FOR_RATING: Record<Rating, Confidence> = {
+  0: 'low',
+  1: 'medium',
+  2: 'medium',
+  3: 'high',
+};
 
 const VERDICT_LABEL: Record<AnswerVerdict, { text: string; color: string; tint: string }> = {
   correct: { text: '🟢 Correct', color: 'var(--success)', tint: 'var(--success-tint)' },
@@ -74,8 +82,13 @@ function ReviewSession({
   const [queue, setQueue] = useState(initialQueue);
   const [revealed, setRevealed] = useState(false);
   const [attempt, setAttempt] = useState('');
-  const [confidence, setConfidence] = useState<Confidence>('medium');
   const [cardStartedAt, setCardStartedAt] = useState(() => Date.now());
+  /** Note DÉDUITE de la réponse, figée à la vérification. `null` = le moteur n'a pas pu trancher. */
+  const [pending, setPending] = useState<AutoRating | null>(null);
+  /** L'étudiant a demandé à corriger la note déduite. */
+  const [overriding, setOverriding] = useState(false);
+  /** Temps réellement mis pour répondre — figé au moment de vérifier, pas au moment de noter. */
+  const [answeredInMs, setAnsweredInMs] = useState(0);
   const [reviewed, setReviewed] = useState(0);
   const [correct, setCorrect] = useState(0);
   const total = initialQueue.length;
@@ -88,10 +101,23 @@ function ReviewSession({
   // compte comme complète.
   const evaluation = current && hasAttempt ? evaluateAnswer(attempt, current.answer, current.question) : null;
 
-  const handleRate = async (rating: Rating) => {
+  /**
+   * Vérifier fige DEUX choses : le temps réellement mis à répondre, et la note
+   * qui en découle. Rien n'est encore écrit en base — l'étudiant voit d'abord
+   * la note déduite et peut la corriger.
+   */
+  const handleVerify = () => {
     if (!current) return;
-    const elapsedMs = Date.now() - cardStartedAt;
-    await reviewCard(current.id, rating, confidence, elapsedMs);
+    const elapsed = Date.now() - cardStartedAt;
+    setAnsweredInMs(elapsed);
+    setRevealed(true);
+    const verdict = hasAttempt ? evaluateAnswer(attempt, current.answer, current.question).verdict : null;
+    setPending(verdict ? deriveRating(verdict, elapsed, current.answer) : null);
+  };
+
+  const handleRate = async (rating: Rating, confidence: Confidence = CONFIDENCE_FOR_RATING[rating]) => {
+    if (!current) return;
+    await reviewCard(current.id, rating, confidence, answeredInMs);
 
     const rest = queue.slice(1);
     const nextQueue = rating === 0 ? [...rest.slice(0, 2), current, ...rest.slice(2)] : rest;
@@ -103,7 +129,9 @@ function ReviewSession({
     setQueue(nextQueue);
     setRevealed(false);
     setAttempt('');
-    setConfidence('medium');
+    setPending(null);
+    setOverriding(false);
+    setAnsweredInMs(0);
     setCardStartedAt(Date.now());
 
     if (nextQueue.length === 0) onFinish({ reviewed: nextReviewed, correct: nextCorrect });
@@ -199,12 +227,12 @@ function ReviewSession({
             onChange={(e) => setAttempt(e.target.value)}
             data-review-attempt
           />
-          <Button block onClick={() => setRevealed(true)} data-review-validate>
+          <Button block onClick={handleVerify} data-review-validate>
             Vérifier ma réponse
           </Button>
           <button
             type="button"
-            onClick={() => setRevealed(true)}
+            onClick={handleVerify}
             className="self-center text-[0.78rem] text-[var(--ink-faint)] underline underline-offset-2"
             data-review-see-answer
           >
@@ -213,31 +241,53 @@ function ReviewSession({
         </div>
       ) : (
         <div className="mt-4 flex flex-col gap-3">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <span className="text-[0.78rem] text-[var(--ink-faint)]">
-              {hasAttempt
-                ? 'L’évaluation ci-dessus est un repère pédagogique local — c’est à toi de juger, honnêtement, si tu as vraiment su répondre.'
-                : 'Avant de voir la réponse, tu étais…'}
-            </span>
-            <SegmentedControl segments={CONFIDENCE_SEGMENTS} value={confidence} onChange={setConfidence} size="sm" />
-          </div>
-          <p className="text-center text-[0.78rem] font-medium text-[var(--ink-soft)]">
-            Choisis honnêtement : c’est CE choix, pas la comparaison ci-dessus, qui programme ta prochaine révision.
-          </p>
-          <div className="grid grid-cols-4 gap-2">
-            <Button variant="danger" onClick={() => void handleRate(0)}>
-              {RATING_LABELS[0]}
-            </Button>
-            <Button variant="ghost" onClick={() => void handleRate(1)}>
-              {RATING_LABELS[1]}
-            </Button>
-            <Button variant="secondary" onClick={() => void handleRate(2)}>
-              {RATING_LABELS[2]}
-            </Button>
-            <Button variant="primary" onClick={() => void handleRate(3)}>
-              {RATING_LABELS[3]}
-            </Button>
-          </div>
+          {/*
+            La note n'est plus RÉCLAMÉE, elle est DÉDUITE : de ce que l'étudiant
+            a répondu et du temps qu'il a mis. Elle reste affichée avec sa
+            raison et corrigeable — une note automatique invisible ou
+            irrattrapable serait pire que la question qu'elle remplace.
+          */}
+          {pending && !overriding ? (
+            <div className="flex flex-col items-center gap-2 text-center" data-review-auto-rating={pending.rating}>
+              <p className="text-[0.9rem]">
+                Noté automatiquement : <strong>{RATING_LABELS[pending.rating]}</strong>
+              </p>
+              <p className="text-[0.78rem] text-[var(--ink-soft)]">{pending.reason}</p>
+              <Button block className="mt-1" onClick={() => void handleRate(pending.rating, pending.confidence)} data-review-next>
+                Carte suivante
+              </Button>
+              <button
+                type="button"
+                onClick={() => setOverriding(true)}
+                className="text-[0.78rem] text-[var(--ink-faint)] underline underline-offset-2"
+                data-review-override
+              >
+                Ce n’est pas juste — noter moi-même
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-center text-[0.78rem] text-[var(--ink-soft)]">
+                {pending
+                  ? 'Choisis la note qui correspond vraiment à ton rappel.'
+                  : 'Le moteur ne peut pas juger cette réponse tout seul — à toi de dire ce que valait ton rappel.'}
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                <Button variant="danger" onClick={() => void handleRate(0)}>
+                  {RATING_LABELS[0]}
+                </Button>
+                <Button variant="ghost" onClick={() => void handleRate(1)}>
+                  {RATING_LABELS[1]}
+                </Button>
+                <Button variant="secondary" onClick={() => void handleRate(2)}>
+                  {RATING_LABELS[2]}
+                </Button>
+                <Button variant="primary" onClick={() => void handleRate(3)}>
+                  {RATING_LABELS[3]}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
