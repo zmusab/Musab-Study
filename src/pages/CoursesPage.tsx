@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { Stagger, StaggerItem } from '@/components/motion/Motion';
+import { CountUp } from '@/components/motion/Reveal';
 import {
   Button,
   Chip,
@@ -179,7 +180,9 @@ export function CoursesPage() {
                       <h2 className="truncate text-[1.05rem]">{subject.name}</h2>
                     </div>
                     {stats && stats.dueCards > 0 && (
-                      <Chip color="var(--accent)">{stats.dueCards} à réviser</Chip>
+                      <Chip color="var(--accent)">
+                        <CountUp value={stats.dueCards} /> à réviser
+                      </Chip>
                     )}
                   </div>
 

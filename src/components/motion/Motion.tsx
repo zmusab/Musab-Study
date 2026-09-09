@@ -73,7 +73,24 @@ export function FadeUp({
   );
 }
 
-/** Conteneur dont les enfants `<StaggerItem>` entrent en cascade. */
+/**
+ * Conteneur dont les enfants `<StaggerItem>` entrent en cascade.
+ *
+ * La cascade se déclenche à l'ENTRÉE DANS LA FENÊTRE, plus au montage.
+ * Elle jouait jusqu'ici pour toute la liste dès l'arrivée sur la page : sur
+ * une bibliothèque de quarante cartes ou une liste de notes qui descend sur
+ * trois écrans, les trois quarts de l'animation se terminaient hors champ.
+ * Le mouvement existait dans le code, jamais à l'écran — le même défaut que
+ * « Progression » avant `Reveal`.
+ *
+ * `amount: 0.05` est délibérément bas : ce qui est DÉJÀ visible à l'arrivée
+ * s'anime immédiatement, exactement comme avant. Seul ce qui est plus bas
+ * attend d'être atteint. `once: true` : une donnée ne se ré-anime pas à
+ * chaque aller-retour de défilement.
+ *
+ * Sous « animation réduite », `STILL_CONTAINER` neutralise la cascade et les
+ * enfants restent pleinement visibles.
+ */
 export function Stagger({ children, className, as = 'div' }: AnimatedProps) {
   const reduced = useReducedMotion();
   const Component = MOTION_TAGS[as];
@@ -82,7 +99,8 @@ export function Stagger({ children, className, as = 'div' }: AnimatedProps) {
       className={className}
       variants={reduced ? STILL_CONTAINER : staggerContainer}
       initial="hidden"
-      animate="visible"
+      whileInView="visible"
+      viewport={{ once: true, amount: 0.05 }}
       exit="exit"
     >
       {children}
