@@ -97,8 +97,19 @@ await page.getByRole('button', { name: 'Ajouter la carte' }).click();
 await page.waitForTimeout(600);
 
 await nav.getByRole('link', { name: 'Accueil', exact: true }).first().click();
-await page.waitForTimeout(600);
-check('La session recommandée affiche la carte due', await page.getByText('1 questions').isVisible());
+/*
+ * Une seconde d'attente, et non 600 ms : le nombre de la session recommandée
+ * MONTE depuis zéro (voir `components/motion/Reveal.tsx`, `CountUp`, 900 ms).
+ * Lire avant la fin du compteur, c'est lire une valeur intermédiaire.
+ *
+ * Et « 1 question », pas « 1 questions » : le libellé s'accorde désormais.
+ * L'ancienne assertion figeait justement la faute d'accord.
+ */
+await page.waitForTimeout(1200);
+check(
+  'La session recommandée affiche la carte due',
+  await page.getByText(/\b1 question\b/).isVisible(),
+);
 check('Une durée estimée est affichée', await page.getByText(/≈ \d+ min/).isVisible());
 
 // ---------- Commencer ma session depuis l'accueil ----------
