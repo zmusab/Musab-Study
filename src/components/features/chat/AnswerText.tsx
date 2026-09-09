@@ -16,24 +16,69 @@ import { motion, useReducedMotion } from 'motion/react';
  * présentation près.
  */
 
-/** `**gras**` → <strong>. Le reste du segment est rendu tel quel. */
-function inline(text: string, keyPrefix: string): ReactNode[] {
+/**
+ * RÉVÉLATION MOT À MOT.
+ *
+ * La réponse tombait d'un bloc. Une cascade par BLOC existait déjà (50 ms
+ * d'écart), mais une réponse de deux paragraphes n'a que deux blocs : à
+ * l'écran, ça reste une apparition instantanée.
+ *
+ * Chaque mot porte donc son propre délai d'animation. C'est du CSS pur — une
+ * `animation-delay` calculée au rendu, pas un compteur qui re-rendrait React
+ * quarante fois par seconde : le texte apparaît en se composant, sans coûter
+ * une seule image de plus au fil principal.
+ *
+ * Le délai est PLAFONNÉ : sans cela, une réponse de trois cents mots mettrait
+ * dix secondes à finir de s'afficher, et le lecteur attendrait la fin de son
+ * propre cours.
+ */
+const WORD_STEP_MS = 16;
+const MAX_REVEAL_MS = 2000;
+
+/** Compteur mutable de mots, partagé par tous les segments d'une réponse. */
+interface WordClock {
+  index: number;
+}
+
+function words(text: string, keyPrefix: string, clock: WordClock): ReactNode[] {
+  // On conserve les espaces (`split` capturant) : sans eux, tous les mots se
+  // colleraient les uns aux autres.
+  return text.split(/(\s+)/).map((part, index) => {
+    if (part.trim().length === 0) return <Fragment key={`${keyPrefix}-s${index}`}>{part}</Fragment>;
+    const delay = Math.min(clock.index * WORD_STEP_MS, MAX_REVEAL_MS);
+    clock.index += 1;
+    return (
+      <span key={`${keyPrefix}-w${index}`} className="reveal-word" style={{ animationDelay: `${delay}ms` }}>
+        {part}
+      </span>
+    );
+  });
+}
+
+/** `**gras**` → <strong>. Le reste du segment est révélé mot à mot. */
+function inline(text: string, keyPrefix: string, clock: WordClock): ReactNode[] {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       return (
         <strong key={`${keyPrefix}-${index}`} className="font-semibold text-[var(--ink)]">
-          {part.slice(2, -2)}
+          {words(part.slice(2, -2), `${keyPrefix}-${index}`, clock)}
         </strong>
       );
     }
-    return <Fragment key={`${keyPrefix}-${index}`}>{part}</Fragment>;
+    return <Fragment key={`${keyPrefix}-${index}`}>{words(part, `${keyPrefix}-${index}`, clock)}</Fragment>;
   });
+}
+
+/** Une puce, avec son niveau : 0 pour « - », 1 pour « ␣␣- » (sous-liste). */
+interface BulletItem {
+  text: string;
+  depth: 0 | 1;
 }
 
 type Block =
   | { kind: 'heading'; text: string }
   | { kind: 'paragraph'; text: string }
-  | { kind: 'bullets'; items: string[] }
+  | { kind: 'bullets'; items: BulletItem[] }
   | { kind: 'numbers'; items: string[] };
 
 /** Découpe le texte en blocs — exporté pour être testé sans rendu React. */
@@ -50,6 +95,9 @@ export function parseAnswerBlocks(text: string): Block[] {
 
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
+    // L'indentation compte AVANT le trim : c'est elle qui distingue une
+    // énumération de ses éléments (« trois branches : » puis les trois noms).
+    const indent = line.length - line.trimStart().length;
 
     if (trimmed.length === 0) {
       flushParagraph();
@@ -66,9 +114,10 @@ export function parseAnswerBlocks(text: string): Block[] {
     const bullet = /^[-*•]\s+(.*)$/.exec(trimmed);
     if (bullet) {
       flushParagraph();
+      const item: BulletItem = { text: bullet[1]!, depth: indent >= 2 ? 1 : 0 };
       const last = blocks[blocks.length - 1];
-      if (last?.kind === 'bullets') last.items.push(bullet[1]!);
-      else blocks.push({ kind: 'bullets', items: [bullet[1]!] });
+      if (last?.kind === 'bullets') last.items.push(item);
+      else blocks.push({ kind: 'bullets', items: [item] });
       continue;
     }
 
@@ -88,11 +137,11 @@ export function parseAnswerBlocks(text: string): Block[] {
   return blocks;
 }
 
-function renderBlock(block: Block, index: number): ReactNode {
+function renderBlock(block: Block, index: number, clock: WordClock): ReactNode {
   if (block.kind === 'heading') {
     return (
       <h3 className="mt-1 text-[0.95rem] font-semibold">
-        {inline(block.text, `h-${index}`)}
+        {inline(block.text, `h-${index}`, clock)}
       </h3>
     );
   }
@@ -100,7 +149,15 @@ function renderBlock(block: Block, index: number): ReactNode {
     return (
       <ul className="flex list-disc flex-col gap-1 pl-5">
         {block.items.map((item, itemIndex) => (
-          <li key={itemIndex}>{inline(item, `b-${index}-${itemIndex}`)}</li>
+          <li
+            key={itemIndex}
+            // Les sous-puces sont décalées et marquées d'un cercle creux :
+            // une énumération se lit alors comme une liste d'éléments, pas
+            // comme quatre affirmations de même rang.
+            className={item.depth === 1 ? 'ml-5 list-[circle] text-[var(--ink-soft)]' : undefined}
+          >
+            {inline(item.text, `b-${index}-${itemIndex}`, clock)}
+          </li>
         ))}
       </ul>
     );
@@ -109,12 +166,12 @@ function renderBlock(block: Block, index: number): ReactNode {
     return (
       <ol className="flex list-decimal flex-col gap-1 pl-5">
         {block.items.map((item, itemIndex) => (
-          <li key={itemIndex}>{inline(item, `n-${index}-${itemIndex}`)}</li>
+          <li key={itemIndex}>{inline(item, `n-${index}-${itemIndex}`, clock)}</li>
         ))}
       </ol>
     );
   }
-  return <p className="whitespace-pre-wrap">{inline(block.text, `p-${index}`)}</p>;
+  return <p className="whitespace-pre-wrap">{inline(block.text, `p-${index}`, clock)}</p>;
 }
 
 /** Au-delà, un délai supplémentaire ne se voit plus et ralentirait pour rien une longue réponse. */
@@ -134,6 +191,17 @@ export function AnswerText({ text }: { text: string }) {
   const blocks = parseAnswerBlocks(text);
   const reduced = useReducedMotion();
 
+  /*
+   * Une seule horloge pour toute la réponse : le compteur de mots traverse les
+   * blocs. Deux horloges (une par bloc) feraient repartir chaque paragraphe de
+   * zéro, et les blocs se révéleraient en parallèle au lieu de s'enchaîner.
+   *
+   * Elle est recréée à chaque rendu, ce qui est voulu : le texte d'une réponse
+   * ne change pas après réception, et une réponse re-rendue (changement de
+   * thème, redimensionnement) rejoue simplement son apparition.
+   */
+  const clock: WordClock = { index: 0 };
+
   return (
     <div className="flex flex-col gap-2.5 text-[0.92rem] leading-relaxed">
       {blocks.map((block, index) => (
@@ -143,7 +211,7 @@ export function AnswerText({ text }: { text: string }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, delay: reduced ? 0 : Math.min(index, MAX_STAGGER_BLOCKS) * STAGGER_STEP_S }}
         >
-          {renderBlock(block, index)}
+          {renderBlock(block, index, clock)}
         </motion.div>
       ))}
     </div>

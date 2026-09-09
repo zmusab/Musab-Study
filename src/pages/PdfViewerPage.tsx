@@ -335,7 +335,7 @@ export function PdfViewerPage() {
         >
           <Icon name="notes" size={17} />
           {notes && notes.length > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[0.6rem] font-semibold leading-none text-white">
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[0.6rem] font-semibold leading-none text-[var(--on-accent)]">
               {notes.length}
             </span>
           )}

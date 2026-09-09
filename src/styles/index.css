@@ -47,59 +47,70 @@
    * et l'accent unique est une terre de Sienne — chaude et sérieuse, sans être
    * enfantine.
    */
-  --bg: #f2ede4;
-  --bg-elevated: #f8f4ec;
-  --surface: #fffdf9;
-  --surface-2: #ece5da;
-  --surface-hover: #e5ddcf;
+  --bg: #f1eee4;
+  --bg-elevated: #f7f4ec;
+  --surface: #fbf9f2;
+  --surface-2: #e9e4d7;
+  --surface-hover: #e1dbcb;
 
-  --ink: #221e18;
-  --ink-soft: #665d52;
-  --ink-faint: #928778;
+  --ink: #15140f;
+  --ink-soft: #5d594e;
+  --ink-faint: #8b8577;
 
-  --line: #ded5c7;
-  --line-strong: #c8bdab;
-
-  --accent: #a2542a;
-  --accent-hover: #8c4622;
-  --accent-tint: #f4e6d9;
-  --accent-ink: #8a4622;
-
-  --success: #4a7c52;
-  --success-tint: #e6efe4;
-  --warning: #a8721c;
-  --warning-tint: #f7ecd8;
-  --danger: #a8443a;
-  --danger-tint: #f7e5e1;
+  --line: #ddd7c7;
+  --line-strong: #c4bca7;
 
   /*
-   * Maîtrise : une seule rampe continue, de la terre cuite à la sauge. Elle
-   * remplace un arc-en-ciel (rouge, orange, jaune, vert, INDIGO) dont la
+   * OR — et pourquoi deux ors, pas un seul.
+   *
+   * L'or vif (#d4af37) est splendide sur du noir et illisible sur de l'ivoire :
+   * son contraste avec le fond clair tombe sous 2:1, très loin des 4,5:1 exigés
+   * pour du texte. Le thème clair utilise donc un or PROFOND, le thème sombre
+   * l'or vif. C'est la même couleur perçue — la lumière change, pas l'identité.
+   */
+  --accent: #8a6a12;
+  --accent-hover: #6e540c;
+  --accent-tint: #f4ead0;
+  --accent-ink: #7a5d10;
+  /* Texte posé SUR un aplat d'accent. Sur l'or profond du thème clair, le
+     blanc passe ; sur l'or vif du thème sombre, il ne passe pas (voir plus
+     bas) — d'où une variable plutôt qu'un `text-white` codé en dur. */
+  --on-accent: #fffdf6;
+
+  --success: #4a7c52;
+  --success-tint: #e4ecdf;
+  --warning: #9a7212;
+  --warning-tint: #f4ecd4;
+  --danger: #a33f31;
+  --danger-tint: #f6e3de;
+
+  /*
+   * Maîtrise : une seule rampe continue, de la terre brûlée à la sauge, en
+   * passant par l'or de l'accent. Elle remplace un arc-en-ciel dont la
    * dernière marche changeait carrément de famille de couleur — on ne lisait
    * pas une progression, on lisait cinq étiquettes sans rapport.
    */
-  --mastery-0: #a8443a;
-  --mastery-1: #b06a35;
-  --mastery-2: #a88a3e;
-  --mastery-3: #6c8a4e;
+  --mastery-0: #a33f31;
+  --mastery-1: #b06a1e;
+  --mastery-2: #a08415;
+  --mastery-3: #7a8c3c;
   --mastery-4: #4a7c52;
 
   /*
    * Couleurs de section. Elles ne colorent PLUS la navigation — un rail dont
    * chaque entrée portait sa propre teinte vive donnait un menu arc-en-ciel,
-   * fatigant et sans hiérarchie : rien n'y indiquait où l'on se trouvait. La
-   * navigation est désormais monochrome, l'accent signalant seul la page
-   * courante. Ces teintes servent encore à distinguer les TYPES de résultat
-   * dans la recherche et quelques barres de progression ; elles sont donc
-   * désaturées pour cohabiter sans crier.
+   * fatigant et sans hiérarchie. Ces teintes servent encore à distinguer les
+   * TYPES de résultat dans la recherche et quelques barres de progression ;
+   * elles sont donc désaturées pour cohabiter avec l'or sans lui disputer
+   * l'attention.
    */
   --nav-blue: #4a6b8a;
   --nav-turquoise: #3f7a72;
   --nav-purple: #6b5b8a;
   --nav-rose: #9c4f68;
   --nav-green: #4a7c52;
-  --nav-red: #a8443a;
-  --nav-orange: #a2542a;
+  --nav-red: #a33f31;
+  --nav-orange: #8a6a12;
 
   --shadow-soft: 0 1px 2px rgb(60 46 30 / 0.05), 0 6px 20px rgb(60 46 30 / 0.06);
   --shadow-lift: 0 2px 6px rgb(60 46 30 / 0.07), 0 14px 36px rgb(60 46 30 / 0.11);
@@ -124,13 +135,13 @@
    * Tout est en `background-attachment: fixed` : le quadrillage ne défile pas
    * avec le contenu, il reste la surface SUR laquelle le contenu est posé.
    */
-  --grid-minor: rgb(122 96 62 / 0.05);
-  --grid-major: rgb(122 96 62 / 0.08);
+  --grid-minor: rgb(150 122 40 / 0.055);
+  --grid-major: rgb(150 122 40 / 0.09);
 
   --paper-wash:
-    radial-gradient(1200px 640px at 8% -10%, rgb(255 253 246 / 0.95) 0%, transparent 60%),
-    radial-gradient(900px 700px at 100% 0%, rgb(240 228 208 / 0.75) 0%, transparent 58%),
-    radial-gradient(1400px 900px at 50% 118%, rgb(226 214 194 / 0.7) 0%, transparent 62%);
+    radial-gradient(1200px 640px at 8% -10%, rgb(255 252 240 / 0.95) 0%, transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgb(240 231 205 / 0.8) 0%, transparent 58%),
+    radial-gradient(1400px 900px at 50% 118%, rgb(224 214 188 / 0.7) 0%, transparent 62%);
 }
 
 /*
@@ -150,61 +161,70 @@
   color-scheme: dark;
 
   /*
-   * Un brun très profond, jamais un bleu-noir — et surtout PLUS JAMAIS UN
-   * APLAT.
+   * NOIR ET OR.
    *
-   * La version précédente empilait un fond #16130f et des cartes #201c17 :
-   * treize points d'écart, invisibles à l'œil. Résultat, le thème sombre
-   * n'était qu'un grand champ brun uniforme où aucune carte ne se détachait.
-   * L'écart entre le fond et la surface est doublé, la ligne de séparation
-   * remontée, et les cartes retrouvent une ombre — dans le noir aussi, une
-   * feuille posée porte une ombre.
+   * Le thème sombre était brun. Deux problèmes tenaient à ce choix : le brun
+   * salit tout ce qu'on pose dessus (une carte brune sur un fond brun ne se
+   * détache pas), et il rend impossible le seul accent qui fasse vraiment
+   * « travail sérieux » sur du sombre — l'or. Le fond descend donc au
+   * quasi-noir, et l'accent devient franchement doré.
+   *
+   * L'écart fond/surface reste large (#0d0d0c contre #1a1917) : la version
+   * brune n'avait que treize points d'écart, invisibles à l'œil, et l'écran
+   * entier se lisait comme un aplat.
    */
-  --bg: #17140f;
-  --bg-elevated: #1d1a15;
-  --surface: #232019;
-  --surface-2: #2c2721;
-  --surface-hover: #37312a;
+  --bg: #0d0d0c;
+  --bg-elevated: #131312;
+  --surface: #1a1917;
+  --surface-2: #242220;
+  --surface-hover: #2f2c29;
 
-  --ink: #f2ece3;
-  --ink-soft: #b6ab9c;
-  --ink-faint: #8a8073;
+  --ink: #f3f0e6;
+  --ink-soft: #a9a394;
+  --ink-faint: #7c7669;
 
-  --line: #383129;
-  --line-strong: #4e463b;
+  --line: #2b2825;
+  --line-strong: #423d35;
 
-  --accent: #e09a68;
-  --accent-hover: #eeb086;
-  --accent-tint: #33241a;
-  --accent-ink: #eeb086;
+  /* L'or vif, celui qui ne fonctionne QUE sur du noir. */
+  --accent: #d9b44a;
+  --accent-hover: #e9c766;
+  --accent-tint: #2a2210;
+  --accent-ink: #e9c766;
+  /*
+   * Le texte posé sur cet or est NOIR, jamais blanc. Blanc sur #d9b44a donne
+   * un contraste de 1,9:1 — un bouton principal qu'on devine plutôt qu'on ne
+   * lit. Noir sur le même or donne 10:1.
+   */
+  --on-accent: #14120a;
 
   --success: #7fb083;
-  --success-tint: #1b2a1d;
-  --warning: #d9a55f;
-  --warning-tint: #2e2517;
-  --danger: #d97b6e;
-  --danger-tint: #2f1d19;
+  --success-tint: #17231a;
+  --warning: #d9b44a;
+  --warning-tint: #2a2210;
+  --danger: #d9776a;
+  --danger-tint: #2b1a16;
 
-  --mastery-0: #d97b6e;
-  --mastery-1: #d99a63;
-  --mastery-2: #c9b96a;
-  --mastery-3: #97b877;
-  --mastery-4: #7fb083;
+  --mastery-0: #d9776a;
+  --mastery-1: #d9a05e;
+  --mastery-2: #d9b44a;
+  --mastery-3: #a8bb6a;
+  --mastery-4: #86b184;
 
-  /* Mêmes teintes de section, éclaircies pour rester lisibles sur fond sombre. */
+  /* Mêmes teintes de section, éclaircies pour rester lisibles sur fond noir. */
   --nav-blue: #7d9cba;
   --nav-turquoise: #6fb0a6;
   --nav-purple: #a08fc0;
   --nav-rose: #cc8199;
-  --nav-green: #7fb083;
-  --nav-red: #d97b6e;
-  --nav-orange: #e09a68;
+  --nav-green: #86b184;
+  --nav-red: #d9776a;
+  --nav-orange: #d9b44a;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.34);
   --shadow-lift: 0 2px 8px rgb(0 0 0 / 0.45), 0 18px 44px rgb(0 0 0 / 0.5);
 
-  --grid-minor: rgb(228 168 120 / 0.05);
-  --grid-major: rgb(228 168 120 / 0.09);
+  --grid-minor: rgb(217 180 74 / 0.045);
+  --grid-major: rgb(217 180 74 / 0.08);
 
   /*
    * Une lueur chaude en haut, une ombre plus dense en bas : le fond a une
@@ -214,9 +234,9 @@
    * exactement le grand champ vide et muet qu'il s'agit d'éviter.
    */
   --paper-wash:
-    radial-gradient(1100px 620px at 6% -12%, rgb(66 48 34 / 0.9) 0%, transparent 64%),
-    radial-gradient(900px 680px at 100% -4%, rgb(48 40 38 / 0.85) 0%, transparent 58%),
-    radial-gradient(1500px 900px at 50% 122%, rgb(14 12 10 / 0.7) 0%, transparent 60%);
+    radial-gradient(1100px 620px at 6% -12%, rgb(60 50 22 / 0.75) 0%, transparent 64%),
+    radial-gradient(900px 680px at 100% -4%, rgb(38 36 30 / 0.8) 0%, transparent 58%),
+    radial-gradient(1500px 900px at 50% 122%, rgb(6 6 5 / 0.8) 0%, transparent 60%);
 }
 
 @layer base {
@@ -514,6 +534,34 @@
     animation: reveal-out 130ms ease-in both;
     animation-delay: calc(var(--reveal-index, 0) * 14ms);
     pointer-events: none;
+  }
+
+  /*
+   * MOT À MOT — l'apparition d'une réponse de l'assistant.
+   *
+   * `both` est indispensable : sans lui, le mot serait pleinement visible
+   * AVANT le début de son délai, et toute la réponse s'afficherait d'un coup
+   * puis clignoterait. Avec `both`, il tient son état initial (invisible)
+   * pendant toute l'attente.
+   *
+   * Le texte reste dans le DOM du premier au dernier instant — seule
+   * l'opacité bouge. Une réponse à moitié révélée est déjà entièrement
+   * sélectionnable, copiable et lisible par un lecteur d'écran.
+   */
+  @keyframes word-in {
+    from {
+      opacity: 0;
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+    }
+  }
+
+  .reveal-word {
+    display: inline;
+    animation: word-in 260ms ease-out both;
   }
 
   /* Le libellé du bouton change de texte : un fondu court évite le saut. */

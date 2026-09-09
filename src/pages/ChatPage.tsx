@@ -510,7 +510,7 @@ export function ChatPage() {
                   className={cn(
                     'rounded-full px-3 py-1.5 font-medium transition-colors [-webkit-tap-highlight-color:transparent]',
                     mode === value
-                      ? 'bg-[var(--accent)] text-white'
+                      ? 'bg-[var(--accent)] text-[var(--on-accent)]'
                       : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
                   )}
                 >

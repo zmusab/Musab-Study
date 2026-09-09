@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { notationFor } from '@/components/layout/notations';
+import { CountUp } from '@/components/motion/Reveal';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
 import { Button, Card, Chip, EmptyState, Icon, Input, Swatch } from '@/components/ui';
+import { agree, plural } from '@/lib/plural';
 import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
 import { useDashboard } from '@/hooks/useDashboard';
@@ -246,7 +248,9 @@ export function HomePage() {
               </p>
             ) : (
               <>
-                <p className="mt-2 text-[2rem] font-semibold leading-none">{dueTriage.total} questions</p>
+                <p className="mt-2 text-[2rem] font-semibold leading-none tabular-nums">
+                  <CountUp value={dueTriage.total} /> {agree(dueTriage.total, 'question')}
+                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {/* La pastille de couleur DIT le niveau : le rond emoji qui la
                       précédait le répétait une seconde fois, dans une palette
@@ -291,10 +295,12 @@ export function HomePage() {
         <StaggerItem>
           <Card>
             <p className="text-[0.95rem] font-semibold">Aujourd’hui</p>
-            <p className="mt-2 text-[1.6rem] font-semibold leading-none">{dailySummary.minutesStudied} min étudiées</p>
+            <p className="mt-2 text-[1.6rem] font-semibold leading-none tabular-nums">
+              <CountUp value={dailySummary.minutesStudied} /> min étudiées
+            </p>
             <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-[var(--ink-soft)]">
-              <span>{dailySummary.cardsReviewed} cartes révisées</span>
-              <span>{dailySummary.documentsOpened} cours ouverts</span>
+              <span>{plural(dailySummary.cardsReviewed, 'carte')} {agree(dailySummary.cardsReviewed, 'révisée')}</span>
+              <span>{plural(dailySummary.documentsOpened, 'cours', 'cours')} {agree(dailySummary.documentsOpened, 'ouvert')}</span>
             </div>
             <div className="mt-4 flex items-center justify-between text-[0.78rem] text-[var(--ink-faint)]">
               <span>Objectif du jour</span>

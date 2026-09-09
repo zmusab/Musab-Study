@@ -43,7 +43,13 @@ export interface LocalAnswer {
  * (« polygone de Willis » interrogé par « les nerfs de Willis »).
  */
 const SUBJECT_OVERLAP_FLOOR = 0.34;
-const MAX_FACTS_IN_ANSWER = 4;
+/*
+ * Quatre faits, c'était le plafond d'une réponse « deux extraits collés ». Une
+ * leçon rangée par nature de savoir a besoin de couvrir ses cinq ou six
+ * rubriques : le plafond monte, et c'est la pertinence (termes distinctifs +
+ * recouvrement du sujet) qui continue de faire le tri, pas un compteur.
+ */
+const MAX_FACTS_IN_ANSWER = 12;
 
 const PREDICATE_PRIORITY: Record<FactPredicate, number> = {
   definition: 0,
@@ -91,28 +97,111 @@ function distinctiveTerms(questionTerms: Set<string>, chunkTermSets: Set<string>
 }
 
 /**
- * Met en FORME les extraits retenus. Rien n'est reformulé : chaque puce est
- * une phrase exacte du cours. Seule la charpente — le titre qui nomme le
- * sujet, le décompte, les puces — est ajoutée.
+ * COMPOSE UNE LEÇON, plus un tas d'extraits.
  *
- * L'ancienne version renvoyait `excerpts.join('\n\n')` : deux phrases brutes
- * collées, sans rien dire de ce qu'elles répondaient. Ça se lisait comme un
- * copier-coller de PDF, et l'apparition en cascade de l'interface n'avait
- * que deux blocs à échelonner, donc paraissait instantanée.
+ * La version précédente rendait `**Sujet** — 2 éléments trouvés` suivi de deux
+ * puces brutes. Le reproche de l'utilisateur était exact : « il me lâche juste
+ * deux infos », « ça n'explique rien ». Deux phrases sorties d'un PDF et
+ * empilées ne sont pas une réponse, même quand elles sont justes.
  *
- * La limite reste entière et assumée : organiser n'est pas expliquer. Une
- * vraie explication reformulée demande un modèle de langue, c'est le rôle du
- * bouton « Répondre avec l'IA ».
+ * Ce qui change ici : les faits ne sont plus classés par score puis coupés à
+ * quatre. Ils sont RANGÉS PAR NATURE DE SAVOIR, dans l'ordre où un enseignant
+ * les donne — ce que c'est, quels types, de quoi c'est fait, à quoi ça sert,
+ * où ça se trouve — chaque groupe sous son intertitre. Les énumérations
+ * détectées (`fact.items`) deviennent de vraies sous-listes au lieu de rester
+ * noyées dans la phrase. Un point « À retenir » ferme la réponse quand un
+ * décompte explicite existe dans le cours (« trois branches »).
+ *
+ * ── CE QUE ÇA N'EST PAS ────────────────────────────────────────────────────
+ * Organiser n'est pas expliquer. Pas une phrase ci-dessous n'est reformulée :
+ * la charpente (intertitres, ordre, puces, transitions) est ajoutée, le
+ * CONTENU reste mot pour mot celui du cours. Un moteur à règles ne comprend
+ * pas ce qu'il range. Reformuler avec ses propres mots, adapter le niveau,
+ * répondre à une question qui n'est pas dans le cours : ça demande un modèle
+ * de langue, c'est le bouton « Répondre avec l'IA ». La différence est dite
+ * explicitement à l'utilisateur par le badge de provenance.
  */
-function composeAnswer(facts: RawFact[]): string {
-  const [first] = facts;
-  if (!first) return '';
-  if (facts.length === 1) return first.sourceExcerpt;
 
-  // Le sujet du fait le mieux classé nomme la réponse — verbatim du cours.
-  const heading = `**${first.subject}** — ${facts.length} éléments trouvés dans tes cours :`;
-  const bullets = facts.map((fact) => `- ${fact.sourceExcerpt}`);
-  return [heading, '', ...bullets].join('\n');
+/** Intertitres, dans l'ordre pédagogique — pas dans l'ordre du document. */
+const SECTIONS: { predicate: FactPredicate; heading: string }[] = [
+  { predicate: 'definition', heading: 'Définition' },
+  { predicate: 'classification', heading: 'Les différents types' },
+  { predicate: 'composition', heading: 'De quoi c’est constitué' },
+  { predicate: 'possession', heading: 'Ce que ça comporte' },
+  { predicate: 'function', heading: 'À quoi ça sert' },
+  { predicate: 'location', heading: 'Où ça se situe' },
+];
+
+/** Majuscule initiale, sans toucher au reste de l'extrait. */
+function capitalize(text: string): string {
+  return text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
+/**
+ * Une énumération du cours devient une vraie liste — mais SANS se répéter.
+ *
+ * Naïvement, on affiche la phrase entière puis ses éléments en sous-puces :
+ * « Le nerf trijumeau possède trois branches : le nerf ophtalmique, le nerf
+ * maxillaire et le nerf mandibulaire. » suivie des trois mêmes noms. Le
+ * lecteur lit deux fois la même chose.
+ *
+ * On coupe donc AU DEUX-POINTS — un séparateur déjà présent dans le texte, pas
+ * une décision de sens : l'annonce reste la puce, les éléments deviennent ses
+ * sous-puces. Sans deux-points, il n'y a rien à découper proprement : la
+ * phrase est rendue entière, sans sous-liste redondante.
+ */
+function renderFact(fact: RawFact): string[] {
+  const excerpt = fact.sourceExcerpt.trim();
+  const colon = excerpt.indexOf(':');
+
+  if (fact.items && fact.items.length >= 2 && colon > 0) {
+    const lead = excerpt.slice(0, colon + 1).trim();
+    return [`- ${lead}`, ...fact.items.map((item) => `  - ${capitalize(item)}`)];
+  }
+  return [`- ${excerpt}`];
+}
+
+function composeAnswer(subject: string, facts: RawFact[]): string {
+  // Un seul fait : la phrase se suffit, l'habiller de trois intertitres
+  // donnerait un plan de cours pour une ligne.
+  if (facts.length === 1) return facts[0]!.sourceExcerpt;
+
+  const lines: string[] = [`**${subject}** — voici ce que ton cours en dit.`, ''];
+
+  const used = new Set<RawFact>();
+  for (const section of SECTIONS) {
+    const group = facts.filter((fact) => fact.predicate === section.predicate);
+    if (group.length === 0) continue;
+    lines.push(`### ${section.heading}`);
+    for (const fact of group) {
+      lines.push(...renderFact(fact));
+      used.add(fact);
+    }
+    lines.push('');
+  }
+
+  // Filet : si un prédicat futur n'a pas d'intertitre, son fait est quand même
+  // rendu plutôt que silencieusement perdu.
+  const orphans = facts.filter((fact) => !used.has(fact));
+  if (orphans.length > 0) {
+    lines.push('### Autres éléments du cours');
+    for (const fact of orphans) lines.push(...renderFact(fact));
+    lines.push('');
+  }
+
+  // « À retenir » n'apparaît que s'il y a réellement quelque chose de
+  // mémorisable et CHIFFRÉ dans le cours — un décompte explicite. Sans cela,
+  // la rubrique répéterait la réponse et ne serait qu'un remplissage.
+  const counted = facts.filter((fact) => fact.countWord && fact.countNoun);
+  if (counted.length > 0) {
+    lines.push('### À retenir');
+    for (const fact of counted) {
+      lines.push(`- ${capitalize(fact.subject)} : **${fact.countWord} ${fact.countNoun}**.`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trimEnd();
 }
 
 /**
@@ -183,5 +272,12 @@ export function findLocalAnswer(
 
   if (kept.length === 0) return null;
 
-  return { text: composeAnswer(kept), citations };
+  /*
+   * Le titre de la leçon est le sujet du fait le MIEUX CLASSÉ, verbatim du
+   * cours — pas celui du premier fait rencontré dans le document. Les faits
+   * sont ensuite remis dans l'ordre pédagogique par `composeAnswer`, mais le
+   * sujet, lui, doit rester celui que la question visait.
+   */
+  const subject = kept[0]!.subject;
+  return { text: composeAnswer(subject, kept), citations };
 }

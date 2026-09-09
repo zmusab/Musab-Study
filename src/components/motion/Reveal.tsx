@@ -79,8 +79,46 @@ export function useSeen<T extends Element = HTMLElement>(): readonly [(node: T |
 }
 
 /**
- * Bloc qui monte en fondu à son entrée dans la fenêtre. À réserver aux
- * SECTIONS : appliqué à chaque ligne d'une liste, l'effet devient un défilé.
+ * Visibilité EN CONTINU, contrairement à `useSeen` : passe à `false` quand
+ * l'élément ressort de la fenêtre. C'est ce qui fait qu'une section
+ * s'estompe quand on remonte, et réapparaît quand on redescend.
+ *
+ * La marge basse négative retarde légèrement l'entrée : un bloc n'apparaît
+ * qu'une fois franchement dans l'écran, pas dès que son premier pixel pointe.
+ */
+export function useInView<T extends Element = HTMLElement>(): readonly [(node: T | null) => void, boolean] {
+  const [node, setNode] = useState<T | null>(null);
+  const [inView, setInView] = useState(false);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry) setInView(entry.isIntersecting);
+      },
+      { threshold: 0, rootMargin: '0px 0px -6% 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return [setNode, inView] as const;
+}
+
+/**
+ * Bloc qui monte en fondu à son entrée dans la fenêtre, et s'estompe quand il
+ * en ressort. À réserver aux SECTIONS : appliqué à chaque ligne d'une liste,
+ * l'effet devient un défilé.
+ *
+ * L'estompage au retour n'est PAS un masquage : le texte reste dans le DOM,
+ * seule l'opacité descend — et jamais à zéro. Un bloc entièrement invisible
+ * en remontant donnerait l'impression que le contenu a disparu.
  */
 export function Reveal({
   children,
@@ -96,19 +134,32 @@ export function Reveal({
   as?: 'div' | 'section';
 }) {
   const reduced = useReducedMotion();
-  const [ref, seen] = useSeen<HTMLElement>();
+  const [ref, inView] = useInView<HTMLElement>();
+  const [seenRef, seen] = useSeen<HTMLElement>();
   const Component = as === 'section' ? motion.section : motion.div;
+
+  // Deux observateurs sur le même nœud : l'un dit « déjà vu » (première
+  // entrée, avec son filet de sécurité), l'autre « visible en ce moment ».
+  const attach = (node: HTMLElement | null) => {
+    ref(node);
+    seenRef(node);
+  };
+
+  // Avant la toute première apparition : effacé et décalé vers le bas. Ensuite,
+  // en remontant : simplement estompé, sans redescendre — un bloc qui replonge
+  // vers le bas quand on remonte donne un mouvement à contresens du doigt.
+  const hidden = seen ? { opacity: 0.15, y: 0 } : { opacity: 0, y: reduced ? 0 : 16 };
 
   return (
     <Component
-      ref={ref}
+      ref={attach}
       className={className}
       initial={false}
-      animate={seen ? { opacity: 1, y: 0 } : { opacity: 0, y: reduced ? 0 : 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : hidden}
       transition={
         reduced
           ? { duration: 0 }
-          : { duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }
+          : { duration: inView ? 0.5 : 0.35, delay: inView ? delay : 0, ease: [0.22, 1, 0.36, 1] }
       }
     >
       {children}
@@ -128,7 +179,7 @@ export function Reveal({
 export function CountUp({
   value,
   suffix = '',
-  duration = 700,
+  duration = 900,
 }: {
   value: number;
   suffix?: string;
@@ -146,8 +197,15 @@ export function CountUp({
     const start = performance.now();
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
-      // Décélération cubique : rapide au début, posée à l'arrivée.
-      setDisplay(Math.round(value * (1 - (1 - t) ** 3)));
+      /*
+       * Montée QUASI LINÉAIRE, avec un simple adoucissement sur le dernier
+       * cinquième. Une décélération cubique passait l'essentiel du temps à
+       * flotter autour de la valeur finale : on ne voyait pas un compteur
+       * défiler, on voyait un chiffre hésiter. Ici les valeurs défilent
+       * franchement, puis se posent.
+       */
+      const eased = t < 0.8 ? t * 1.05 : 1 - (1 - t) ** 2 * 1.25;
+      setDisplay(Math.round(value * Math.min(1, Math.max(0, eased))));
       if (t < 1) frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);

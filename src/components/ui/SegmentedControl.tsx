@@ -54,7 +54,7 @@ export function SegmentedControl<T extends string>({
               'relative rounded-full font-semibold transition-colors duration-150',
               '[-webkit-tap-highlight-color:transparent]',
               size === 'sm' ? 'px-3 py-1.5 text-[0.8rem]' : 'px-4 py-2 text-[0.86rem]',
-              active ? 'text-white' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]',
+              active ? 'text-[var(--on-accent)]' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]',
             )}
           >
             {active && (

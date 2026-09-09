@@ -62,7 +62,7 @@ export function MonthGrid({
                     <span
                       className={cn(
                         'flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[0.75rem] tabular-nums',
-                        cell.isToday ? 'bg-[var(--accent)] font-semibold text-white' : 'text-[var(--ink-soft)]',
+                        cell.isToday ? 'bg-[var(--accent)] font-semibold text-[var(--on-accent)]' : 'text-[var(--ink-soft)]',
                       )}
                     >
                       {parseDayKey(cell.day).getDate()}

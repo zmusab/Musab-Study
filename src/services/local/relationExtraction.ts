@@ -246,9 +246,35 @@ function factsFromBullets(chunk: DocumentChunk): RawFact[] {
  * présent avec une confiance dégradée : `null` veut dire « rien de fiable
  * ici », pas « peut-être ».
  */
+/**
+ * Une phrase COUPÉE par la frontière du fragment n'est pas une phrase.
+ *
+ * Le découpage en fragments tombe où il tombe : la dernière « phrase » d'un
+ * fragment se termine régulièrement au milieu d'une proposition. L'assistant
+ * affichait donc, tel quel, « … le sinus du sillon caverneux qui se trouve sur
+ * les côtés de » — un extrait exact, vérifiable, et inutilisable.
+ *
+ * Rien n'est perdu à l'écarter : les fragments se CHEVAUCHENT (150 caractères,
+ * voir `services/rag/chunking.ts`), la phrase complète existe donc dans le
+ * fragment voisin. On préfère la version entière.
+ *
+ * Le deux-points est accepté : « Le nerf trijumeau possède trois branches : »
+ * introduit une énumération et se suffit à lui-même.
+ */
+function endsOnCompleteSentence(sentence: string): boolean {
+  return /[.!?:;»)\]]\s*$/.test(sentence.trim());
+}
+
 export function extractFacts(chunk: DocumentChunk): RawFact[] {
-  const sentenceFacts = splitIntoSentences(chunk.text)
-    .map((sentence) => factFromSentence(sentence, chunk))
+  const sentences = splitIntoSentences(chunk.text);
+  const sentenceFacts = sentences
+    .map((sentence, index) => {
+      // Seule la DERNIÈRE phrase du fragment peut être tronquée par la
+      // découpe ; les autres sont entières par construction.
+      const isLast = index === sentences.length - 1;
+      if (isLast && !endsOnCompleteSentence(sentence)) return null;
+      return factFromSentence(sentence, chunk);
+    })
     .filter((fact): fact is RawFact => fact !== null);
 
   return [...sentenceFacts, ...factsFromBullets(chunk)];

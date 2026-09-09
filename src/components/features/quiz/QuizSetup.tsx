@@ -315,7 +315,6 @@ export function QuizSetup({
             {subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
                 {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
-                {(cardCountBySubject.get(subject.id) ?? 0) > 1 ? 's' : ''}
               </option>
             ))}
           </Select>
@@ -408,7 +407,6 @@ export function QuizSetup({
               {subjects.map((subject) => (
                 <option key={subject.id} value={subject.id}>
                   {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
-                  {(cardCountBySubject.get(subject.id) ?? 0) > 1 ? 's' : ''}
                 </option>
               ))}
             </Select>

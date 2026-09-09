@@ -1,4 +1,4 @@
-import { useSeen } from '@/components/motion/Reveal';
+import { CountUp, useSeen } from '@/components/motion/Reveal';
 import type { TrendPoint } from '@/core/progress';
 
 /**
@@ -43,7 +43,7 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
     <div ref={ref}>
       <div className="flex items-baseline gap-3">
         <span className="text-[1.9rem] font-semibold leading-none tabular-nums text-[var(--ink)]">
-          {last.masteryPct} %
+          <CountUp value={last.masteryPct} suffix=" %" />
         </span>
         <span
           data-progress-trend-delta

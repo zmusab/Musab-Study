@@ -8,22 +8,23 @@ import type { Chapter, ID, Subject } from '@/types';
  * Pastilles de matière — six teintes de la MÊME famille chaude que le reste de
  * l'application.
  *
- * L'ancienne première valeur était `#4F5BD5`, l'indigo saturé retiré partout
- * ailleurs quand la palette est passée au papier chaud. Comme c'est la couleur
- * proposée par défaut, la toute première matière créée par un utilisateur
- * portait donc systématiquement une pastille bleu vif au milieu d'une page
- * ocre : la seule tache froide de l'écran.
+ * L'ancienne première valeur était `#4F5BD5`, un indigo saturé. Comme c'est la
+ * couleur proposée par défaut, la toute première matière créée portait
+ * systématiquement une pastille bleu vif : la seule tache froide de l'écran.
+ * La première valeur est désormais l'or de l'application ; les cinq autres
+ * sont assez distinctes pour se reconnaître d'un coup d'œil, et assez
+ * désaturées pour ne pas se disputer l'accent.
  *
  * Les matières déjà créées gardent la couleur enregistrée en base — ces
  * valeurs ne servent qu'aux nouvelles.
  */
 export const SUBJECT_COLORS = [
-  '#A2542A',
+  '#B8912B',
   '#4A7C52',
-  '#8A6A2E',
-  '#8B566B',
   '#3F7A72',
-  '#A8443A',
+  '#8B566B',
+  '#A8583A',
+  '#5E6C8A',
 ] as const;
 
 export async function listSubjects(): Promise<Subject[]> {

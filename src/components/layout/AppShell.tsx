@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Fragment, useId, type ReactNode } from 'react';
 import { NAV_ENTRIES, type NavEntry } from './navigation';
+import { StudyPlates } from './StudyPlates';
 import { cn } from '@/lib/cn';
 import { springSoft } from '@/components/motion/transitions';
 import { useProfile } from '@/hooks/useProfile';
@@ -208,6 +209,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       data-theme={fullBleed ? 'dark' : undefined}
       style={fullBleed ? { background: 'var(--bg)' } : undefined}
     >
+      {/* Planches de fond — jamais sur les routes « cockpit » (Anatomie 3D,
+          lecteur PDF), où le contenu occupe tout l'écran. */}
+      {!fullBleed && <StudyPlates />}
       <Sidebar compact={fullBleed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main

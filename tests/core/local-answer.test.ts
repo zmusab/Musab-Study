@@ -81,16 +81,49 @@ describe('findLocalAnswer', () => {
     const answer = findLocalAnswer('nerf trijumeau', [scored(chunk)], LOOKUP);
     expect(answer).not.toBeNull();
 
-    // La réponse est désormais CHARPENTÉE : un titre qui nomme le sujet, puis
-    // une puce par fait. La garantie de fond ne change pas — chaque puce reste
-    // une phrase EXACTE du cours, jamais une reformulation.
-    const bullets = answer!.text
-      .split('\n')
-      .filter((line) => line.startsWith('- '))
-      .map((line) => line.slice(2));
+    /*
+     * La réponse est désormais une LEÇON CHARPENTÉE : un titre qui nomme le
+     * sujet, puis des rubriques dans l'ordre pédagogique (« Définition »,
+     * « Ce que ça comporte »…). Ce test fixe les deux garanties qui comptent,
+     * et elles ne sont pas les mêmes selon la partie de la réponse.
+     */
+    const lines = answer!.text.split('\n');
+    expect(answer!.text).toContain('**Le nerf trijumeau**');
+    expect(answer!.text).toContain('### Définition');
+
+    /*
+     * GARANTIE 1 — le CORPS de la réponse est verbatim. Chaque puce des
+     * rubriques est un extrait exact du cours : ni reformulation, ni
+     * recomposition. C'est ce qui rend la réponse vérifiable ligne à ligne.
+     * (Les sous-puces d'énumération sont indentées de deux espaces ; elles
+     * sont vérifiées séparément juste après.)
+     */
+    const retainIndex = lines.indexOf('### À retenir');
+    const bodyLines = retainIndex >= 0 ? lines.slice(0, retainIndex) : lines;
+    const bullets = bodyLines.filter((line) => line.startsWith('- ')).map((line) => line.slice(2));
     expect(bullets.length).toBeGreaterThanOrEqual(2);
     for (const bullet of bullets) expect(chunk.text.includes(bullet)).toBe(true);
-    expect(answer!.text).toContain('trouvés dans tes cours');
+
+    // Les éléments d'une énumération viennent eux aussi du texte, à la
+    // majuscule initiale près (« ophtalmique » → « Ophtalmique »).
+    const subItems = bodyLines.filter((line) => line.startsWith('  - ')).map((line) => line.slice(4));
+    expect(subItems.length).toBe(3);
+    for (const item of subItems) expect(chunk.text.toLowerCase()).toContain(item.toLowerCase());
+
+    /*
+     * GARANTIE 2 — « À retenir » est la SEULE ligne recomposée de toute la
+     * réponse, et elle l'est à partir de fragments eux-mêmes verbatim : le
+     * sujet du fait, et le décompte explicite relevé dans le cours
+     * (« trois branches »). Aucun mot n'y est inventé ; c'est une contraction,
+     * pas une paraphrase. La distinction est assumée, et testée ici pour
+     * qu'elle ne dérive pas.
+     */
+    expect(retainIndex).toBeGreaterThan(0);
+    const retain = lines.slice(retainIndex + 1).find((line) => line.startsWith('- '));
+    expect(retain).toBeDefined();
+    expect(retain).toContain('Le nerf trijumeau');
+    expect(retain).toContain('trois branches');
+    expect(chunk.text).toContain('trois branches');
   });
 
   it('ne répète pas deux fois le même extrait entre plusieurs fragments qui se recouvrent', () => {
