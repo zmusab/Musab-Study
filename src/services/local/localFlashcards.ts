@@ -1,4 +1,5 @@
 import { extractFacts, type RawFact } from './relationExtraction';
+import { comparisonKey } from '@/core/text';
 import { citationFromChunk } from './citation';
 import { isDuplicateQuestion } from '@/services/flashcards/dedupe';
 import type { CardDraft } from '@/services/flashcards/validate';
@@ -130,6 +131,12 @@ export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDra
           sourceChunkIds: [chunk.id],
           importance: input.importance,
           difficulty: input.difficulty,
+          // La carte RETIENT la notion d'où elle sort. Notions et flashcards
+          // naissaient déjà du même sujet extrait, mais chacune l'oubliait
+          // aussitôt : c'est ce qui empêchait l'application de dire « tu
+          // maîtrises le nerf trijumeau » plutôt que « la carte n°123 ».
+          notionKey: comparisonKey(fact.subject),
+          notionLabel: fact.subject,
         });
         proposedQuestions.push(candidate.question);
 

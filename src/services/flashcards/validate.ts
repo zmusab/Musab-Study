@@ -23,6 +23,9 @@ export interface CardDraft {
   sourceChunkIds: string[];
   importance: Importance;
   difficulty: Difficulty;
+  /** Notion d'où vient la carte — renseignée par le moteur local, absente du chemin IA. */
+  notionKey?: string | null;
+  notionLabel?: string | null;
 }
 
 export function validateCardDrafts(

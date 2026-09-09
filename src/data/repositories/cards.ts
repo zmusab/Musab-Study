@@ -6,7 +6,12 @@ import { buildDueQueue, initialSchedulingState, scheduleNext } from '@/core/srs'
 import type { Confidence, Flashcard, ID, Rating, ReviewLog } from '@/types';
 
 export type NewFlashcard = Pick<Flashcard, 'subjectId' | 'chapterId' | 'question' | 'answer'> &
-  Partial<Pick<Flashcard, 'importance' | 'difficulty' | 'origin' | 'sourceChunkIds'>>;
+  Partial<
+    Pick<
+      Flashcard,
+      'importance' | 'difficulty' | 'origin' | 'sourceChunkIds' | 'notionKey' | 'notionLabel'
+    >
+  >;
 
 export function buildFlashcard(input: NewFlashcard, now: Date = new Date()): Flashcard {
   return {
@@ -19,6 +24,8 @@ export function buildFlashcard(input: NewFlashcard, now: Date = new Date()): Fla
     difficulty: input.difficulty ?? 2,
     origin: input.origin ?? 'manual',
     sourceChunkIds: input.sourceChunkIds ?? [],
+    notionKey: input.notionKey ?? null,
+    notionLabel: input.notionLabel ?? null,
     createdAt: now.toISOString(),
     ...initialSchedulingState(now),
   };

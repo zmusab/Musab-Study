@@ -226,6 +226,25 @@ export interface Flashcard {
   origin: 'manual' | 'local' | 'ai' | 'quiz-error';
   /** Chunks ayant servi à la générer, quand elle vient de l'IA. */
   sourceChunkIds: ID[];
+
+  /**
+   * NOTION dont cette carte relève — le chaînon qui manquait.
+   *
+   * L'application savait dire « tu maîtrises la carte n°123 », jamais « tu
+   * maîtrises le nerf trijumeau » : les notions vivaient dans un blob JSON par
+   * chapitre, sans aucun lien vers les cartes. Or les deux SORTENT DÉJÀ du
+   * même endroit — le sujet d'un fait extrait du cours (voir
+   * `relationExtraction`). Il suffisait de le retenir.
+   *
+   * `notionKey` est la forme normalisée (via `core/text.comparisonKey`), donc
+   * la clé de regroupement ; `notionLabel` garde la formulation exacte du
+   * cours, pour l'affichage. Champs additifs et non indexés : aucune
+   * migration Dexie (règle documentée dans `db.ts`). Les cartes créées avant,
+   * et toutes les cartes manuelles, les laissent simplement vides — elles
+   * comptent alors dans la maîtrise globale, mais dans aucune notion.
+   */
+  notionKey?: string | null;
+  notionLabel?: string | null;
   createdAt: ISODateTime;
 }
 

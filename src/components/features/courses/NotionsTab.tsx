@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { Button, Icon, useToast } from '@/components/ui';
 import { db } from '@/data/db';
+import { listCards } from '@/data/repositories/cards';
+import { notionMastery, type NotionMastery } from '@/core/notions/mastery';
+import { comparisonKey } from '@/core/text';
 import { listChunks } from '@/data/repositories/documents';
 import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/notions';
 import { analyzeChapter, InsufficientChapterContentError } from '@/services/courses/notions';
@@ -22,7 +25,15 @@ import type { Chapter, ID } from '@/types';
  * local sans qu'on puisse honnêtement le savoir après coup, donc aucun
  * badge n'est affiché pour elle.
  */
-function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: Chapter }) {
+function ChapterAnalysisCard({
+  subjectId,
+  chapter,
+  masteryByKey,
+}: {
+  subjectId: ID;
+  chapter: Chapter;
+  masteryByKey: Map<string, NotionMastery>;
+}) {
   const { notify } = useToast();
   const navigate = useNavigate();
   const analysis = useLiveQuery(() => getChapterAnalysis(chapter.id), [chapter.id]);
@@ -98,6 +109,9 @@ function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: C
         <ul className="mt-3 flex flex-col gap-2 border-t border-[var(--line)] pt-3">
           {analysis.notions.map((notion) => {
             const firstCitation = notion.citations[0];
+            // La maîtrise de la NOTION, agrégée depuis les cartes qui en sont
+            // issues — le bout de la chaîne cours → notion → carte → révision.
+            const mastery = masteryByKey.get(comparisonKey(notion.label));
             return (
               <li
                 key={notion.id}
@@ -106,8 +120,20 @@ function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: C
                 <div className="min-w-0">
                   <p className="text-[0.86rem] font-medium">
                     {notion.label}
-                    {notion.isPitfall && <span className="ml-1.5 text-[0.72rem] text-[var(--danger)]">⚠️ piège fréquent</span>}
+                    {notion.isPitfall && <span className="ml-1.5 text-[0.72rem] text-[var(--danger)]">piège fréquent</span>}
                   </p>
+                  {mastery ? (
+                    <p className="mt-0.5 text-[0.74rem] text-[var(--ink-faint)]" data-notion-mastery={mastery.key}>
+                      {mastery.masteryPct === null
+                        ? `${mastery.cardCount} carte${mastery.cardCount > 1 ? 's' : ''} · jamais révisée`
+                        : `Maîtrise ${mastery.masteryPct} % · ${mastery.cardCount} carte${mastery.cardCount > 1 ? 's' : ''}`}
+                      {mastery.dueCount > 0 && ` · ${mastery.dueCount} à réviser`}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[0.74rem] text-[var(--ink-faint)]">
+                      Aucune carte ne porte encore sur cette notion.
+                    </p>
+                  )}
                 </div>
                 {firstCitation && firstCitation.page !== null && (
                   <button
@@ -115,7 +141,7 @@ function ChapterAnalysisCard({ subjectId, chapter }: { subjectId: ID; chapter: C
                     onClick={() => navigate(`/document/${firstCitation.documentId}?page=${firstCitation.page}`)}
                     className="shrink-0 rounded-full border border-[var(--accent)]/40 bg-[var(--accent-tint)] px-2.5 py-1 text-[0.72rem] font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-tint)]/70"
                   >
-                    📚 page {firstCitation.page}
+                    page {firstCitation.page}
                   </button>
                 )}
               </li>
@@ -131,6 +157,18 @@ export function NotionsTab({ subjectId, chapters }: { subjectId: ID; chapters: C
   const analyses = useLiveQuery(
     () => db.chapterAnalyses.where('subjectId').equals(subjectId).toArray(),
     [subjectId],
+  );
+
+  /*
+   * Les cartes de la matière portent désormais la notion dont elles sont
+   * issues (`Flashcard.notionKey`). Les regrouper ici donne, pour chaque
+   * notion affichée, sa maîtrise RÉELLE — mesurée sur les révisions, pas
+   * déclarée.
+   */
+  const cards = useLiveQuery(() => listCards(subjectId), [subjectId]);
+  const masteryByKey = useMemo(
+    () => new Map(notionMastery(cards ?? []).map((notion) => [notion.key, notion])),
+    [cards],
   );
 
   const analyzedCount = analyses?.length ?? 0;
@@ -155,7 +193,7 @@ export function NotionsTab({ subjectId, chapters }: { subjectId: ID; chapters: C
         </p>
       )}
       {chapters.map((chapter) => (
-        <ChapterAnalysisCard key={chapter.id} subjectId={subjectId} chapter={chapter} />
+        <ChapterAnalysisCard key={chapter.id} subjectId={subjectId} chapter={chapter} masteryByKey={masteryByKey} />
       ))}
     </div>
   );

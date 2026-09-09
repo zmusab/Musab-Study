@@ -185,6 +185,8 @@ export function FlashcardsPage() {
       // affichait donc « ✨ IA » sur des cartes purement locales.
       origin: draftsSource === 'ai' ? 'ai' : 'local',
       sourceChunkIds: currentDraft.sourceChunkIds,
+      notionKey: currentDraft.notionKey,
+      notionLabel: currentDraft.notionLabel,
     });
     setDraftIndex((i) => i + 1);
   };
