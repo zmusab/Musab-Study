@@ -5,6 +5,7 @@ import { createEvent, deleteEvent } from '@/data/repositories/calendar';
 import { dayKey, parseDayKey } from '@/lib/date';
 import type { CalendarEventKind, Subject } from '@/types';
 import { EVALUATION_KIND_LABELS, readinessLevel, type Evaluation } from '@/core/progress/exam';
+import { CountUp, useCascade } from '@/components/motion/Reveal';
 import type { ID } from '@/types';
 
 /**
@@ -43,6 +44,7 @@ export function EvaluationsCard({
   /** Évaluations montrées d'emblée ; le reste passe derrière « Voir toutes ». */
   limit?: number;
 }) {
+  const [listRef, cascadeProps] = useCascade<HTMLUListElement>();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const { notify } = useToast();
@@ -65,14 +67,23 @@ export function EvaluationsCard({
         </div>
       ) : (
         <Card padded={false}>
-          <ul className="divide-y divide-[var(--line)]" data-progress-evaluations>
+          <ul ref={listRef} className="divide-y divide-[var(--line)]" data-progress-evaluations>
             {shown.map((evaluation, index) => (
               <li
                 key={evaluation.event.id}
-                className={
-                  'flex items-center gap-3 px-4 py-3' + (index >= limit ? ' reveal' : '')
-                }
-                style={index >= limit ? ({ '--reveal-index': index - limit } as CSSProperties) : undefined}
+                {...(() => {
+                  // Même règle que les priorités : la cascade du défilement
+                  // pour ce qui est affiché d'emblée, celle du dépliage pour
+                  // ce que « Voir toutes » ajoute.
+                  const props =
+                    index >= limit
+                      ? { className: 'reveal', style: { '--reveal-index': index - limit } as CSSProperties }
+                      : cascadeProps(index);
+                  return {
+                    ...props,
+                    className: 'flex items-center gap-3 px-4 py-3' + (props.className ? ' ' + props.className : ''),
+                  };
+                })()}
               >
                 <span
                   aria-hidden
@@ -103,11 +114,15 @@ export function EvaluationsCard({
                   className="shrink-0 text-[0.85rem] font-medium tabular-nums"
                   style={{ color: urgencyColor(evaluation.daysUntil) }}
                 >
-                  {evaluation.daysUntil === 0
-                    ? 'Aujourd’hui'
-                    : evaluation.daysUntil === 1
-                      ? 'Demain'
-                      : `Dans ${evaluation.daysUntil} jours`}
+                  {evaluation.daysUntil === 0 ? (
+                    'Aujourd’hui'
+                  ) : evaluation.daysUntil === 1 ? (
+                    'Demain'
+                  ) : (
+                    <>
+                      Dans <CountUp value={evaluation.daysUntil} /> jours
+                    </>
+                  )}
                 </span>
 
                 {/* Planifier ouvre le vrai calendrier, où le plan de révision

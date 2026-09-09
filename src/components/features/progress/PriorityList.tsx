@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card } from '@/components/ui';
 import { BandDot } from './ProgressBits';
+import { useCascade } from '@/components/motion/Reveal';
 import { URGENCY_HORIZON_DAYS, type PriorityItem } from '@/core/progress/exam';
 
 /**
@@ -14,22 +15,25 @@ import { URGENCY_HORIZON_DAYS, type PriorityItem } from '@/core/progress/exam';
  * reçoit pas un faux 0 %.
  */
 export function PriorityList({ items, limit = 3 }: { items: PriorityItem[]; limit?: number }) {
+  // Deux cascades distinctes, jamais confondues : celle du DÉFILEMENT (la
+  // liste entre à l'écran) et celle du DÉPLIAGE (« Voir tout »). Une ligne
+  // déjà visible ne rejoue pas son entrée quand on déplie la suite.
+  const [listRef, cascadeProps] = useCascade<HTMLUListElement>();
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? items : items.slice(0, limit);
   const hidden = items.length - shown.length;
 
   return (
     <>
-      <ul className="flex flex-col gap-2" data-progress-priorities>
+      <ul ref={listRef} className="flex flex-col gap-2" data-progress-priorities>
       {shown.map((item, index) => {
         const urgent = item.evaluation !== null && item.evaluation.daysUntil <= URGENCY_HORIZON_DAYS;
         return (
           <li
             key={item.id}
-            // Les lignes révélées par « Voir tout » entrent en cascade ;
-            // celles déjà présentes ne rejouent pas leur animation.
-            className={index >= limit ? 'reveal' : undefined}
-            style={index >= limit ? ({ '--reveal-index': index - limit } as CSSProperties) : undefined}
+            {...(index >= limit
+              ? { className: 'reveal', style: { '--reveal-index': index - limit } as CSSProperties }
+              : cascadeProps(index))}
           >
             <Card className="flex flex-wrap items-center gap-3">
               <span

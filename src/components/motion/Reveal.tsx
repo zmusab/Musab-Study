@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 
 /**
  * APPARITION AU DÉFILEMENT — et pourquoi le montage ne suffisait pas.
@@ -165,6 +165,43 @@ export function Reveal({
       {children}
     </Component>
   );
+}
+
+/**
+ * CASCADE D'UNE LISTE, déclenchée à l'entrée de la liste dans la fenêtre.
+ *
+ * `Reveal` anime un bloc entier ; appliqué à chaque ligne il faudrait autant
+ * d'observateurs que d'éléments. Ici un SEUL observateur surveille le
+ * conteneur, et les enfants s'échelonnent en CSS pur (`--reveal-index`) :
+ * aucun rendu React supplémentaire, aucune animation par ligne à orchestrer
+ * en JavaScript.
+ *
+ * Tant que la liste n'a pas été vue, ses lignes sont transparentes — pas
+ * absentes. Le texte, les pourcentages et les liens sont dans le DOM dès le
+ * premier rendu : c'est la même règle que partout ailleurs ici, une animation
+ * ne porte jamais une valeur. Et `useSeen` garde son repli de 10 s, donc une
+ * panne d'`IntersectionObserver` finit par tout montrer.
+ *
+ * Sous « animation réduite », rien n'est masqué une seule image : on renvoie
+ * des propriétés vides.
+ */
+export function useCascade<T extends Element = HTMLElement>(): readonly [
+  (node: T | null) => void,
+  (index: number) => { className?: string; style?: CSSProperties },
+] {
+  const reduced = useReducedMotion();
+  const [ref, seen] = useSeen<T>();
+
+  const itemProps = (index: number) => {
+    if (reduced) return {};
+    if (!seen) return { style: { opacity: 0 } };
+    // Les déclarations d'animation l'emportent sur le style en ligne dans la
+    // cascade CSS : `.cascade` ramène donc bien l'opacité à 1, sans qu'il
+    // faille retirer l'`opacity: 0` d'abord (ce qui provoquerait un éclair).
+    return { className: 'cascade', style: { '--reveal-index': index } as CSSProperties };
+  };
+
+  return [ref, itemProps] as const;
 }
 
 /**

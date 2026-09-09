@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
-import { Reveal } from '@/components/motion/Reveal';
+import { CountUp, Reveal, useCascade } from '@/components/motion/Reveal';
 import { Button, Card, EmptyState, Icon, Input, Modal, useToast } from '@/components/ui';
 import { BandDot, EmptyHint, MasteryBar, SectionTitle } from '@/components/features/progress/ProgressBits';
 import { ProgressOverview } from '@/components/features/progress/ProgressOverview';
@@ -61,6 +61,14 @@ export function ProgressionPage() {
     if (!source || !openSubject) return [];
     return chapterProgress(openSubject, source.tables.chapters, source.tables.cards, source.tables.logs);
   }, [source, openSubject]);
+
+  /**
+   * Cascade de la liste des matières. Le crochet est appelé ICI, avec les
+   * autres, et non près du JSX : plusieurs retours anticipés (aucune matière,
+   * aucune carte) suivent, et un crochet placé après eux ne serait pas
+   * toujours exécuté.
+   */
+  const [subjectsRef, subjectItem] = useCascade<HTMLUListElement>();
 
   if (!source || !view) return null;
 
@@ -310,9 +318,9 @@ export function ProgressionPage() {
             calculeront matière par matière.
           </EmptyHint>
         ) : (
-          <ul className="flex flex-col gap-2" data-progress-subjects>
-            {view.subjects.map((entry) => (
-              <li key={entry.subject.id}>
+          <ul ref={subjectsRef} className="flex flex-col gap-2" data-progress-subjects>
+            {view.subjects.map((entry, index) => (
+              <li key={entry.subject.id} {...subjectItem(index)}>
                 <SubjectRow
                   entry={entry}
                   readiness={view.readiness.find((row) => row.subject.id === entry.subject.id) ?? null}
@@ -477,7 +485,7 @@ function SubjectRow({
             <span className="text-[0.78rem] text-[var(--ink-soft)]">Progression</span>
             <MasteryBar pct={entry.masteryPct} />
             <span className="w-14 text-right text-[0.85rem] font-semibold tabular-nums">
-              {entry.masteryPct === null ? '—' : `${entry.masteryPct} %`}
+              {entry.masteryPct === null ? '—' : <CountUp value={entry.masteryPct} suffix=" %" />}
             </span>
 
             <span className="text-[0.78rem] text-[var(--ink-soft)]">Suffisance</span>
@@ -486,7 +494,11 @@ function SubjectRow({
               className="w-14 text-right text-[0.85rem] font-semibold tabular-nums"
               style={{ color: readiness?.readiness.level?.colorVar ?? 'var(--ink-faint)' }}
             >
-              {readiness == null || readiness.readiness.pct === null ? '—' : `${readiness.readiness.pct} %`}
+              {readiness == null || readiness.readiness.pct === null ? (
+                '—'
+              ) : (
+                <CountUp value={readiness.readiness.pct} suffix=" %" />
+              )}
             </span>
           </span>
           <span

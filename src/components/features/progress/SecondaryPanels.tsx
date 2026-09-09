@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Button, Card, Icon, SegmentedControl } from '@/components/ui';
+import { CountUp, useCascade } from '@/components/motion/Reveal';
 import { EmptyHint, GoalBar } from './ProgressBits';
 import { StudyTimeChart } from './StudyTimeChart';
 import { TrendChart } from './TrendChart';
@@ -85,6 +86,12 @@ export function SecondaryPanels({
 }) {
   const todayIndex = time.week.findIndex((bucket) => bucket.day === dayKey(new Date(loadedAt)));
 
+  // Un observateur par liste : ces panneaux sont sur deux colonnes et, sur
+  // téléphone, empilés sur plusieurs écrans — ils n'entrent pas ensemble.
+  const [activityRef, activityItem] = useCascade<HTMLUListElement>();
+  const [goalsRef, goalItem] = useCascade<HTMLUListElement>();
+  const [upcomingRef, upcomingItem] = useCascade<HTMLUListElement>();
+
   return (
     <div
       className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start"
@@ -104,9 +111,13 @@ export function SecondaryPanels({
               </EmptyHint>
             </div>
           ) : (
-            <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]" data-progress-activity>
-              {activity.slice(0, 5).map((session) => (
-                <li key={session.id}>
+            <ul
+              ref={activityRef}
+              className="divide-y divide-[var(--line)] border-t border-[var(--line)]"
+              data-progress-activity
+            >
+              {activity.slice(0, 5).map((session, index) => (
+                <li key={session.id} {...activityItem(index)}>
                   <Link
                     to={`/cours/${session.subjectId}`}
                     className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
@@ -165,7 +176,7 @@ export function SecondaryPanels({
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[1.4rem] font-semibold leading-none tabular-nums" data-progress-streak>
-                {streak.current} jour{streak.current > 1 ? 's' : ''}
+                <CountUp value={streak.current} /> jour{streak.current > 1 ? 's' : ''}
               </p>
               <p className="mt-1.5 max-w-[16rem] text-[0.82rem] leading-snug text-[var(--ink-soft)]">
                 {streak.current === 0
@@ -251,16 +262,18 @@ export function SecondaryPanels({
           >
             Objectifs
           </PanelTitle>
-          <ul className="flex flex-col gap-3.5" data-progress-goals>
-            {goals.map((goal) => (
-              <li key={goal.label}>
+          <ul ref={goalsRef} className="flex flex-col gap-3.5" data-progress-goals>
+            {goals.map((goal, index) => (
+              <li key={goal.label} {...goalItem(index)}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-3">
                   <span className="text-[0.86rem] font-medium">{goal.label}</span>
                   <span className="text-[0.82rem] tabular-nums text-[var(--ink-soft)]">
                     {goal.kind === 'minutes'
                       ? `${formatDuration(goal.currentMs ?? goal.current * 60_000)} / ${formatDuration(goal.target * 60_000)}`
                       : `${goal.current} / ${goal.target}`}
-                    <span className="ml-2 text-[var(--ink-faint)]">{goal.pct} %</span>
+                    <span className="ml-2 text-[var(--ink-faint)]">
+                      <CountUp value={goal.pct} suffix=" %" />
+                    </span>
                   </span>
                 </div>
                 <GoalBar pct={goal.pct} />
@@ -283,11 +296,21 @@ export function SecondaryPanels({
               </EmptyHint>
             </div>
           ) : (
-            <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]" data-progress-upcoming>
+            <ul
+              ref={upcomingRef}
+              className="divide-y divide-[var(--line)] border-t border-[var(--line)]"
+              data-progress-upcoming
+            >
               {upcoming
                 .filter((day) => day.cards > 0)
-                .map((day) => (
-                  <li key={day.day} className="flex items-center gap-3 px-4 py-2.5">
+                .map((day, index) => {
+                  const cascade = upcomingItem(index);
+                  return (
+                  <li
+                    key={day.day}
+                    style={cascade.style}
+                    className={'flex items-center gap-3 px-4 py-2.5' + (cascade.className ? ' ' + cascade.className : '')}
+                  >
                     <span className="w-[6rem] shrink-0 text-[0.83rem] font-medium">{day.label}</span>
                     <span className="min-w-0 flex-1 truncate text-[0.82rem] text-[var(--ink-soft)]">
                       {day.subjects.map((s) => `${s.name} (${s.cards})`).join(' · ')}
@@ -296,7 +319,8 @@ export function SecondaryPanels({
                       {day.cards} carte{day.cards > 1 ? 's' : ''}
                     </span>
                   </li>
-                ))}
+                  );
+                })}
               {upcoming.every((day) => day.cards === 0) && (
                 <li className="px-4 py-4 text-[0.84rem] text-[var(--ink-soft)]">
                   Rien de programmé sur les sept prochains jours. Tes cartes sont à jour.

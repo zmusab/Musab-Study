@@ -528,6 +528,21 @@
     animation-delay: calc(var(--reveal-index, 0) * 26ms);
   }
 
+  /*
+   * CASCADE AU DÉFILEMENT — la même image-clé que `.reveal`, mais tenue plus
+   * longtemps et espacée davantage. `.reveal` sert à un changement d'état
+   * (une liste qu'on déplie sous le doigt) : il doit être quasi instantané.
+   * Ici la liste entre dans la fenêtre pendant qu'on fait défiler, et un
+   * effet de 200 ms est terminé avant même d'avoir été perçu.
+   *
+   * Le plafond de l'index évite qu'une longue liste fasse attendre sa
+   * dernière ligne : au-delà de la douzième, plus aucun retard ne s'ajoute.
+   */
+  .cascade {
+    animation: reveal-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(min(var(--reveal-index, 0), 12) * 55ms);
+  }
+
   /* Repli : la cascade s'inverse, plus courte — sortir doit être plus vif
      qu'entrer, sinon l'interface paraît lente. */
   .reveal-out {

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { masteryBand, type AnswerStats } from '@/core/progress';
 import { readinessLevel, URGENCY_HORIZON_DAYS, type Evaluation, type PriorityItem } from '@/core/progress/exam';
 import { parseDayKey } from '@/lib/date';
+import { CountUp, useSeen } from '@/components/motion/Reveal';
 
 /**
  * PREMIER ÉCRAN — la seule zone que l'on doit pouvoir lire en trois secondes.
@@ -205,8 +206,12 @@ function Metric({
    */
   alwaysFooter?: boolean;
 }) {
+  // La barre part de zéro à l'entrée à l'écran, comme toutes les autres de la
+  // page. Elle était la seule à naître déjà pleine : la transition CSS ne
+  // partait d'aucun état antérieur, donc n'animait rien.
+  const [ref, seen] = useSeen<HTMLDivElement>();
   return (
-    <div>
+    <div ref={ref}>
       <p className="flex items-center gap-1.5 text-[0.78rem] font-medium uppercase tracking-wide text-[var(--ink-faint)]">
         {label}
         {info && (
@@ -225,7 +230,7 @@ function Metric({
           className="text-[2rem] font-semibold leading-none tabular-nums"
           style={{ color: color ?? 'var(--ink-faint)' }}
         >
-          {value === null ? '—' : `${value} %`}
+          {value === null ? '—' : <CountUp value={value} suffix=" %" />}
         </span>
         <span className="text-[0.9rem] font-medium" style={{ color: color ?? 'var(--ink-faint)' }}>
           {caption ?? 'données insuffisantes'}
@@ -235,7 +240,7 @@ function Metric({
         <div
           className="h-full rounded-full"
           style={{
-            width: `${value ?? 0}%`,
+            width: `${seen ? (value ?? 0) : 0}%`,
             backgroundColor: color ?? 'var(--line-strong)',
             transition: 'width 800ms cubic-bezier(0.22, 0.61, 0.36, 1)',
           }}

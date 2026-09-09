@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui';
 import { EmptyHint } from './ProgressBits';
+import { CountUp, useCascade } from '@/components/motion/Reveal';
 import { masteryBand } from '@/core/progress';
 import type { StrengthItem } from '@/core/progress/exam';
 import type { WeakPoint } from '@/core/progress';
@@ -16,6 +17,10 @@ import type { WeakPoint } from '@/core/progress';
  * faibles en ont un, parce qu'il y a une action évidente à proposer.
  */
 export function WeakStrongPair({ weak, strengths }: { weak: WeakPoint[]; strengths: StrengthItem[] }) {
+  // Deux listes côte à côte, deux observateurs : sur un écran étroit elles
+  // sont empilées et n'entrent pas au même moment.
+  const [weakRef, weakItem] = useCascade<HTMLUListElement>();
+  const [strongRef, strongItem] = useCascade<HTMLUListElement>();
   return (
     <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
       <Card>
@@ -30,9 +35,9 @@ export function WeakStrongPair({ weak, strengths }: { weak: WeakPoint[]; strengt
             </EmptyHint>
           </div>
         ) : (
-          <ul className="mt-3 flex flex-col" data-progress-weak>
-            {weak.slice(0, 4).map((point) => (
-              <li key={point.id}>
+          <ul ref={weakRef} className="mt-3 flex flex-col" data-progress-weak>
+            {weak.slice(0, 4).map((point, index) => (
+              <li key={point.id} {...weakItem(index)}>
                 <Link
                   to={`/revisions?cards=${point.cardIds.join(',')}`}
                   className="flex min-h-[2.6rem] items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5 transition-colors hover:bg-[var(--surface-2)]"
@@ -58,7 +63,7 @@ export function WeakStrongPair({ weak, strengths }: { weak: WeakPoint[]; strengt
                       className="block text-[0.85rem] font-semibold leading-tight tabular-nums"
                       style={{ color: point.successRate < 0.5 ? 'var(--mastery-0)' : 'var(--mastery-1)' }}
                     >
-                      {Math.round(point.successRate * 100)} %
+                      <CountUp value={Math.round(point.successRate * 100)} suffix=" %" />
                     </span>
                     <span className="block text-[0.66rem] leading-tight text-[var(--ink-faint)]">réussite</span>
                   </span>
@@ -79,11 +84,14 @@ export function WeakStrongPair({ weak, strengths }: { weak: WeakPoint[]; strengt
             </EmptyHint>
           </div>
         ) : (
-          <ul className="mt-3 flex flex-col" data-progress-strengths>
-            {strengths.slice(0, 4).map((item) => (
+          <ul ref={strongRef} className="mt-3 flex flex-col" data-progress-strengths>
+            {strengths.slice(0, 4).map((item, index) => {
+              const cascade = strongItem(index);
+              return (
               <li
                 key={item.id}
-                className="flex min-h-[2.6rem] items-center gap-2.5 px-2 py-1.5"
+                style={cascade.style}
+                className={'flex min-h-[2.6rem] items-center gap-2.5 px-2 py-1.5' + (cascade.className ? ' ' + cascade.className : '')}
               >
                 <span
                   aria-hidden
@@ -102,12 +110,13 @@ export function WeakStrongPair({ weak, strengths }: { weak: WeakPoint[]; strengt
                     className="block text-[0.85rem] font-semibold leading-tight tabular-nums"
                     style={{ color: masteryBand(item.masteryPct).colorVar }}
                   >
-                    {item.masteryPct} %
+                    <CountUp value={item.masteryPct} suffix=" %" />
                   </span>
                   <span className="block text-[0.66rem] leading-tight text-[var(--ink-faint)]">maîtrise</span>
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Card>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, Icon } from '@/components/ui';
 import { MasteryBar } from './ProgressBits';
+import { CountUp, useSeen } from '@/components/motion/Reveal';
 import type { ExamReadiness } from '@/core/progress/exam';
 import type { Evaluation } from '@/core/progress/exam';
 import type { ChapterProgress } from '@/core/progress';
@@ -83,7 +84,7 @@ export function ReadinessPanel({
               className="text-[2.6rem] font-semibold leading-none tabular-nums"
               style={{ color: readiness.level!.colorVar }}
             >
-              {readiness.pct} %
+              <CountUp value={readiness.pct} suffix=" %" />
             </span>
             <span className="text-[0.95rem] font-medium" style={{ color: readiness.level!.colorVar }}>
               {readiness.level!.label}
@@ -171,7 +172,7 @@ export function ReadinessPanel({
                       </span>
                     </span>
                     <span className="shrink-0 text-[0.85rem] tabular-nums text-[var(--ink-soft)]">
-                      {component.pct} %
+                      <CountUp value={component.pct} suffix=" %" />
                     </span>
                   </div>
                   <div className="mt-1.5">
@@ -205,11 +206,18 @@ export function ReadinessPanel({
 
 /** Barre de suffisance — teinte imposée par le niveau, pas par la valeur brute. */
 function ReadinessBar({ pct, color }: { pct: number; color: string }) {
+  // Comme toutes les barres de la page : elle part de zéro au moment où on la
+  // voit, sans quoi la transition CSS n'a aucun état de départ à animer.
+  const [ref, seen] = useSeen<HTMLDivElement>();
   return (
-    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
+    <div ref={ref} className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
       <div
         className="h-full rounded-full"
-        style={{ width: `${pct}%`, backgroundColor: color, transition: 'width 800ms cubic-bezier(0.22,0.61,0.36,1)' }}
+        style={{
+          width: `${seen ? pct : 0}%`,
+          backgroundColor: color,
+          transition: 'width 800ms cubic-bezier(0.22,0.61,0.36,1)',
+        }}
       />
     </div>
   );
