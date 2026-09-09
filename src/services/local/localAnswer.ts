@@ -1,5 +1,7 @@
 import { extractFacts, type FactPredicate, type RawFact } from './relationExtraction';
 import { citationFromChunk } from './citation';
+import { stripBulletPrefix } from './textStructure';
+import { courseSections } from './courseLayout';
 import { significantWords } from '@/core/text';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 import type { Citation } from '@/types';
@@ -205,11 +207,106 @@ function composeAnswer(subject: string, facts: RawFact[]): string {
 }
 
 /**
+ * PASSAGES DU COURS PORTANT SUR LA QUESTION.
+ *
+ * ── POURQUOI CET ÉTAGE EXISTE ─────────────────────────────────────────────
+ * Mesuré sur un vrai cours de dentisterie (« Divisions du nerf trijumeau ») :
+ * à la question « peux-tu expliquer le nerf trijumeau », l'assistant
+ * répondait « Absent de tes cours » — sur un document qui porte ce titre.
+ *
+ * La cause n'était pas la recherche : le mot est bien là, dans plusieurs
+ * fragments. C'était l'ARCHITECTURE. Le moteur ne savait répondre QUE si une
+ * règle de relation avait produit un fait (« X est Y », « X se compose
+ * de… »). Un polycopié réel est fait de listes à puces, de titres et de
+ * phrases descriptives : la plupart de ses lignes ne déclenchent aucune
+ * règle. Tout ce savoir devenait donc invisible, et l'application affirmait
+ * une absence qui était fausse.
+ *
+ * Ce second étage répond à la seule question qui vaille : « qu'est-ce que mon
+ * cours dit là-dessus ? ». Il rassemble les lignes qui portent réellement sur
+ * le sujet demandé. Rien n'est reformulé, chaque ligne est un extrait exact.
+ *
+ * L'abstention reste entière : si aucun terme distinctif de la question
+ * n'apparaît nulle part, on ne renvoie toujours RIEN. On ne remplace pas un
+ * faux « absent » par un faux « présent ».
+ */
+/*
+ * Trois sections au plus. Le moteur en trouvait jusqu'à huit : la réponse à
+ * « nerf frontal » commençait alors par la section « nerf ophtalmique », où le
+ * mot n'apparaît qu'en passant dans une énumération, et la vraie section
+ * arrivait en quatrième position. Une réponse juste mais noyée n'est pas une
+ * réponse.
+ */
+const MAX_SECTIONS = 3;
+const MAX_LINES_PER_SECTION = 8;
+
+/**
+ * Sections du cours qui portent sur la question, titre compris, les plus
+ * pertinentes d'abord.
+ *
+ * Le rattachement au titre est ce qui distingue une réponse utile d'une
+ * collection de phrases orphelines : « Il entre dans l'orbite par la fissure
+ * orbitaire supérieure » ne veut rien dire seul ; sous « Nerf frontal », c'en
+ * est la description.
+ *
+ * Le CLASSEMENT compte autant que la sélection. Une section dont le TITRE
+ * porte les termes de la question traite du sujet ; une section qui ne les
+ * mentionne que dans une puce parle d'autre chose et ne fait que citer le
+ * terme au passage.
+ */
+function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredChunk[]): {
+  passages: string[];
+  chunkIds: string[];
+} {
+  const found: { rendered: string; chunkId: string; score: number }[] = [];
+  const seen = new Set<string>();
+
+  for (const { chunk } of scoredChunks) {
+    for (const section of courseSections(chunk.text)) {
+      const body = section.lines.map((line) => stripBulletPrefix(line).trim()).filter(Boolean);
+      const whole = [section.heading ?? '', ...body].join(' ');
+
+      // La section doit porter TOUS les termes distinctifs : une section qui ne
+      // contient que « nerf » dans un cours de neuro-anatomie ne traite pas
+      // spécifiquement de ce qui est demandé.
+      if ([...required].some((term) => !significantWords(whole).has(term))) continue;
+
+      const key = whole.slice(0, 160).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const headingTerms = section.heading ? significantWords(section.heading) : new Set<string>();
+      const inHeading = [...required].filter((term) => headingTerms.has(term)).length;
+      // Titre entièrement concordant : c'est LA section du sujet.
+      const score = inHeading === required.size ? 100 + inHeading : inHeading;
+
+      const rendered = section.heading
+        ? [`**${section.heading}**`, ...body.slice(0, MAX_LINES_PER_SECTION).map((line) => `  - ${line}`)]
+        : body.slice(0, MAX_LINES_PER_SECTION).map((line) => `- ${line}`);
+      if (rendered.length === 0) continue;
+
+      found.push({ rendered: rendered.join('\n'), chunkId: chunk.id, score });
+    }
+  }
+
+  found.sort((a, b) => b.score - a.score);
+  const kept = found.slice(0, MAX_SECTIONS);
+  return { passages: kept.map((entry) => entry.rendered), chunkIds: kept.map((entry) => entry.chunkId) };
+}
+
+/**
  * Tente de répondre localement à `question`, à partir des fragments déjà
  * retrouvés par BM25 (`scoredChunks`, réutilisés tels quels — aucune nouvelle
- * recherche). `null` dès qu'aucun fait ne répond réellement à ce qui est
- * demandé : l'appelant affiche alors un message honnête et propose l'IA en
- * option explicite, il ne comble jamais le vide.
+ * recherche).
+ *
+ * Deux étages, dans cet ordre :
+ *  1. les FAITS reconnus par les règles, rangés par nature de savoir — c'est
+ *     la réponse la mieux structurée, quand le cours s'y prête ;
+ *  2. à défaut, les PASSAGES du cours qui portent sur le sujet.
+ *
+ * `null` seulement si le cours ne parle vraiment pas de ce qui est demandé :
+ * l'appelant affiche alors un message honnête et propose l'IA en option, il ne
+ * comble jamais le vide.
  */
 export function findLocalAnswer(
   question: string,
@@ -223,36 +320,31 @@ export function findLocalAnswer(
   const required = distinctiveTerms(questionTerms, chunkTermSets);
   if (required === null) return null;
 
+  const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
+
+  // ── Étage 1 : les faits reconnus ──
   const matches: { fact: RawFact; chunkId: string; score: number; order: number }[] = [];
   let order = 0;
   for (const { chunk } of scoredChunks) {
     for (const fact of extractFacts(chunk)) {
       order += 1;
-      // `'low'` n'est aujourd'hui jamais émis (l'abstention se fait à la
-      // source, dans `relationExtraction`), mais le garde-fou reste : si une
-      // règle future émet un fait douteux, il ne doit pas devenir une réponse.
       if (fact.confidence === 'low') continue;
 
-      // Le fait doit traiter CE qui est demandé : tous les termes distinctifs
-      // de la question doivent s'y trouver, sujet ou phrase source.
       const factTerms = significantWords(`${fact.subject} ${fact.sourceExcerpt}`);
       if ([...required].some((term) => !factTerms.has(term))) continue;
 
-      // …et porter sur le bon sujet, pas seulement mentionner le terme au passage.
       const score = subjectOverlap(questionTerms, significantWords(fact.subject));
       if (score < SUBJECT_OVERLAP_FLOOR) continue;
 
       matches.push({ fact, chunkId: chunk.id, score, order });
     }
   }
-  if (matches.length === 0) return null;
 
   matches.sort(
     (a, b) =>
       b.score - a.score || PREDICATE_PRIORITY[a.fact.predicate] - PREDICATE_PRIORITY[b.fact.predicate] || a.order - b.order,
   );
 
-  const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
   const seenExcerpts = new Set<string>();
   const kept: RawFact[] = [];
   const citations: Citation[] = [];
@@ -270,14 +362,31 @@ export function findLocalAnswer(
     if (kept.length >= MAX_FACTS_IN_ANSWER) break;
   }
 
-  if (kept.length === 0) return null;
+  if (kept.length > 0) {
+    return { text: composeAnswer(kept[0]!.subject, kept), citations };
+  }
 
-  /*
-   * Le titre de la leçon est le sujet du fait le MIEUX CLASSÉ, verbatim du
-   * cours — pas celui du premier fait rencontré dans le document. Les faits
-   * sont ensuite remis dans l'ordre pédagogique par `composeAnswer`, mais le
-   * sujet, lui, doit rester celui que la question visait.
-   */
-  const subject = kept[0]!.subject;
-  return { text: composeAnswer(subject, kept), citations };
+  // ── Étage 2 : à défaut de fait reconnu, ce que le cours dit du sujet ──
+  const { passages, chunkIds } = relevantPassages(required, scoredChunks);
+  if (passages.length === 0) return null;
+
+  const label = [...questionTerms].join(' ');
+  const text = [
+    `Voici ce que ton cours dit à propos de **${label}** :`,
+    '',
+    ...passages.map((passage) => passage),
+    '',
+    '_Ces lignes viennent telles quelles de ton document. Le moteur local les retrouve et les regroupe ; il ne les reformule pas._',
+  ].join('\n');
+
+  const passageCitations: Citation[] = [];
+  const seenChunks = new Set<string>();
+  chunkIds.forEach((chunkId, index) => {
+    if (seenChunks.has(chunkId)) return;
+    seenChunks.add(chunkId);
+    const chunk = chunkById.get(chunkId);
+    if (chunk) passageCitations.push(citationFromChunk(chunk, lookup, passages[index]!));
+  });
+
+  return { text, citations: passageCitations };
 }

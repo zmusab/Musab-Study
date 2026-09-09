@@ -131,13 +131,52 @@ await page.waitForTimeout(700);
 check('L’assistant s’ouvre sur la matière importée',
   await page.getByRole('heading', { name: 'IA', exact: true }).isVisible());
 
+/*
+ * ── UNE QUESTION À LAQUELLE LE COURS RÉPOND ──
+ *
+ * Le cours importé dit : « Son innervation motrice est assurée par le nerf
+ * massétérique ». Cette vérification attendait auparavant le message
+ * d'abstention — elle figeait donc le DÉFAUT : le moteur ne savait répondre
+ * que si une règle « X est Y » avait matché, et se déclarait incompétent sur
+ * une question dont la réponse était écrite noir sur blanc. Mesuré sur un vrai
+ * polycopié, ça donnait huit « Absent de tes cours » sur huit questions.
+ */
 await page.getByPlaceholder(/question sur tes cours/).fill('Innervation du masséter ?');
 await page.getByRole('button', { name: 'Envoyer' }).click();
-await page.waitForTimeout(900);
-check('Sans réponse locale assez fiable, un message honnête est affiché — jamais un échec silencieux, jamais d’invention',
-  await page.getByText(/Tu peux activer un assistant IA/).isVisible());
-check('Le bouton « Répondre avec l’IA » propose l’IA en option explicite, jamais imposée',
-  await page.locator('[data-ai-answer-with-ai]').isVisible());
+await page.waitForTimeout(1200);
+// Le terme n'apparaît nulle part ailleurs sur cet écran : le voir, c'est que
+// la réponse vient bien du cours.
+check(
+  'Une question à laquelle le cours répond obtient bien la réponse du cours',
+  await page.getByText(/nerf massétérique/i).first().isVisible(),
+);
+check(
+  'La réponse est citée du cours, jamais inventée — la provenance le dit',
+  await page.getByText(/aucun appel IA|tes cours/).first().isVisible(),
+);
+
+/*
+ * ── UNE QUESTION HORS DU COURS ──
+ *
+ * L'abstention reste entière, et c'est elle qui garantit qu'aucune réponse
+ * n'est inventée : sur un sujet absent du document, l'application le DIT.
+ *
+ * Il existe deux chemins d'abstention, et celui-ci est le plus strict : quand
+ * la recherche ne remonte AUCUN passage, aucun bouton « Répondre avec l'IA »
+ * n'est proposé — délibérément. Sans le moindre extrait à citer, une réponse
+ * d'IA ne serait fondée sur rien, et l'application ne propose pas une option
+ * qu'elle sait mauvaise. L'IA reste accessible, mais par un choix explicite
+ * de l'utilisateur dans le sélecteur d'assistant.
+ */
+await page.getByPlaceholder(/question sur tes cours/).fill('Explique-moi la vascularisation du foie');
+await page.getByRole('button', { name: 'Envoyer' }).click();
+await page.waitForTimeout(1200);
+check('Sur un sujet absent du cours, un message honnête est affiché — jamais un échec silencieux, jamais d’invention',
+  await page.getByText(/Aucun passage de tes cours ne correspond/).isVisible());
+check('Rien n’est inventé pour combler le vide — la provenance l’annonce',
+  await page.getByText('Absent de tes cours').first().isVisible());
+check('L’IA reste un choix explicite de l’utilisateur, jamais déclenchée d’office',
+  await page.locator('[data-ai-assistant]').isVisible());
 
 await page.screenshot({
   path: `${process.env.SCREENSHOT_DIR ?? './dist-screenshots'}/ipad-cours.png`,

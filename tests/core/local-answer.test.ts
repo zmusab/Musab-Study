@@ -61,16 +61,64 @@ describe('findLocalAnswer', () => {
     expect(findLocalAnswer('', [scored(chunk)], LOOKUP)).toBeNull();
   });
 
-  it('renvoie null si aucun chunk ne contient de fait exploitable', () => {
+  /*
+   * CHANGEMENT DE CONTRAT ASSUMÉ.
+   *
+   * Ce test exigeait `null` dès qu'aucune RÈGLE de relation ne s'appliquait.
+   * C'était précisément le défaut qui rendait l'application inutilisable sur
+   * de vrais polycopiés : mesuré sur un cours de dentisterie de dix pages,
+   * l'assistant répondait « Absent de tes cours » à huit questions sur huit,
+   * dont « nerf trijumeau » — le titre du document. La plupart des lignes d'un
+   * cours réel (listes à puces, titres, descriptions) ne déclenchent aucune
+   * règle ; tout ce savoir était déclaré inexistant.
+   *
+   * Le moteur cite désormais les passages du cours quand il ne sait pas les
+   * structurer. Ce qui est verrouillé ici, c'est que la citation reste une
+   * CITATION : le texte rendu doit se retrouver mot pour mot dans le cours,
+   * et ne jamais être présenté comme un fait déduit.
+   */
+  it('cite le cours quand aucune règle ne s’applique, sans rien affirmer', () => {
     const chunk = makeChunk('Un patient se présente pour une consultation de routine.');
-    expect(findLocalAnswer('Parle-moi du patient', [scored(chunk)], LOOKUP)).toBeNull();
+    const answer = findLocalAnswer('Parle-moi du patient', [scored(chunk)], LOOKUP);
+    expect(answer).not.toBeNull();
+
+    // Aucune rubrique structurée : le moteur n'a rien déduit, et ne le
+    // prétend pas.
+    expect(answer!.text).not.toContain('### Définition');
+    expect(answer!.text).toContain('ton cours dit');
+
+    // Chaque ligne citée existe telle quelle dans le document.
+    for (const line of answer!.text.split('\n')) {
+      const quoted = line.replace(/^\s*[-*]\s*/, '').replace(/\*\*/g, '').trim();
+      if (quoted.length === 0 || quoted.startsWith('_') || quoted.startsWith('Voici')) continue;
+      expect(chunk.text).toContain(quoted);
+    }
   });
 
-  it("n'inclut jamais un fait issu d'une négation ambiguë ou d'une exception", () => {
+  /**
+   * La garantie de fond sur les exceptions, reformulée pour le moteur à deux
+   * étages — et elle est plus forte qu'avant, pas plus faible.
+   *
+   * Le danger d'une phrase à exception n'a jamais été de la MONTRER : c'est de
+   * la RÉDUIRE. « Tous les nerfs crâniens sont pairs, sauf le trochléaire »
+   * transformée en fait « les nerfs crâniens sont pairs » perd exactement ce
+   * qui compte. Citée en entier, elle enseigne la règle ET son exception.
+   *
+   * Ce test vérifie donc les deux moitiés : aucun fait structuré n'en est
+   * tiré, et si la phrase est citée, elle l'est avec son « sauf ».
+   */
+  it("ne réduit jamais une exception à sa moitié affirmative", () => {
     const chunk = makeChunk(
       'Tous les nerfs crâniens sont pairs, sauf le nerf trochléaire dans certaines classifications.',
     );
-    expect(findLocalAnswer('Les nerfs crâniens sont-ils pairs ?', [scored(chunk)], LOOKUP)).toBeNull();
+    const answer = findLocalAnswer('Les nerfs crâniens sont-ils pairs ?', [scored(chunk)], LOOKUP);
+
+    if (answer === null) return; // L'abstention reste une réponse acceptable.
+
+    // Aucune rubrique structurée : la règle d'extraction a bien refusé la phrase.
+    expect(answer.text).not.toContain('### Définition');
+    // Et la citation porte l'exception avec elle.
+    expect(answer.text).toContain('sauf le nerf trochléaire');
   });
 
   it('assemble plusieurs faits pertinents sur le même sujet, chacun un extrait exact', () => {

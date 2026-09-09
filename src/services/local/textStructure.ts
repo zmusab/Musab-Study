@@ -22,7 +22,18 @@ export function splitIntoSentences(text: string): string[] {
     .filter((sentence) => sentence.length > 0);
 }
 
-const BULLET_PREFIX = /^\s*(?:[-•*▪‣]|\d{1,2}[.)]|[a-zA-Z][.)])\s+/;
+/*
+ * Marqueurs de puce réellement rencontrés dans des polycopiés PDF, et pas
+ * seulement ceux d'un éditeur Markdown. Mesuré sur un cours de dentisterie :
+ * « § » y apparaît 31 fois et « → » 14 fois — les deux marqueurs les plus
+ * fréquents du document — alors qu'aucun des deux n'était reconnu. Résultat,
+ * la puce restait collée au sujet extrait (« § Nerf lacrymal ») et aucune
+ * question ne pouvait le retrouver.
+ *
+ * Le « o » minuscule (puce de troisième niveau sous Word) exige d'être suivi
+ * d'une majuscule : sinon il couperait le mot « o rbitaire ».
+ */
+const BULLET_PREFIX = /^\s*(?:[-•*▪‣§◦▫→⇒➔►]|o(?=\s+[A-ZÀ-Þ])|\d{1,2}[.)]|[a-zA-Z][.)])\s+/;
 
 export function isBulletLine(line: string): boolean {
   return BULLET_PREFIX.test(line);

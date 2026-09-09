@@ -1,4 +1,5 @@
 import {
+  stripBulletPrefix,
   detectInlineEnumeration,
   detectBulletEnumerations,
   detectLeadingCount,
@@ -265,17 +266,95 @@ function endsOnCompleteSentence(sentence: string): boolean {
   return /[.!?:;»)\]]\s*$/.test(sentence.trim());
 }
 
-export function extractFacts(chunk: DocumentChunk): RawFact[] {
-  const sentences = splitIntoSentences(chunk.text);
-  const sentenceFacts = sentences
-    .map((sentence, index) => {
-      // Seule la DERNIÈRE phrase du fragment peut être tronquée par la
-      // découpe ; les autres sont entières par construction.
-      const isLast = index === sentences.length - 1;
-      if (isLast && !endsOnCompleteSentence(sentence)) return null;
-      return factFromSentence(sentence, chunk);
-    })
-    .filter((fact): fact is RawFact => fact !== null);
+/**
+ * TITRE COURANT — le sujet que la phrase ne répète pas.
+ *
+ * Un polycopié écrit « Nerf frontal » sur une ligne, puis « Il entre dans
+ * l'orbite par la fissure orbitaire supérieure. ». Le sujet de la phrase est
+ * un pronom : `isPlausibleSubject` le rejette, à juste titre — « Il » ne
+ * nomme rien. Résultat mesuré sur un vrai cours : la question « nerf frontal »
+ * ne trouvait AUCUNE réponse, alors que le document lui consacre une section
+ * entière.
+ *
+ * Le sujet n'est pas absent : il est une ligne plus haut. Ce repérage
+ * attribue à une phrase à pronom le dernier TITRE rencontré.
+ *
+ * Ce que ça ne fait pas — et c'est la limite qui garde le procédé honnête :
+ *  - l'extrait source n'est JAMAIS réécrit ; seul le champ `subject`, qui sert
+ *    à regrouper et à retrouver, reçoit le titre ;
+ *  - la substitution n'a lieu que si la phrase commence par un pronom, jamais
+ *    si elle nomme déjà son sujet ;
+ *  - un titre trop long, ponctué, ou qui n'est pas un groupe nominal
+ *    plausible, n'est pas retenu.
+ */
+const HEADING_MAX_CHARS = 70;
+const PRONOUN_SUBJECT = /^(?:il|elle|ils|elles|celui-ci|celle-ci|ce dernier|cette dernière)\b/i;
 
-  return [...sentenceFacts, ...factsFromBullets(chunk)];
+function headingCandidate(line: string): string | null {
+  const trimmed = line.replace(/^[\s•§▪‣◦▫→⇒➔►o]+/u, '').replace(/\s*:\s*$/, '').trim();
+  if (trimmed.length < 3 || trimmed.length > HEADING_MAX_CHARS) return null;
+  // Un titre ne se termine pas par un point : ça, c'est une phrase.
+  if (/[.!?]$/.test(trimmed)) return null;
+  if (!isPlausibleSubject(trimmed)) return null;
+  return trimmed;
+}
+
+/**
+ * Réécrit le sujet d'un fait quand la phrase commence par un pronom et qu'un
+ * titre le précède. `sourceExcerpt` reste identique au caractère près.
+ */
+function attributeToHeading(fact: RawFact, sentence: string, heading: string | null): RawFact {
+  if (!heading) return fact;
+  if (!PRONOUN_SUBJECT.test(sentence.trim())) return fact;
+  return {
+    ...fact,
+    subject: heading,
+    // Un sujet déduit de la mise en page, non écrit dans la phrase : jamais
+    // 'high'. Une carte ou une réponse en tiendra compte.
+    confidence: fact.confidence === 'high' ? 'medium' : fact.confidence,
+  };
+}
+
+export function extractFacts(chunk: DocumentChunk): RawFact[] {
+  const facts: RawFact[] = [];
+  let heading: string | null = null;
+
+  for (const rawLine of chunk.text.split('\n')) {
+    /*
+     * La puce est retirée AVANT toute analyse. Sans cela, le sujet extrait
+     * était « § Nerf lacrymal » ou « → Dans son trajet le nerf ophtalmique » :
+     * un marqueur de mise en page se retrouvait dans le nom de la notion, et
+     * plus aucune question ne pouvait le retrouver.
+     *
+     * L'extrait reste un sous-extrait exact du fragment : on n'enlève qu'un
+     * préfixe, on ne réécrit rien.
+     */
+    const line = stripBulletPrefix(rawLine);
+    const sentences = splitIntoSentences(line);
+
+    // Une ligne courte, sans ponctuation finale, qui ne produit aucun fait :
+    // c'est un titre de section. On la retient pour les lignes suivantes.
+    if (sentences.length === 1) {
+      const candidate = headingCandidate(line);
+      if (candidate && !/[.!?]$/.test(line.trim())) {
+        const own = factFromSentence(sentences[0]!, chunk);
+        if (!own) {
+          heading = candidate;
+          continue;
+        }
+      }
+    }
+
+    sentences.forEach((sentence, index) => {
+      // Seule la DERNIÈRE phrase d'une ligne peut être tronquée par la
+      // découpe en fragments ; les autres sont entières par construction.
+      const isLast = index === sentences.length - 1;
+      if (isLast && !endsOnCompleteSentence(sentence)) return;
+
+      const fact = factFromSentence(sentence, chunk);
+      if (fact) facts.push(attributeToHeading(fact, sentence, heading));
+    });
+  }
+
+  return [...facts, ...factsFromBullets(chunk)];
 }
