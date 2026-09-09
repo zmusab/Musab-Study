@@ -15,6 +15,27 @@ import {
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
 import { createSubject, SUBJECT_COLORS } from '@/data/repositories/subjects';
 import { cn } from '@/lib/cn';
+import { plural } from '@/lib/plural';
+
+/**
+ * Compteurs d'une matière, écrits comme on les dirait.
+ *
+ * La version précédente affichait quatre lignes systématiquement, y compris
+ * « 0 carte(s) 0 note(s) » : trois quarts de l'information étaient donc du
+ * bruit sur une matière qu'on vient de créer, et le « (s) » entre parenthèses
+ * donnait au tout un air de sortie de base de données. Un compteur à zéro
+ * n'apprend rien — sauf le premier, celui des chapitres, dont l'absence est
+ * justement l'information utile (« cette matière est vide »).
+ */
+function summarize(stats: { chapters: number; documents: number; cards: number; notes: number }): string[] {
+  if (stats.chapters === 0) return ['Aucun chapitre pour l’instant'];
+
+  const lines = [plural(stats.chapters, 'chapitre')];
+  if (stats.documents > 0) lines.push(plural(stats.documents, 'document'));
+  if (stats.cards > 0) lines.push(plural(stats.cards, 'carte'));
+  if (stats.notes > 0) lines.push(plural(stats.notes, 'note'));
+  return lines;
+}
 
 /** Liste des matières, avec leurs compteurs réels. */
 export function CoursesPage() {
@@ -92,6 +113,7 @@ export function CoursesPage() {
       {subjects === undefined ? null : subjects.length === 0 ? (
         <EmptyState
           icon={<Icon name="courses" size={30} />}
+          mark="Ca₁₀(PO₄)₆(OH)₂"
           title="Commence par créer une matière"
           description="Une matière contient des chapitres, et chaque chapitre contient tes documents de cours. C’est à partir d’eux que l’IA, les flashcards et les quiz travailleront."
           action={<Button onClick={() => setCreating(true)}>Créer ma première matière</Button>}
@@ -118,12 +140,7 @@ export function CoursesPage() {
 
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-[var(--ink-soft)]">
                     {stats ? (
-                      <>
-                        <span>{stats.chapters} chapitre(s)</span>
-                        <span>{stats.documents} document(s)</span>
-                        <span>{stats.cards} carte(s)</span>
-                        <span>{stats.notes} note(s)</span>
-                      </>
+                      summarize(stats).map((line) => <span key={line}>{line}</span>)
                     ) : (
                       <span>Chargement…</span>
                     )}

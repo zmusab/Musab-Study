@@ -14,6 +14,7 @@ import { computeStreak } from '@/core/progress';
 import { evaluateAnswer, type AnswerVerdict } from '@/core/revisions/evaluateAnswer';
 import { deriveRating, type AutoRating } from '@/core/revisions/autoRating';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
+import { agree, plural } from '@/lib/plural';
 
 /**
  * Session de révision espacée.
@@ -50,11 +51,18 @@ const CONFIDENCE_FOR_RATING: Record<Rating, Confidence> = {
   3: 'high',
 };
 
+/*
+ * Le verdict est déjà rendu dans SA couleur, sur SON fond teinté. Le rond
+ * emoji qui précédait le mot disait donc une troisième fois la même chose —
+ * et dans une palette qui n'est pas celle de l'application : le 🟢 d'iOS n'est
+ * pas la sauge de `--success`, le 🔴 n'est pas la brique de `--danger`. Deux
+ * verts côte à côte, dont un seul est le bon, se voient immédiatement.
+ */
 const VERDICT_LABEL: Record<AnswerVerdict, { text: string; color: string; tint: string }> = {
-  correct: { text: '🟢 Correct', color: 'var(--success)', tint: 'var(--success-tint)' },
-  partial: { text: '🟡 Partiellement correct', color: 'var(--warning)', tint: 'var(--warning-tint)' },
-  incorrect: { text: '🔴 Incorrect', color: 'var(--danger)', tint: 'var(--danger-tint)' },
-  indeterminate: { text: '⚪ Évaluation indisponible', color: 'var(--ink-soft)', tint: 'var(--surface-2)' },
+  correct: { text: 'Correct', color: 'var(--success)', tint: 'var(--success-tint)' },
+  partial: { text: 'Partiellement correct', color: 'var(--warning)', tint: 'var(--warning-tint)' },
+  incorrect: { text: 'Incorrect', color: 'var(--danger)', tint: 'var(--danger-tint)' },
+  indeterminate: { text: 'Évaluation indisponible', color: 'var(--ink-soft)', tint: 'var(--surface-2)' },
 };
 
 const VERDICT_MESSAGE: Record<AnswerVerdict, string | null> = {
@@ -144,7 +152,7 @@ function ReviewSession({
       <div className="mb-2 flex items-center justify-between">
         <Chip>{subjectName(current.subjectId)}</Chip>
         <p className="text-[0.8rem] text-[var(--ink-faint)]">
-          {reviewed}/{total} révisée(s) · {queue.length} restante(s)
+          {reviewed}/{total} {agree(reviewed, 'révisée')} · {plural(queue.length, 'restante')}
         </p>
       </div>
       <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
@@ -353,6 +361,7 @@ export function RevisionsPage() {
         <PageHeader title="Révisions" />
         <EmptyState
           icon={<Icon name="review" size={30} />}
+          mark="1 · 3 · 7 · 14 · 30 j"
           title="Importe d’abord un cours"
           description="La répétition espacée porte sur tes flashcards. Crée une matière, ajoute un document, puis des cartes avant de réviser."
           action={
@@ -416,6 +425,7 @@ export function RevisionsPage() {
       {totalDue === 0 ? (
         <EmptyState
           icon={<Icon name="review" size={30} />}
+          mark="I(n) = I(n−1) × EF"
           title="Tout est à jour"
           description="Aucune carte due pour l’instant. Reviens quand la répétition espacée en aura reprogrammé."
         />
@@ -437,7 +447,7 @@ export function RevisionsPage() {
                   <div className="min-w-0">
                     <p className="truncate text-[0.95rem] font-medium">{subject.name}</p>
                     <p className="text-[0.78rem] text-[var(--ink-faint)]">
-                      {due > 0 ? `${due} due(s)` : 'à jour'}
+                      {due > 0 ? plural(due, 'due') : 'à jour'}
                     </p>
                   </div>
                 </div>

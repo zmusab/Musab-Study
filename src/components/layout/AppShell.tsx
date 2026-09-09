@@ -1,8 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useId, type ReactNode } from 'react';
+import { Fragment, useId, type ReactNode } from 'react';
 import { NAV_ENTRIES, type NavEntry } from './navigation';
-import { StudyBackdrop } from './StudyBackdrop';
 import { cn } from '@/lib/cn';
 import { springSoft } from '@/components/motion/transitions';
 import { useProfile } from '@/hooks/useProfile';
@@ -38,8 +37,8 @@ function NavItem({ entry, indicatorId, compact }: { entry: NavEntry; indicatorId
       aria-label={compact ? entry.label : undefined}
       title={compact ? entry.label : undefined}
       className={cn(
-        'group relative flex items-center rounded-[var(--radius-control)] py-2.5',
-        'text-[0.9rem] font-medium transition-colors duration-150',
+        'group relative flex items-center rounded-[var(--radius-control)] py-2',
+        'text-[0.875rem] font-medium transition-colors duration-150',
         '[-webkit-tap-highlight-color:transparent] hover:bg-[var(--surface-2)]',
         'text-[var(--ink-soft)] hover:text-[var(--ink)]',
         'aria-[current=page]:text-[var(--accent-ink)]',
@@ -79,27 +78,44 @@ function Sidebar({ compact }: { compact?: boolean }) {
     <aside
       className={cn(
         'hidden shrink-0 border-r border-[var(--line)] bg-[var(--bg-elevated)] md:flex md:flex-col',
-        compact ? 'w-16' : 'w-60',
+        compact ? 'w-16' : 'w-[13.5rem]',
       )}
     >
-      <div className={cn('sticky top-0 flex h-dvh flex-col gap-5 overflow-y-auto scroll-contain py-5 pt-safe', compact ? 'px-2' : 'px-3')}>
+      <div className={cn('sticky top-0 flex h-dvh flex-col gap-4 overflow-y-auto scroll-contain py-5 pt-safe', compact ? 'px-2' : 'px-3')}>
         {compact ? (
           <p className="px-1 text-center text-[0.95rem] font-semibold leading-none text-[var(--ink)]" title="Musab Study">
             M
           </p>
         ) : (
-          <div className="px-2">
-            <h1 className="text-[1.1rem] leading-tight">Musab Study</h1>
-            <p className="mt-0.5 text-[0.72rem] text-[var(--ink-faint)]">
+          <div className="px-2 pb-1">
+            <h1 className="text-[1.05rem] leading-tight">Musab Study</h1>
+            <p className="mt-0.5 text-[0.7rem] leading-snug text-[var(--ink-faint)]">
               {profile ? `${profile.program} — ${profile.section}` : 'Chargement…'}
             </p>
           </div>
         )}
 
         <nav className="flex flex-col gap-0.5">
-          {NAV_ENTRIES.map((entry) => (
-            <NavItem key={entry.to} entry={entry} indicatorId={indicatorId} compact={compact} />
-          ))}
+          {NAV_ENTRIES.map((entry, index) => {
+            // Intertitre au CHANGEMENT de famille seulement (voir l'ordre et
+            // les familles dans `navigation.ts`) : douze entrées à plat se
+            // lisaient comme une liste de courses, où rien n'indiquait par où
+            // commencer.
+            const previous = NAV_ENTRIES[index - 1];
+            const startsGroup = Boolean(entry.group) && entry.group !== previous?.group;
+            return (
+              <Fragment key={entry.to}>
+                {startsGroup && !compact && (
+                  <p className="mt-4 mb-1 px-3 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[var(--ink-faint)]">
+                    {entry.group}
+                  </p>
+                )}
+                {/* En mode icônes seules, un simple filet remplace l'intertitre. */}
+                {startsGroup && compact && <div className="my-2 h-px bg-[var(--line)]" />}
+                <NavItem entry={entry} indicatorId={indicatorId} compact={compact} />
+              </Fragment>
+            );
+          })}
         </nav>
       </div>
     </aside>
@@ -192,12 +208,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       data-theme={fullBleed ? 'dark' : undefined}
       style={fullBleed ? { background: 'var(--bg)' } : undefined}
     >
-      {/*
-        Annotations de fond — jamais sur les routes « cockpit » (Anatomie 3D,
-        lecteur PDF), où le contenu occupe tout l'écran et où elles n'auraient
-        aucune marge pour exister.
-      */}
-      {!fullBleed && <StudyBackdrop />}
       <Sidebar compact={fullBleed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main

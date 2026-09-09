@@ -20,6 +20,7 @@ import { exportBackup, importBackup } from '@/services/backup';
 import { convertLegacyDump, isLegacyDump } from '@/services/legacyImport';
 import { clearAllData } from '@/data/db';
 import type { ThemePreference } from '@/types';
+import { plural } from '@/lib/plural';
 
 const THEME_SEGMENTS = [
   { value: 'light' as const, label: 'Clair', icon: '☀️' },
@@ -96,7 +97,7 @@ export function SettingsPage() {
 
       const report = await importBackup(bundle);
       notify(
-        `Import réussi : ${report.subjects} matière(s), ${report.flashcards} carte(s), ${report.reviewLogs} révision(s).`,
+        `Import réussi : ${plural(report.subjects, 'matière')}, ${plural(report.flashcards, 'carte')}, ${plural(report.reviewLogs, 'révision')}.`,
         'success',
       );
     } catch {

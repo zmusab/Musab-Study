@@ -124,7 +124,7 @@ export function NoteFlashcardDraftsModal({
               ))}
             </Select>
             <Button onClick={() => void start()} data-note-generate-flashcards>
-              ✨ Créer des flashcards avec l’IA
+              Créer des flashcards avec l’IA
             </Button>
           </div>
         )}

@@ -178,7 +178,7 @@ export function DayAgendaPanel({
         {agenda.due && agenda.due.cards > 0 && (
           <article
             data-calendar-due
-            className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] bg-[var(--surface-2)]/40 p-3"
+            className="note-block p-3"
           >
             <p className="flex items-center gap-2 text-[0.72rem] font-medium uppercase tracking-wide text-[var(--ink-faint)]">
               <Icon name="review" size={13} /> Révisions dues
@@ -201,7 +201,7 @@ export function DayAgendaPanel({
         )}
 
         {agenda.isEmpty && (
-          <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] p-4">
+          <div className="note-block p-4">
             <p className="text-[0.88rem] font-medium text-[var(--ink-soft)]">Journée libre</p>
             <p className="mt-1 text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
               Aucun événement enregistré et aucune carte à réviser ce jour-là. Ajoute une séance ou une évaluation

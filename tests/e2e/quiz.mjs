@@ -355,9 +355,11 @@ if (missedCount > 0) {
   check('Il cible des cartes précises', /\/revisions\?cards=.+/.test(href ?? ''), href ?? '');
   await reviewLink.click();
   await page.waitForTimeout(900);
+  // Le compteur s'accorde maintenant (« 0/4 révisée », « 2/4 révisées ») au
+  // lieu d'écrire « révisée(s) ».
   check(
     'Il ouvre réellement une séance de révision, pas un écran vide',
-    (await page.getByText(/révisée\(s\)/).count()) > 0,
+    (await page.getByText(/\d+\/\d+ révisées?/).count()) > 0,
   );
 } else {
   check('Sans erreur, aucun lien de révision n’est proposé à tort', (await reviewLink.count()) === 0);

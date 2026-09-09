@@ -10,6 +10,7 @@ import type { ContextLookup } from '@/services/rag/retrieval';
 import type { QuizDifficulty, QuizFormat, QuizScope } from '@/core/quiz';
 import type { Evaluation } from '@/core/progress/exam';
 import type { Chapter, ID, Subject } from '@/types';
+import { agree, plural } from '@/lib/plural';
 
 /**
  * CHOISIR CE QUE JE VEUX TESTER — l'écran d'entrée du Quiz.
@@ -100,7 +101,7 @@ function ExamLikelyAiBoost({
       }
       notify(
         done > 0
-          ? `${done} chapitre(s) analysé(s) — l’estimation en tient maintenant compte.`
+          ? `${plural(done, 'chapitre')} ${agree(done, 'analysé')} — l’estimation en tient maintenant compte.`
           : 'Aucun chapitre de ce périmètre n’a assez de contenu de cours indexé à analyser.',
         done > 0 ? 'success' : 'error',
       );
@@ -119,7 +120,7 @@ function ExamLikelyAiBoost({
       <p className="text-[var(--ink-soft)]">
         {unanalyzed.length === 0
           ? 'Cours déjà analysé pour ce périmètre — l’estimation en tient compte.'
-          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} chapitre(s) analysé(s).`}
+          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} ${agree(targetChapters.length, 'chapitre')} ${agree(targetChapters.length, 'analysé')}.`}
       </p>
       {unanalyzed.length > 0 && (
         <Button
@@ -270,7 +271,7 @@ export function QuizSetup({
             {available > 0
               ? meta.id === 'exam'
                 ? `${available} évaluation${available > 1 ? 's' : ''} à venir`
-                : `${available} carte${available > 1 ? 's' : ''} disponible${available > 1 ? 's' : ''}`
+                : `${plural(available, 'carte')} ${agree(available, 'disponible')}`
               : 'Rien pour l’instant'}
           </p>
         )}
@@ -313,7 +314,7 @@ export function QuizSetup({
           >
             {subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
-                {subject.name} — {cardCountBySubject.get(subject.id) ?? 0} carte
+                {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
                 {(cardCountBySubject.get(subject.id) ?? 0) > 1 ? 's' : ''}
               </option>
             ))}
@@ -406,7 +407,7 @@ export function QuizSetup({
             >
               {subjects.map((subject) => (
                 <option key={subject.id} value={subject.id}>
-                  {subject.name} — {cardCountBySubject.get(subject.id) ?? 0} carte
+                  {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
                   {(cardCountBySubject.get(subject.id) ?? 0) > 1 ? 's' : ''}
                 </option>
               ))}
@@ -427,7 +428,7 @@ export function QuizSetup({
 
           <div>
             <p className="mb-2 text-[0.82rem] font-medium text-[var(--ink-soft)]">
-              Chapitre(s) — laisse tout décoché pour couvrir toute la matière
+              Chapitres — laisse tout décoché pour couvrir toute la matière
             </p>
             <div className="flex flex-wrap gap-2" data-quiz-exam-likely-chapters-picker>
               {examLikelySubjectChapters.length === 0 ? (

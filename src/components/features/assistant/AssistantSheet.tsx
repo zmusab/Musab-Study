@@ -57,11 +57,16 @@ import type { AnswerProvenance, Chapter, Citation, ID } from '@/types';
 export type AssistantCategory = 'comprendre' | 'etudier' | 'memoriser' | 'examen';
 type Category = AssistantCategory;
 
+/*
+ * Quatre libellés, sans pictogramme. Chacun portait un emoji (💡 📖 🧠 🎯) :
+ * dans un sélecteur segmenté de 40 px de haut, ils doublaient la hauteur de
+ * la ligne pour ne rien ajouter qu'un mot d'une syllabe ne disait déjà.
+ */
 const CATEGORY_SEGMENTS: Segment<Category>[] = [
-  { value: 'comprendre', label: 'Comprendre', icon: '💡' },
-  { value: 'etudier', label: 'Étudier', icon: '📖' },
-  { value: 'memoriser', label: 'Mémoriser', icon: '🧠' },
-  { value: 'examen', label: "Préparer l'examen", icon: '🎯' },
+  { value: 'comprendre', label: 'Comprendre' },
+  { value: 'etudier', label: 'Étudier' },
+  { value: 'memoriser', label: 'Mémoriser' },
+  { value: 'examen', label: "Préparer l'examen" },
 ];
 
 export interface AssistantExchangeResult {
@@ -298,7 +303,7 @@ function StudyPanel({
         return;
       }
       await onPostExchange(`Résume ma note « ${note.title} ».`, {
-        text: `${summary.summary}\n\n📝 Basé sur ta note « ${note.title} » : « ${summary.excerpt} »`,
+        text: `${summary.summary}\n\nBasé sur ta note « ${note.title} » : « ${summary.excerpt} »`,
         provenance: 'course',
       });
     } catch (error) {
@@ -467,7 +472,7 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
           Rien n’est enregistré tant que tu n’as pas accepté chaque carte — tu peux la modifier avant, ou la refuser.
         </p>
         <Button size="sm" loading={generating} onClick={() => void generate()} data-assistant-memorize-generate>
-          {generating ? 'Analyse du cours et génération…' : '✨ Proposer 5 flashcards'}
+          {generating ? 'Analyse du cours et génération…' : 'Proposer 5 flashcards'}
         </Button>
 
         {current && (
@@ -488,7 +493,7 @@ function MemorizePanel({ subjectId, chapterId }: { subjectId: ID; chapterId: ID 
               onChange={(event) => setDrafts((list) => list.map((d, i) => (i === index ? { ...d, answer: event.target.value } : d)))}
             />
             <p className="mt-1 text-[0.74rem] text-[var(--ink-faint)]">
-              📚 {current.citations[0]?.documentName}
+              {current.citations[0]?.documentName}
               {current.citations[0]?.page !== null && current.citations[0]?.page !== undefined ? ` — page ${current.citations[0].page}` : ''}
             </p>
             <div className="mt-3 flex gap-2">

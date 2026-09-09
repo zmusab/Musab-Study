@@ -29,6 +29,7 @@ import { springSoft } from '@/components/motion/transitions';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { CardDraft } from '@/services/flashcards/validate';
 import type { Difficulty, Flashcard, ID, Importance } from '@/types';
+import { agree, plural } from '@/lib/plural';
 
 const COUNT_OPTIONS = [5, 8, 12] as const;
 
@@ -155,7 +156,10 @@ export function FlashcardsPage() {
       } else {
         setDrafts(generated);
         setDraftsSource(source);
-        notify(`${generated.length} carte(s) proposée(s) — accepte, modifie ou supprime.`, 'success');
+        notify(
+          `${plural(generated.length, 'carte')} ${agree(generated.length, 'proposée')} — accepte, modifie ou rejette.`,
+          'success',
+        );
       }
     } catch (error) {
       notify(
@@ -229,6 +233,7 @@ export function FlashcardsPage() {
         <PageHeader title="Flashcards" />
         <EmptyState
           icon={<Icon name="cards" size={30} />}
+          mark="EF ∈ [1,3 ; 3,2]"
           title="Importe d’abord un cours"
           description="Les flashcards se génèrent à partir de tes documents. Crée une matière et ajoute un document avant d’en générer."
           action={
@@ -383,18 +388,21 @@ export function FlashcardsPage() {
                       )
                     }
                   />
-                  <p className="mt-2 text-[0.74rem] text-[var(--ink-faint)]">
-                    📚 {currentDraft.citations[0]?.documentName}
+                  <p className="mt-2 flex items-center gap-1.5 text-[0.74rem] text-[var(--ink-faint)]">
+                    <Icon name="courses" size={13} className="shrink-0" />
+                    {currentDraft.citations[0]?.documentName}
                     {currentDraft.citations[0]?.page !== null && currentDraft.citations[0]?.page !== undefined
                       ? ` — page ${currentDraft.citations[0].page}`
                       : ''}
                   </p>
                   <div className="mt-3 flex gap-2">
-                    <Button size="sm" onClick={handleAcceptDraft}>
-                      ✅ Accepter
+                    <Button size="sm" icon={<Icon name="check" size={15} />} onClick={handleAcceptDraft}>
+                      Accepter
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={handleRejectDraft}>
-                      ❌ Supprimer
+                    {/* « Rejeter » et non « Supprimer » : la proposition n'a
+                        jamais été enregistrée, il n'y a rien à supprimer. */}
+                    <Button size="sm" variant="ghost" icon={<Icon name="close" size={15} />} onClick={handleRejectDraft}>
+                      Rejeter
                     </Button>
                   </div>
                 </motion.div>

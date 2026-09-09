@@ -40,6 +40,7 @@ import { averageMastery } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
 import { formatRelativePast } from '@/lib/date';
 import type { Chapter, ID } from '@/types';
+import { plural } from '@/lib/plural';
 
 type TabKey = 'documents' | 'notes' | 'notions' | 'flashcards' | 'quiz' | 'progression';
 
@@ -224,11 +225,11 @@ export function SubjectDetailPage() {
 
         {stats && (
           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[0.85rem] text-[var(--ink-soft)]">
-            <span>{stats.chapters} chapitre(s)</span>
-            <span>· {stats.documents} document(s)</span>
-            {totalPages > 0 && <span>· {totalPages} page(s)</span>}
-            <span>· {stats.notes} note(s)</span>
-            <span>· {notionCount} notion(s)</span>
+            <span>{plural(stats.chapters, 'chapitre')}</span>
+            <span>· {plural(stats.documents, 'document')}</span>
+            {totalPages > 0 && <span>· {plural(totalPages, 'page')}</span>}
+            <span>· {plural(stats.notes, 'note')}</span>
+            <span>· {plural(notionCount, 'notion')}</span>
             {recentDocument?.lastOpenedAt && (
               <span>· consulté {formatRelativePast(recentDocument.lastOpenedAt)}</span>
             )}
@@ -270,7 +271,7 @@ export function SubjectDetailPage() {
                             <p className="mt-0.5 text-[0.8rem] text-[var(--ink-soft)]">
                               {documents.length === 0
                                 ? 'Aucun document'
-                                : `${documents.length} document(s)`}
+                                : plural(documents.length, 'document')}
                             </p>
                           </div>
                           <motion.span
@@ -464,7 +465,7 @@ export function SubjectDetailPage() {
         <EmptyState
           icon={<Icon name="cards" size={30} />}
           title="Flashcards de cette matière"
-          description={`${stats?.cards ?? 0} carte(s), dont ${stats?.dueCards ?? 0} à réviser.`}
+          description={`${plural(stats?.cards ?? 0, 'carte')}, dont ${stats?.dueCards ?? 0} à réviser.`}
           action={
             <Button onClick={() => navigate(`/flashcards?subject=${subjectId}`)}>
               Ouvrir les flashcards

@@ -107,6 +107,7 @@ export function NotesPage() {
         <PageHeader title="Notes" />
         <EmptyState
           icon={<Icon name="notes" size={30} />}
+          mark="pH critique 5,5"
           title="Les notes se rangent par matière"
           description="Crée d'abord une matière : chaque note lui est associée, avec un chapitre optionnel."
           action={

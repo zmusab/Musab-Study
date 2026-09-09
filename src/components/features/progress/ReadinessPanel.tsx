@@ -67,7 +67,7 @@ export function ReadinessPanel({
       </div>
 
       {readiness.pct === null ? (
-        <div className="mt-4 rounded-[var(--radius-card)] border border-dashed border-[var(--line)] bg-[var(--surface-2)]/40 p-4">
+        <div className="note-block mt-4 p-4">
           <p className="text-[0.9rem] font-medium text-[var(--ink-soft)]">Données insuffisantes</p>
           <p className="mt-1 text-[0.83rem] leading-relaxed text-[var(--ink-faint)]">
             {readiness.missingReason} La suffisance examen croise ta couverture du programme, ta maîtrise, ta

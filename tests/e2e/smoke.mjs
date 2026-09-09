@@ -75,9 +75,21 @@ await page.waitForTimeout(400);
 const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 check('Bascule en mode sombre', theme === 'dark', theme ?? 'null');
 const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-// Le fond sombre est désormais un brun très profond (#16130f), et non plus un
-// bleu-noir : la palette a été recalée vers le chaud (voir styles/index.css).
-check('Le fond suit le thème sombre', bg === 'rgb(22, 19, 15)', bg);
+/*
+ * On vérifie que le fond est RÉELLEMENT sombre, pas qu'il vaut un hexadécimal
+ * précis. La version précédente figeait `rgb(22, 19, 15)` : le moindre réglage
+ * de la palette — un fond remonté de trois points pour que le quadrillage du
+ * papier reste visible — cassait un test qui ne parle pas de palette mais de
+ * bascule de thème. On mesure donc ce qui compte : très sombre, et chaud
+ * (rouge ≥ bleu), jamais le bleu-noir de tableau de bord d'origine.
+ */
+const rgb = (bg.match(/\d+/g) ?? []).map(Number);
+const [red = 0, green = 0, blue = 0] = rgb;
+check(
+  'Le fond suit le thème sombre — sombre et chaud',
+  red < 60 && green < 60 && blue < 60 && red >= blue,
+  bg,
+);
 
 await page.screenshot({ path: `${SHOT}/ipad-dark-settings.png`, fullPage: false });
 

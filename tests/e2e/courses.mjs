@@ -115,8 +115,15 @@ check('Les termes courts de nomenclature sont indexés (V3)', indexed.findsV3);
 // ---------- Compteurs de la liste ----------
 await nav.getByRole('link', { name: 'Cours', exact: true }).first().click();
 await page.waitForTimeout(600);
-check('Les compteurs de la matière sont à jour',
-  await page.getByText('1 document(s)').isVisible());
+/*
+ * Les compteurs s'écrivent maintenant comme on les dirait (« 1 document », pas
+ * « 1 document(s) »), et un compteur à ZÉRO n'est plus affiché du tout : sur
+ * une matière qu'on vient de créer, « 0 carte(s) 0 note(s) » occupait les
+ * trois quarts de la ligne sans rien apprendre.
+ */
+const counters = await page.locator('main a[href*="/cours/"]').first().innerText();
+check('Les compteurs de la matière sont à jour', counters.includes('1 document'), counters.replace(/\n/g, ' · '));
+check('Aucun compteur à zéro n’encombre la ligne', !/\b0 (carte|note|chapitre|document)/.test(counters));
 
 // ---------- Assistant IA sans clé ----------
 await nav.getByRole('link', { name: 'IA', exact: true }).first().click();

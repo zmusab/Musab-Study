@@ -2,8 +2,10 @@ import { cloneElement, isValidElement, useState, type ReactElement } from 'react
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { PageTransition } from '@/components/layout/PageTransition';
+import { notationFor } from '@/components/layout/notations';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
-import { Button, Card, Chip, EmptyState, Icon, Input } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, Input, Swatch } from '@/components/ui';
+import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
 import { useDashboard } from '@/hooks/useDashboard';
 import { hasApiKey } from '@/services/ai/settings';
@@ -39,11 +41,18 @@ function eventTimingLabel(days: number): string {
   return `Dans ${days} jours`;
 }
 
-const EVENT_ICONS: Record<string, string> = {
-  exam: '📝',
-  course: '📚',
-  task: '✅',
-  review: '🧠',
+/*
+ * Les échéances portaient un emoji (📝 📚 ✅ 🧠). Sur une page composée en
+ * Newsreader et Inter, quatre pictogrammes en couleur d'un tout autre style
+ * graphique cassent la ligne : ils appartiennent au clavier du téléphone, pas
+ * à l'interface. Le jeu d'icônes du projet dit exactement la même chose, au
+ * même trait que le reste.
+ */
+const EVENT_ICONS: Record<string, IconName> = {
+  exam: 'quiz',
+  course: 'courses',
+  task: 'check',
+  review: 'review',
 };
 
 export function HomePage() {
@@ -76,6 +85,7 @@ export function HomePage() {
         <div className="mt-6">
           <EmptyState
             icon={<Icon name="courses" size={30} />}
+            mark="Ca₁₀(PO₄)₆(OH)₂"
             title="Commence par créer une matière"
             description="Une fois tes cours importés, l’accueil te dira chaque jour ce qu’il faut réviser et pourquoi — à partir de tes vraies données, jamais d’exemples."
             action={
@@ -166,7 +176,7 @@ export function HomePage() {
               const days = daysBetweenDayKeys(dayKey(), event.day);
               return (
                 <li key={event.id} className="flex items-center gap-2.5 text-[0.85rem]">
-                  <span aria-hidden>{EVENT_ICONS[event.kind] ?? '📌'}</span>
+                  <Icon name={EVENT_ICONS[event.kind] ?? 'calendar'} size={16} className="shrink-0 text-[var(--ink-faint)]" />
                   <span className="min-w-0 flex-1 truncate">{event.title}</span>
                   <Chip>{eventTimingLabel(days)}</Chip>
                 </li>
@@ -201,6 +211,14 @@ export function HomePage() {
     <PageTransition>
       <Stagger className="flex flex-col gap-5">
         <StaggerItem>
+          {/* Même surtitre que les autres pages (voir `notations.ts`) : ce sont
+              les paliers d'intervalle réels de la répétition espacée. */}
+          <p
+            aria-hidden
+            className="mb-1.5 font-serif text-[0.74rem] italic tracking-[0.06em] text-[var(--ink-faint)] opacity-80"
+          >
+            {notationFor('/')}
+          </p>
           <h1 className="text-[1.9rem] leading-tight">
             {profile.name ? `Bonjour ${profile.name}` : 'Bonjour'}
           </h1>
@@ -209,8 +227,16 @@ export function HomePage() {
 
         {/* Session recommandée — l'élément principal de l'accueil. */}
         <StaggerItem>
-          <Card className="border-[var(--accent)]/30 bg-[var(--accent-tint)]">
-            <p className="flex items-center gap-2 text-[0.85rem] font-semibold text-[var(--accent-ink)]">
+          {/*
+            Pièce maîtresse de l'accueil : elle doit se distinguer AU PREMIER
+            COUP D'ŒIL des cartes secondaires. Un fond teinté ne suffisait pas
+            — en thème clair, `--accent-tint` sur `--surface` blanc donnait
+            deux cartes presque identiques. Un filet d'accent épais sur le bord
+            gauche, comme la marque rouge d'un correcteur, la sépare
+            immédiatement sans ajouter de couleur.
+          */}
+          <Card className="border-l-[3px] border-l-[var(--accent)] bg-[var(--accent-tint)]">
+            <p className="flex items-center gap-2 font-serif text-[0.8rem] font-semibold uppercase tracking-[0.1em] text-[var(--accent-ink)]">
               Session recommandée
             </p>
 
@@ -222,9 +248,27 @@ export function HomePage() {
               <>
                 <p className="mt-2 text-[2rem] font-semibold leading-none">{dueTriage.total} questions</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {dueTriage.atRisk > 0 && <Chip color="var(--danger)">🔴 {dueTriage.atRisk} à risque d’oubli</Chip>}
-                  {dueTriage.difficult > 0 && <Chip color="var(--warning)">🟠 {dueTriage.difficult} difficiles</Chip>}
-                  {dueTriage.normal > 0 && <Chip color="var(--mastery-2)">🟡 {dueTriage.normal} normales</Chip>}
+                  {/* La pastille de couleur DIT le niveau : le rond emoji qui la
+                      précédait le répétait une seconde fois, dans une palette
+                      qui n'était pas celle de l'application. */}
+                  {dueTriage.atRisk > 0 && (
+                    <Chip color="var(--danger)">
+                      <Swatch color="var(--danger)" size={7} />
+                      {dueTriage.atRisk} à risque d’oubli
+                    </Chip>
+                  )}
+                  {dueTriage.difficult > 0 && (
+                    <Chip color="var(--warning)">
+                      <Swatch color="var(--warning)" size={7} />
+                      {dueTriage.difficult} difficiles
+                    </Chip>
+                  )}
+                  {dueTriage.normal > 0 && (
+                    <Chip color="var(--mastery-2)">
+                      <Swatch color="var(--mastery-2)" size={7} />
+                      {dueTriage.normal} normales
+                    </Chip>
+                  )}
                 </div>
                 <p className="mt-2 text-[0.82rem] text-[var(--ink-faint)]">≈ {data.sessionMinutes} min</p>
                 <p className="mt-3 text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">

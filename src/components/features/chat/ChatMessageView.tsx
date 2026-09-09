@@ -1,27 +1,33 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Chip } from '@/components/ui';
+import { Chip, Icon } from '@/components/ui';
+import type { IconName } from '@/components/ui/Icon';
 import { AnswerText } from './AnswerText';
 import { springSoft } from '@/components/motion/transitions';
 import { cn } from '@/lib/cn';
-import type { ChatMessage } from '@/types';
+import type { AnswerProvenance, ChatMessage } from '@/types';
 
 /**
  * Affichage d'un message.
  *
  * La provenance n'est pas un simple ornement : elle est calculée par la
- * vérification des citations, jamais déclarée par le modèle. Un badge 📚
- * garantit donc qu'au moins un passage réel des cours soutient la réponse.
+ * vérification des citations, jamais déclarée par le modèle. Le badge
+ * « Trouvé dans tes cours » garantit donc qu'au moins un passage réel des
+ * cours soutient la réponse.
+ *
+ * Les cinq pictogrammes étaient des emoji (📚 ⚙️ 🌐 ⚠️ ✕) : cinq styles de
+ * dessin différents, aucun n'appartenant à la famille graphique du reste de
+ * l'interface, et rendus différemment sur chaque plateforme.
  */
 
-const PROVENANCE_BADGE = {
-  course: { label: 'Trouvé dans tes cours', icon: '📚', color: 'var(--success)' },
-  'course-local': { label: 'Généré à partir de tes cours — aucun appel IA', icon: '⚙️', color: 'var(--success)' },
-  internet: { label: 'Complété par internet', icon: '🌐', color: 'var(--accent)' },
-  insufficient: { label: 'Absent de tes cours', icon: '⚠️', color: 'var(--warning)' },
-  error: { label: 'Erreur', icon: '✕', color: 'var(--danger)' },
-} as const;
+const PROVENANCE_BADGE: Record<AnswerProvenance, { label: string; icon: IconName; color: string }> = {
+  course: { label: 'Trouvé dans tes cours', icon: 'courses', color: 'var(--success)' },
+  'course-local': { label: 'Généré à partir de tes cours — aucun appel IA', icon: 'settings', color: 'var(--success)' },
+  internet: { label: 'Complété par internet', icon: 'search', color: 'var(--accent)' },
+  insufficient: { label: 'Absent de tes cours', icon: 'quiz', color: 'var(--warning)' },
+  error: { label: 'Erreur', icon: 'close', color: 'var(--danger)' },
+};
 
 const PROVIDER_LABEL: Record<'anthropic' | 'openai' | 'gemini', string> = {
   anthropic: 'Claude',
@@ -62,7 +68,7 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
       {badge && (
         <div className="mb-2">
           <Chip color={badge.color}>
-            <span aria-hidden>{badge.icon}</span>
+            <Icon name={badge.icon} size={13} aria-hidden />
             {badgeLabel(message)}
           </Chip>
         </div>
@@ -108,7 +114,10 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
             onClick={() => setShowSources((current) => !current)}
             className="text-[0.78rem] font-semibold text-[var(--ink-soft)] underline underline-offset-2 transition-colors hover:text-[var(--ink)]"
           >
-            {showSources ? 'Masquer' : 'Voir'} les {message.citations.length} source(s)
+            {showSources ? 'Masquer' : 'Voir'}{' '}
+            {message.citations.length > 1
+              ? `les ${message.citations.length} sources`
+              : 'la source'}
           </button>
 
           <AnimatePresence initial={false}>

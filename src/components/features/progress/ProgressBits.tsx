@@ -139,7 +139,7 @@ export function GoalBar({ pct }: { pct: number }) {
  */
 export function EmptyHint({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] bg-[var(--surface-2)]/40 p-4">
+    <div className="note-block p-4">
       <p className="text-[0.9rem] font-medium text-[var(--ink-soft)]">{title}</p>
       <p className="mt-1 text-[0.83rem] leading-relaxed text-[var(--ink-faint)]">{children}</p>
     </div>

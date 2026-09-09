@@ -92,7 +92,7 @@ export function PlanReviewModal({
     >
       <div className="flex flex-col gap-4">
         {blocked !== null ? (
-          <p className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] p-3 text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
+          <p className="note-block p-3 text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
             {blocked}
           </p>
         ) : (

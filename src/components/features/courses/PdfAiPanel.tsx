@@ -164,7 +164,7 @@ export function PdfAiPanel({
                       onClick={() => onJumpToPage(c.page!)}
                       className="rounded-full border border-[var(--accent)]/40 bg-[var(--accent-tint)] px-2.5 py-1 text-[0.74rem] font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-tint)]/70"
                     >
-                      📚 page {c.page}
+                      page {c.page}
                     </button>
                   ))}
               </div>

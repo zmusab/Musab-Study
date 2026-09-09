@@ -41,7 +41,7 @@ export function TimetableView({
   if (total === 0) {
     return (
       <div
-        className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] p-6 text-center"
+        className="note-block p-6 text-center"
         data-calendar-timetable
       >
         <p className="text-[0.95rem] font-medium text-[var(--ink-soft)]">

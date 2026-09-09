@@ -265,7 +265,7 @@ export function AiSettingsCard() {
                 {result && (
                   <div className="mt-2 text-[0.8rem] leading-relaxed" data-hub-test-result={id}>
                     <p style={{ color: result.ok ? 'var(--success)' : 'var(--danger)' }}>
-                      {result.ok ? '✅ Connexion réussie' : '❌ Connexion impossible'}
+                      {result.ok ? 'Connexion réussie' : 'Connexion impossible'}
                     </p>
                     {!result.ok && <p className="mt-0.5 text-[var(--ink-soft)]">{result.message}</p>}
                     {result.detail && (

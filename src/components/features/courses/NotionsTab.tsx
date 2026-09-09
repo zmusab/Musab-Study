@@ -12,6 +12,7 @@ import { analyzeChapter, InsufficientChapterContentError } from '@/services/cour
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { Chapter, ID } from '@/types';
+import { agree, plural } from '@/lib/plural';
 
 /**
  * Détection des notions par chapitre — réutilise `analyzeChapter`
@@ -62,7 +63,10 @@ function ChapterAnalysisCard({
       const notions = await analyzeChapter({ chunks, lookup, source });
       await saveChapterAnalysis(subjectId, chapter.id, notions);
       setLastSource(source);
-      notify(`« ${chapter.name} » analysé — ${notions.length} notion(s) détectée(s).`, 'success');
+      notify(
+        `« ${chapter.name} » analysé — ${plural(notions.length, 'notion')} ${agree(notions.length, 'détectée')}.`,
+        'success',
+      );
     } catch (error) {
       if (error instanceof InsufficientChapterContentError) {
         notify(error.message, 'error');
@@ -81,10 +85,10 @@ function ChapterAnalysisCard({
           <h3 className="text-[0.92rem] font-medium">{chapter.name}</h3>
           {analysis && (
             <p className="mt-0.5 text-[0.76rem] text-[var(--ink-faint)]">
-              {analysis.notions.length} notion(s) détectée(s)
+              {plural(analysis.notions.length, 'notion')} {agree(analysis.notions.length, 'détectée')}
               {lastSource && (
                 <span className="ml-1.5">
-                  · {lastSource === 'ai' ? '✨ par l’IA' : '⚙️ localement'}
+                  · {lastSource === 'ai' ? 'par l’IA' : 'localement'}
                 </span>
               )}
             </p>
@@ -189,7 +193,7 @@ export function NotionsTab({ subjectId, chapters }: { subjectId: ID; chapters: C
           <Icon name="sparkles" size={14} />
           {analyzedCount === 0
             ? "Aucun chapitre analysé pour l'instant."
-            : `Cours analysé — ${analyzedCount} chapitre(s), ${notionCount} notion(s) détectée(s)`}
+            : `Cours analysé — ${plural(analyzedCount, 'chapitre')}, ${plural(notionCount, 'notion')} ${agree(notionCount, 'détectée')}`}
         </p>
       )}
       {chapters.map((chapter) => (

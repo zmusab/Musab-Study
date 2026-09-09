@@ -252,7 +252,9 @@ export function ChatPage() {
 
       if (verified.invalidReferences.length > 0) {
         notify(
-          `${verified.invalidReferences.length} source(s) citée(s) par l’IA n’existaient pas et ont été retirées.`,
+          verified.invalidReferences.length > 1
+            ? `${verified.invalidReferences.length} sources citées par l’IA n’existaient pas et ont été retirées.`
+            : 'Une source citée par l’IA n’existait pas et a été retirée.',
           'info',
         );
       }

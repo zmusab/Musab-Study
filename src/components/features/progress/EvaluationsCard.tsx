@@ -52,7 +52,7 @@ export function EvaluationsCard({
   return (
     <>
       {evaluations.length === 0 ? (
-        <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--line)] bg-[var(--surface-2)]/40 p-5">
+        <div className="note-block p-5">
           <p className="text-[0.95rem] font-medium text-[var(--ink-soft)]">Aucune évaluation connue</p>
           <p className="mt-1.5 max-w-[38rem] text-[0.85rem] leading-relaxed text-[var(--ink-faint)]">
             Ajoute tes prochains contrôles ou examens pour que Musab Study adapte tes priorités à l’approche des

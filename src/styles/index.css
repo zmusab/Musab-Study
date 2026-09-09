@@ -47,22 +47,22 @@
    * et l'accent unique est une terre de Sienne — chaude et sérieuse, sans être
    * enfantine.
    */
-  --bg: #f5f1ea;
-  --bg-elevated: #faf7f1;
+  --bg: #f2ede4;
+  --bg-elevated: #f8f4ec;
   --surface: #fffdf9;
-  --surface-2: #efe9df;
-  --surface-hover: #e8e1d5;
+  --surface-2: #ece5da;
+  --surface-hover: #e5ddcf;
 
   --ink: #221e18;
-  --ink-soft: #6a6157;
-  --ink-faint: #968c7e;
+  --ink-soft: #665d52;
+  --ink-faint: #928778;
 
-  --line: #e2dace;
-  --line-strong: #cec4b4;
+  --line: #ded5c7;
+  --line-strong: #c8bdab;
 
   --accent: #a2542a;
   --accent-hover: #8c4622;
-  --accent-tint: #f6e9df;
+  --accent-tint: #f4e6d9;
   --accent-ink: #8a4622;
 
   --success: #4a7c52;
@@ -101,31 +101,82 @@
   --nav-red: #a8443a;
   --nav-orange: #a2542a;
 
-  --shadow-soft: 0 1px 2px rgb(34 30 24 / 0.04), 0 4px 16px rgb(34 30 24 / 0.05);
-  --shadow-lift: 0 2px 6px rgb(34 30 24 / 0.06), 0 12px 32px rgb(34 30 24 / 0.09);
+  --shadow-soft: 0 1px 2px rgb(60 46 30 / 0.05), 0 6px 20px rgb(60 46 30 / 0.06);
+  --shadow-lift: 0 2px 6px rgb(60 46 30 / 0.07), 0 14px 36px rgb(60 46 30 / 0.11);
+
+  /*
+   * LE FOND — une page de cahier, pas un aplat.
+   *
+   * La version précédente posait six étiquettes scientifiques flottantes dans
+   * le vide du viewport : elles ne se rattachaient à rien, chevauchaient le
+   * bord des cartes, et sur un écran peu rempli elles ressemblaient à des
+   * débris. Le fond est maintenant DESSINÉ, en trois couches empilées :
+   *
+   *  1. `--paper-grid` — un quadrillage de cahier, 32 px de maille fine et un
+   *     trait plus marqué tous les 128 px. C'est ce qui donne immédiatement
+   *     l'impression d'écrire sur du papier millimétré plutôt que dans une
+   *     application de gestion.
+   *  2. `--paper-wash` — de larges dégradés radiaux très doux qui empêchent
+   *     l'aplat : sans eux, le thème sombre était un champ brun parfaitement
+   *     uniforme, exactement ce que l'utilisateur a rejeté.
+   *  3. `--bg` — la couleur de base.
+   *
+   * Tout est en `background-attachment: fixed` : le quadrillage ne défile pas
+   * avec le contenu, il reste la surface SUR laquelle le contenu est posé.
+   */
+  --grid-minor: rgb(122 96 62 / 0.05);
+  --grid-major: rgb(122 96 62 / 0.08);
+
+  --paper-wash:
+    radial-gradient(1200px 640px at 8% -10%, rgb(255 253 246 / 0.95) 0%, transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgb(240 228 208 / 0.75) 0%, transparent 58%),
+    radial-gradient(1400px 900px at 50% 118%, rgb(226 214 194 / 0.7) 0%, transparent 62%);
+}
+
+/*
+ * Le quadrillage lui-même, identique dans les deux thèmes — seules ses deux
+ * couleurs changent. Déclaré une fois, hors des blocs de thème.
+ */
+:root,
+[data-theme='dark'] {
+  --paper-grid:
+    repeating-linear-gradient(to right, var(--grid-major) 0 1px, transparent 1px 128px),
+    repeating-linear-gradient(to bottom, var(--grid-major) 0 1px, transparent 1px 128px),
+    repeating-linear-gradient(to right, var(--grid-minor) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(to bottom, var(--grid-minor) 0 1px, transparent 1px 32px);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  /* Même décalage vers le chaud : un brun très profond, jamais un bleu-noir. */
-  --bg: #16130f;
-  --bg-elevated: #1b1713;
-  --surface: #201c17;
-  --surface-2: #29241e;
-  --surface-hover: #322c25;
+  /*
+   * Un brun très profond, jamais un bleu-noir — et surtout PLUS JAMAIS UN
+   * APLAT.
+   *
+   * La version précédente empilait un fond #16130f et des cartes #201c17 :
+   * treize points d'écart, invisibles à l'œil. Résultat, le thème sombre
+   * n'était qu'un grand champ brun uniforme où aucune carte ne se détachait.
+   * L'écart entre le fond et la surface est doublé, la ligne de séparation
+   * remontée, et les cartes retrouvent une ombre — dans le noir aussi, une
+   * feuille posée porte une ombre.
+   */
+  --bg: #17140f;
+  --bg-elevated: #1d1a15;
+  --surface: #232019;
+  --surface-2: #2c2721;
+  --surface-hover: #37312a;
 
-  --ink: #f0e9df;
-  --ink-soft: #b0a595;
-  --ink-faint: #857b6e;
+  --ink: #f2ece3;
+  --ink-soft: #b6ab9c;
+  --ink-faint: #8a8073;
 
-  --line: #322c24;
-  --line-strong: #453d33;
+  --line: #383129;
+  --line-strong: #4e463b;
 
-  --accent: #d98d5f;
-  --accent-hover: #e3a077;
+  --accent: #e09a68;
+  --accent-hover: #eeb086;
   --accent-tint: #33241a;
-  --accent-ink: #e3a077;
+  --accent-ink: #eeb086;
 
   --success: #7fb083;
   --success-tint: #1b2a1d;
@@ -147,10 +198,25 @@
   --nav-rose: #cc8199;
   --nav-green: #7fb083;
   --nav-red: #d97b6e;
-  --nav-orange: #d98d5f;
+  --nav-orange: #e09a68;
 
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.28);
-  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.34);
+  --shadow-lift: 0 2px 8px rgb(0 0 0 / 0.45), 0 18px 44px rgb(0 0 0 / 0.5);
+
+  --grid-minor: rgb(228 168 120 / 0.05);
+  --grid-major: rgb(228 168 120 / 0.09);
+
+  /*
+   * Une lueur chaude en haut, une ombre plus dense en bas : le fond a une
+   * direction de lumière, il n'est plus un aplat. Le dégradé du bas est
+   * volontairement CONTENU — poussé plus loin, il ramenait le pied de page au
+   * noir pur, et le quadrillage y disparaissait complètement : on retrouvait
+   * exactement le grand champ vide et muet qu'il s'agit d'éviter.
+   */
+  --paper-wash:
+    radial-gradient(1100px 620px at 6% -12%, rgb(66 48 34 / 0.9) 0%, transparent 64%),
+    radial-gradient(900px 680px at 100% -4%, rgb(48 40 38 / 0.85) 0%, transparent 58%),
+    radial-gradient(1500px 900px at 50% 122%, rgb(14 12 10 / 0.7) 0%, transparent 60%);
 }
 
 @layer base {
@@ -166,8 +232,15 @@
 
   body {
     margin: 0;
-    background-color: var(--bg);
     color: var(--ink);
+    /*
+     * Trois couches : le quadrillage du cahier par-dessus les dégradés doux,
+     * eux-mêmes par-dessus la couleur de base. `fixed` fige le papier : le
+     * contenu glisse dessus au défilement au lieu de l'emporter avec lui.
+     */
+    background-color: var(--bg);
+    background-image: var(--paper-grid), var(--paper-wash);
+    background-attachment: fixed;
     font-family: var(--font-sans);
     /*
      * CONFORT DE LECTURE. Un étudiant lit ici pendant des heures : le corps de
@@ -287,7 +360,7 @@
   }
 }
 
-@layer utilities {
+@layer components {
   /*
    * LA CARTE — une feuille posée, plus une boîte dessinée.
    *
@@ -305,11 +378,49 @@
     box-shadow: var(--shadow-soft);
   }
 
+  /*
+   * En sombre, l'ombre ne suffit plus à séparer : la bordure revient, et
+   * surtout un LISERÉ CLAIR en haut de la carte. C'est ce liseré qui fait
+   * qu'une carte sombre se lit comme une feuille éclairée par le haut plutôt
+   * que comme un rectangle découpé dans le fond — une version antérieure
+   * posait `box-shadow: none` et une simple bordure, et l'écran entier
+   * devenait un aplat brun où plus rien ne se détachait.
+   */
   [data-theme='dark'] .surface-card {
     border-color: var(--line);
-    box-shadow: none;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.045),
+      var(--shadow-soft);
   }
 
+  /*
+   * NOTE DE MARGE — « il n'y a pas encore de quoi mesurer ça ».
+   *
+   * Ces blocs étaient dessinés en pointillés. Un rectangle tireté, en
+   * interface, veut dire « dépose un fichier ici » ou « ceci n'a pas fini de
+   * charger » : sur la page Progression, où quatre d'entre eux se suivent
+   * avant la première révision, la page entière avait l'air cassée. Un filet
+   * plein sur le bord gauche, comme un trait tiré dans la marge d'un cahier,
+   * dit la même chose sans alarmer.
+   */
+  .note-block {
+    border-left: 2px solid var(--line-strong);
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  }
+
+  /*
+   * POURQUOI `components` ET NON `utilities` : ces deux classes posent un
+   * `background-color`. Déclarées dans la couche des utilitaires, elles se
+   * retrouvaient ÉMISES APRÈS `bg-[...]` de Tailwind, à spécificité égale —
+   * donc gagnantes. Résultat silencieux : `<Card className="bg-[var(--accent-tint)]">`
+   * (la session recommandée de l'accueil) restait blanche, et rien dans le
+   * code ne laissait deviner pourquoi. Dans `components`, l'ordre des couches
+   * garantit qu'un utilitaire posé sur l'élément l'emporte toujours.
+   */
+}
+
+@layer utilities {
   /*
    * Chrome commun des cartes de la section Anatomie.
    *

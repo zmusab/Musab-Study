@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Button, Card, Chip } from '@/components/ui';
+import { Button, Card, Chip, Swatch } from '@/components/ui';
 import { springSoft } from '@/components/motion/transitions';
 import type { QuizAnswerRecord, QuizQuestionInstance } from '@/core/quiz';
 
@@ -10,10 +10,10 @@ const DIFFICULTY_LABEL: Record<1 | 2 | 3, string> = { 1: 'Facile', 2: 'Moyen', 3
  * « Examen probable » — badge d'ESTIMATION, jamais de certitude. Le libellé
  * dit explicitement « estimée », jamais « tombera à l'examen ».
  */
-const EXAM_LIKELIHOOD_META: Record<'high' | 'medium' | 'low', { emoji: string; label: string; color: string }> = {
-  high: { emoji: '🟢', label: 'Probabilité élevée', color: 'var(--mastery-3)' },
-  medium: { emoji: '🟡', label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
-  low: { emoji: '🟠', label: 'Probabilité faible', color: 'var(--mastery-1)' },
+const EXAM_LIKELIHOOD_META: Record<'high' | 'medium' | 'low', { label: string; color: string }> = {
+  high: { label: 'Probabilité élevée', color: 'var(--mastery-3)' },
+  medium: { label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
+  low: { label: 'Probabilité faible', color: 'var(--mastery-1)' },
 };
 
 /**
@@ -97,7 +97,9 @@ export function QuizSession({
                     color={EXAM_LIKELIHOOD_META[question.examLikelihood.level].color}
                     data-quiz-exam-likelihood={question.examLikelihood.level}
                   >
-                    {EXAM_LIKELIHOOD_META[question.examLikelihood.level].emoji}{' '}
+                    {/* La pastille de couleur remplace le rond emoji : même
+                        information, dans la palette de l'application. */}
+                    <Swatch color={EXAM_LIKELIHOOD_META[question.examLikelihood.level].color} size={7} />
                     {EXAM_LIKELIHOOD_META[question.examLikelihood.level].label}
                   </Chip>
                 )}

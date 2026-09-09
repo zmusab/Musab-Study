@@ -174,7 +174,7 @@ export function ExamPrepModal({
           </div>
 
           {plan === null || plan.blocked !== null ? (
-            <p className="mt-3 rounded-[var(--radius-card)] border border-dashed border-[var(--line)] p-3 text-[0.84rem] leading-relaxed text-[var(--ink-soft)]">
+            <p className="note-block mt-3 p-3 text-[0.84rem] leading-relaxed text-[var(--ink-soft)]">
               {plan?.blocked ?? 'Cette évaluation n’est rattachée à aucune matière : il n’y a rien à répartir.'}
             </p>
           ) : (

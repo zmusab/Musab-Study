@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Button, Card, Chip } from '@/components/ui';
+import { Button, Card, Chip, Swatch } from '@/components/ui';
 import { formatDuration } from '@/core/progress';
 import type { ExamLikelihood, QuizResult } from '@/core/quiz';
 import type { ID } from '@/types';
 
-const EXAM_LIKELIHOOD_META: Record<ExamLikelihood, { emoji: string; label: string; color: string }> = {
-  high: { emoji: '🟢', label: 'Probabilité élevée', color: 'var(--mastery-3)' },
-  medium: { emoji: '🟡', label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
-  low: { emoji: '🟠', label: 'Probabilité faible', color: 'var(--mastery-1)' },
+const EXAM_LIKELIHOOD_META: Record<ExamLikelihood, { label: string; color: string }> = {
+  high: { label: 'Probabilité élevée', color: 'var(--mastery-3)' },
+  medium: { label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
+  low: { label: 'Probabilité faible', color: 'var(--mastery-1)' },
 };
 
 /**
@@ -127,7 +127,8 @@ export function QuizResults({
                 .map((row) => (
                   <li key={row.level} className="flex items-center justify-between gap-2">
                     <Chip color={EXAM_LIKELIHOOD_META[row.level].color}>
-                      {EXAM_LIKELIHOOD_META[row.level].emoji} {EXAM_LIKELIHOOD_META[row.level].label}
+                      <Swatch color={EXAM_LIKELIHOOD_META[row.level].color} size={7} />
+                      {EXAM_LIKELIHOOD_META[row.level].label}
                     </Chip>
                     <span className="shrink-0 text-[0.82rem] font-medium tabular-nums text-[var(--ink-soft)]">
                       {row.correct}/{row.total}
