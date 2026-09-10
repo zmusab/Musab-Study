@@ -39,6 +39,43 @@ export function isBulletLine(line: string): boolean {
   return BULLET_PREFIX.test(line);
 }
 
+/**
+ * NIVEAU D'IMBRICATION D'UNE PUCE.
+ *
+ * Un polycopié Word imbrique ses listes, et l'imbrication porte du sens : les
+ * trois branches terminales appartiennent à la phrase qui les annonce, pas à
+ * la liste d'à côté. On a longtemps cru cette hiérarchie perdue — l'INDENTATION
+ * l'est, en effet : `getTextContent()` ne rend que le texte et ses fins de
+ * ligne.
+ *
+ * Elle survit ailleurs : dans le MARQUEUR. Position horizontale relevée dans
+ * le PDF d'un vrai cours (« Divisions du nerf trijumeau ») :
+ *
+ *     « • » et « → »   toujours à x = 71
+ *     « § »            toujours à x = 107
+ *     « o »            toujours à x = 125
+ *
+ * Word attribue un marqueur par niveau et n'en change jamais dans un même
+ * document. Le caractère qu'on lit dit donc la profondeur aussi sûrement que
+ * la marge, sans avoir à faire remonter les coordonnées depuis l'extraction.
+ *
+ * `null` quand la ligne n'est pas une puce.
+ */
+const BULLET_DEPTHS: readonly (readonly string[])[] = [
+  ['-', '*', '•', '→', '⇒', '➔', '►'],
+  ['§', '▪', '‣'],
+  ['o', '◦', '▫'],
+];
+
+export function bulletDepth(line: string): number | null {
+  const marker = BULLET_PREFIX.exec(line)?.[0]?.trim();
+  if (marker === undefined) return null;
+  const level = BULLET_DEPTHS.findIndex((markers) => markers.includes(marker));
+  // Une puce numérotée (« 1. », « a) ») n'appartient à aucun niveau connu :
+  // traitée comme un premier niveau plutôt que comme une inconnue.
+  return level === -1 ? 0 : level;
+}
+
 export function stripBulletPrefix(line: string): string {
   return line.replace(BULLET_PREFIX, '').trim();
 }
@@ -105,32 +142,60 @@ export function detectInlineEnumeration(sentence: string): EnumerationMatch | nu
   return { intro: intro!.trim(), items, sourceExcerpt: trimmed };
 }
 
-/** Motif « (intro)\n- a\n- b\n- c » : lignes à puces consécutives, précédées d'une ligne d'introduction. */
+/**
+ * Motif « (intro)\n- a\n- b\n- c » — une liste et ce qui l'annonce.
+ *
+ * ── UNE LISTE S'ARRÊTE OÙ SON NIVEAU S'ARRÊTE ─────────────────────────────
+ * La première version prenait pour une seule liste TOUTES les puces
+ * consécutives, quel que soit leur niveau. Sur un cours qui imbrique — c'est
+ * le cas de tous les polycopiés Word — une sous-liste avalait donc la liste
+ * suivante et tout ce qui venait après. Mesuré : « par où passe le nerf
+ * ophtalmique ? » recevait les trois branches terminales suivies de neuf
+ * lignes appartenant à d'autres listes (la numérotation en V, les ganglions,
+ * les collatérales) — toutes justes, aucune demandée.
+ *
+ * Un changement de niveau ferme la liste en cours : c'est la structure écrite
+ * par l'auteur, lue dans ses propres marqueurs, pas une ponctuation
+ * interprétée.
+ *
+ * ── ET L'ANNONCE PEUT ÊTRE UNE PUCE ───────────────────────────────────────
+ * À condition d'être MOINS PROFONDE. Une sous-liste est introduite par
+ * l'élément qui la précède d'un cran, et c'est très exactement le lien qui
+ * manquait. Une puce de MÊME niveau est une sœur : la prendre pour une
+ * annonce donnait des sujets absurdes — les trois branches terminales du nerf
+ * ophtalmique présentées sous le titre « Les nerfs III, IV et VI », qui n'est
+ * que le dernier élément de la liste d'avant.
+ */
 export function detectBulletEnumerations(chunkText: string): EnumerationMatch[] {
   const lines = chunkText.split(/\n+/);
   const results: EnumerationMatch[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (!isBulletLine(lines[i]!)) {
+    const depth = bulletDepth(lines[i]!);
+    if (depth === null) {
       i++;
       continue;
     }
+
     const start = i;
     const items: string[] = [];
-    while (i < lines.length && isBulletLine(lines[i]!)) {
+    while (i < lines.length && bulletDepth(lines[i]!) === depth) {
       const item = stripBulletPrefix(lines[i]!);
       if (item.length > 0) items.push(item);
       i++;
     }
-    if (items.length >= 2) {
-      const introLine = start > 0 ? lines[start - 1]!.trim() : '';
-      const excerptLines = lines.slice(introLine.length > 0 ? start - 1 : start, i);
-      results.push({
-        intro: introLine.length > 0 ? introLine : null,
-        items,
-        sourceExcerpt: excerptLines.join('\n'),
-      });
-    }
+    if (items.length < 2) continue;
+
+    const previous = start > 0 ? lines[start - 1]! : null;
+    const previousDepth = previous === null ? null : bulletDepth(previous);
+    const introduces =
+      previous !== null && previous.trim().length > 0 && (previousDepth === null || previousDepth < depth);
+
+    results.push({
+      intro: introduces ? previous.trim() : null,
+      items,
+      sourceExcerpt: lines.slice(introduces ? start - 1 : start, i).join('\n'),
+    });
   }
   return results;
 }

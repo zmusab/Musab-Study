@@ -277,7 +277,18 @@ export function restoreCourseLayoutPages(pages: readonly string[]): string[] {
     // les frontières que l'extraction avait effacées.
     text = text.replace(new RegExp(`\\s*([${BULLET_MARKERS}])\\s*`, 'g'), '\n$1 ');
     text = text.replace(new RegExp(`\\s*([${ARROW_MARKERS}])\\s*`, 'g'), '\n$1 ');
-    text = text.replace(new RegExp(`\\s*([${CIRCLED}])\\s*`, 'g'), '\n$1 ');
+    /*
+      La puce cerclée n'ouvre une ligne que si une MAJUSCULE la suit — même
+      condition que pour « o » et pour les puces de police symbole, et pour la
+      même raison.
+
+      Dans ce type de polycopié, ❶❷❸ servent surtout de RENVOIS AU SCHÉMA,
+      posés au fil du texte : « … la racine longue du ganglion ophtalmique
+      %❶) ». Les couper systématiquement coupait la phrase avec eux, et le
+      morceau « ❶ ) » se retrouvait seul entre une puce et la suivante — de
+      quoi interrompre une énumération de trois éléments au bout du premier.
+    */
+    text = text.replace(new RegExp(`\\s*([${CIRCLED}])\\s*(?=[A-ZÀ-Þ])`, 'g'), '\n$1 ');
     text = text.replace(LONE_O_BULLET, '\no ');
     /*
      * Le glyphe de police symbole est remplacé par un simple RETOUR À LA

@@ -1,4 +1,5 @@
 import {
+  bulletDepth,
   stripBulletPrefix,
   detectInlineEnumeration,
   detectBulletEnumerations,
@@ -288,7 +289,21 @@ function endsOnCompleteSentence(sentence: string): boolean {
  *    plausible, n'est pas retenu.
  */
 const HEADING_MAX_CHARS = 70;
-const PRONOUN_SUBJECT = /^(?:il|elle|ils|elles|celui-ci|celle-ci|ce dernier|cette dernière)\b/i;
+/*
+ * Le pronom peut être précédé d'un CONNECTEUR : « Puis il entre… », « Ensuite
+ * elle donne… ». La phrase reste une phrase à pronom, et son sujet reste une
+ * ligne plus haut.
+ *
+ * Sans ces connecteurs, « Puis il entre dans le sinus caverneux où il est en
+ * rapport avec : » gardait pour sujet « Puis il entre dans le sinus caverneux
+ * où il » — un morceau de phrase, qu'aucune question ne peut retrouver — au
+ * lieu du titre de la section, « Le nerf ophtalmique de Willis ».
+ *
+ * La liste est celle de `SENTENCE_RESTART` (courseLayout) : les mots qui, en
+ * français, ouvrent une reprise de phrase.
+ */
+const PRONOUN_SUBJECT =
+  /^(?:(?:puis|ensuite|enfin|alors|ainsi|donc|apr[èe]s)\s+)?(?:il|elle|ils|elles|celui-ci|celle-ci|ce dernier|cette dernière)\b/i;
 
 function headingCandidate(line: string): string | null {
   const trimmed = line.replace(/^[\s•§▪‣◦▫→⇒➔►o]+/u, '').replace(/\s*:\s*$/, '').trim();
@@ -315,11 +330,91 @@ function attributeToHeading(fact: RawFact, sentence: string, heading: string | n
   };
 }
 
+/**
+ * LES ÉLÉMENTS QUI APPARTIENNENT À LA LIGNE `index`.
+ *
+ * C'est-à-dire les puces qui la suivent immédiatement à un niveau PLUS
+ * PROFOND. Une puce de même niveau est une sœur, pas un élément : elle arrête
+ * la collecte.
+ *
+ * Les petits-enfants (encore plus profonds) sont sautés sans arrêter la
+ * liste : ils appartiennent à l'élément qui les précède, et c'est le tour de
+ * CETTE ligne-là qui les rattachera.
+ */
+function nestedItemsAfter(
+  lines: readonly string[],
+  index: number,
+  parentDepth: number | null,
+): { items: string[]; end: number } {
+  const childDepth = bulletDepth(lines[index + 1] ?? '');
+  if (childDepth === null) return { items: [], end: index };
+  if (parentDepth !== null && childDepth <= parentDepth) return { items: [], end: index };
+
+  const items: string[] = [];
+  let i = index + 1;
+  for (; i < lines.length; i += 1) {
+    const depth = bulletDepth(lines[i]!);
+    if (depth === null || depth < childDepth) break;
+    if (depth > childDepth) continue; // petit-enfant : il a son propre parent.
+    const item = stripBulletPrefix(lines[i]!);
+    if (item.length > 0) items.push(item);
+  }
+  return { items, end: i - 1 };
+}
+
+/**
+ * ANNONCE SANS RÈGLE RECONNUE.
+ *
+ * « Puis il entre dans le sillon carotidien … où il est en rapport avec : »
+ * n'emploie aucun des verbes que les règles connaissent, et ne produisait donc
+ * AUCUN fait — alors que trois puces la suivent et la complètent.
+ *
+ * Une ligne qui se termine par un deux-points et qui est suivie d'une liste
+ * plus profonde annonce une composition : c'est la ponctuation de l'auteur, et
+ * la structure de son document, pas une interprétation de sens.
+ *
+ * Le sujet ne s'invente pas pour autant. Si la phrase nomme elle-même ce dont
+ * elle parle, on prend ce nom ; sinon on prend le TITRE de la section en
+ * cours — le cas courant, la phrase commençant alors par un pronom (« Puis
+ * il… »). Sans l'un ni l'autre, pas de fait : mieux vaut se taire.
+ */
+const ANNOUNCES_A_LIST = /:\s*$/;
+
+function announcementFact(
+  sentence: string,
+  items: string[],
+  sourceExcerpt: string,
+  heading: string | null,
+  chunk: DocumentChunk,
+): RawFact | null {
+  if (!ANNOUNCES_A_LIST.test(sentence)) return null;
+
+  const own = sentence.replace(ANNOUNCES_A_LIST, '').trim();
+  const subject = isPlausibleSubject(own) ? own : heading;
+  if (!subject) return null;
+
+  return {
+    subject,
+    predicate: 'composition',
+    object: items.join(', '),
+    items,
+    countWord: null,
+    countNoun: null,
+    sourceChunkId: chunk.id,
+    sourceExcerpt,
+    // Relation déduite d'un deux-points et d'une mise en page, jamais
+    // confirmée par un verbe : prudence, comme pour les listes inline.
+    confidence: 'medium',
+  };
+}
+
 export function extractFacts(chunk: DocumentChunk): RawFact[] {
   const facts: RawFact[] = [];
   let heading: string | null = null;
+  const allLines = chunk.text.split('\n');
 
-  for (const rawLine of chunk.text.split('\n')) {
+  for (let lineIndex = 0; lineIndex < allLines.length; lineIndex += 1) {
+    const rawLine = allLines[lineIndex]!;
     /*
      * La puce est retirée AVANT toute analyse. Sans cela, le sujet extrait
      * était « § Nerf lacrymal » ou « → Dans son trajet le nerf ophtalmique » :
@@ -332,9 +427,18 @@ export function extractFacts(chunk: DocumentChunk): RawFact[] {
     const line = stripBulletPrefix(rawLine);
     const sentences = splitIntoSentences(line);
 
-    // Une ligne courte, sans ponctuation finale, qui ne produit aucun fait :
-    // c'est un titre de section. On la retient pour les lignes suivantes.
-    if (sentences.length === 1) {
+    /*
+      Une ligne courte, sans ponctuation finale, qui ne produit aucun fait :
+      c'est un titre de section. On la retient pour les lignes suivantes.
+
+      JAMAIS UNE PUCE, en revanche. Une puce est un élément de liste, pas un
+      titre — et la confondre avec un titre attribuait le sujet de la section
+      à la dernière énumération rencontrée. Mesuré sur le cours du trijumeau :
+      les trois branches terminales du nerf ophtalmique se retrouvaient
+      rangées sous le sujet « Les nerf III, IV et VI », qui n'est que le
+      dernier élément de la liste d'au-dessus.
+    */
+    if (sentences.length === 1 && bulletDepth(rawLine) === null) {
       const candidate = headingCandidate(line);
       if (candidate && !/[.!?]$/.test(line.trim())) {
         const own = factFromSentence(sentences[0]!, chunk);
@@ -345,16 +449,60 @@ export function extractFacts(chunk: DocumentChunk): RawFact[] {
       }
     }
 
+    /*
+      LA LISTE QUI SUIT CETTE LIGNE LUI APPARTIENT.
+
+      C'est le lien qui manquait, et il manquait des deux côtés à la fois :
+      la PHRASE d'annonce donnait un fait au bon sujet mais sans éléments (ils
+      sont sur les lignes d'après), et la LISTE avait ses éléments mais aurait
+      eu pour sujet la phrase entière — que `isPlausibleSubject` refuse à
+      juste titre, une phrase de deux lignes n'étant pas un nom.
+
+      Mesuré : la réponse s'arrêtait sur « … se divise en 3 branches
+      terminales : » et les branches n'arrivaient jamais. Une annonce sans sa
+      liste ne vaut rien.
+    */
+    const nested = nestedItemsAfter(allLines, lineIndex, bulletDepth(rawLine));
+    const hasList = nested.items.length >= 2;
+    const excerptWithList = hasList
+      ? allLines.slice(lineIndex, nested.end + 1).join('\n')
+      : null;
+
     sentences.forEach((sentence, index) => {
       // Seule la DERNIÈRE phrase d'une ligne peut être tronquée par la
       // découpe en fragments ; les autres sont entières par construction.
       const isLast = index === sentences.length - 1;
       if (isLast && !endsOnCompleteSentence(sentence)) return;
 
+      // Seule la dernière phrase de la ligne annonce la liste qui suit.
+      const carriesList = isLast && hasList;
+
       const fact = factFromSentence(sentence, chunk);
-      if (fact) facts.push(attributeToHeading(fact, sentence, heading));
+      if (fact) {
+        const enriched =
+          carriesList && fact.items === null
+            ? { ...fact, items: nested.items, sourceExcerpt: excerptWithList! }
+            : fact;
+        facts.push(attributeToHeading(enriched, sentence, heading));
+        return;
+      }
+
+      // Aucune règle ne reconnaît la phrase, mais elle annonce une liste :
+      // c'est la ponctuation de l'auteur qui l'établit, pas une devinette.
+      if (!carriesList) return;
+      const announced = announcementFact(sentence, nested.items, excerptWithList!, heading, chunk);
+      if (announced) facts.push(announced);
     });
   }
 
-  return [...facts, ...factsFromBullets(chunk)];
+  /*
+    Les listes « nues » — celles qu'aucune ligne n'a réclamées — viennent
+    ensuite. Le dédoublonnage sur l'extrait évite qu'une même énumération
+    paraisse deux fois, une fois rattachée à son annonce et une fois seule.
+  */
+  const claimed = new Set(facts.map((fact) => fact.sourceExcerpt.trim()));
+  return [
+    ...facts,
+    ...factsFromBullets(chunk).filter((fact) => !claimed.has(fact.sourceExcerpt.trim())),
+  ];
 }

@@ -407,10 +407,10 @@ describe('findLocalAnswer — la mise en forme de la réponse', () => {
       un sujet propre, il gagne de toute façon au recouvrement.
     */
     const chunk = makeChunk(
-      'Donc ce dernier est la branche terminale du nerf maxillaire.\n' +
+      'Le trajet se termine ici, pour le nerf maxillaire.\n' +
         '• Branches ascendantes pour la paupière inférieure\n' +
         '• Branches descendantes pour les joues\n' +
-        'Le nerf maxillaire change de direction.\n' +
+        'Autre chose à savoir sur le nerf maxillaire.\n' +
         '• Quand il sort du crâne\n' +
         '• Quand il entre dans l’orbite',
     );

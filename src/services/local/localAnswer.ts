@@ -221,34 +221,44 @@ function capitalize(text: string): string {
  */
 function renderFact(fact: RawFact): string[] {
   const excerpt = fact.sourceExcerpt.trim();
+  const items = fact.items ?? [];
+  if (items.length < 2) return [`- ${excerpt}`];
+
+  /*
+    DEUX FORMES DE LISTE, DEUX DÉCOUPAGES.
+
+    Depuis qu'un fait peut emporter une liste écrite SUR PLUSIEURS LIGNES, le
+    seul découpage au deux-points ne suffit plus : quand le deux-points tombe
+    en fin de dernière ligne, il ne sépare plus rien, et l'extrait repartait
+    brut — puces du document comprises, « • » et « § » en plein milieu d'une
+    réponse.
+
+    On regarde donc d'abord si les éléments SONT les dernières lignes de
+    l'extrait. Si oui, l'annonce est simplement tout ce qui les précède.
+  */
+  const lines = excerpt
+    .split('\n')
+    .map((line) => stripBulletPrefix(line).trim())
+    .filter(Boolean);
+  const listed = new Set(items);
+  const lead = lines.filter((line) => !listed.has(line));
+
+  if (lead.length > 0 && lead.length < lines.length) {
+    return [...lead.map((line) => `- ${line}`), ...items.map((item) => `  - ${capitalize(item)}`)];
+  }
+
+  /*
+    Sinon la liste est INLINE (« X : a, b et c »), et c'est le deux-points qui
+    sépare l'annonce de ses éléments. Sans cette coupe, le lecteur lit la
+    phrase entière puis relit chaque élément juste en dessous.
+  */
   const colon = excerpt.indexOf(':');
-
-  if (fact.items && fact.items.length >= 2 && colon > 0) {
-    /*
-      L'ANNONCE EST LA DERNIÈRE LIGNE AVANT LE DEUX-POINTS, pas tout ce qui le
-      précède. Sur un vrai extrait — « Le nerf ophtalmique de Willis / Il
-      chemine par le canal… / Puis il entre dans le sillon carotidien … en
-      rapport avec : » —, prendre le bloc entier pour annonce produisait une
-      puce de trois phrases, dont deux revenaient aussitôt en sous-puces :
-      l'étudiant lisait deux fois de suite le trajet du nerf.
-
-      Les lignes d'avant redeviennent donc des puces de plein droit, et les
-      sous-puces sont limitées à ce qui suit RÉELLEMENT le deux-points.
-    */
-    const leadLines = excerpt
-      .slice(0, colon + 1)
-      .split('\n')
-      .map((line) => stripBulletPrefix(line).trim())
-      .filter(Boolean);
-    const announcement = leadLines[leadLines.length - 1];
-    const listed = fact.items.filter((item) => excerpt.slice(colon + 1).includes(item));
-
-    if (announcement && listed.length >= 2) {
-      return [
-        ...leadLines.slice(0, -1).map((line) => `- ${line}`),
-        `- ${announcement}`,
-        ...listed.map((item) => `  - ${capitalize(item)}`),
-      ];
+  if (colon > 0) {
+    const announcement = excerpt.slice(0, colon + 1).trim();
+    const after = excerpt.slice(colon + 1);
+    const inside = items.filter((item) => after.includes(item));
+    if (inside.length >= 2) {
+      return [`- ${announcement}`, ...inside.map((item) => `  - ${capitalize(item)}`)];
     }
   }
   return [`- ${excerpt}`];
@@ -331,9 +341,21 @@ function orderedSections(asked: ReadQuestion | null): typeof SECTIONS {
 }
 
 function composeAnswer(subject: string, facts: RawFact[], asked: ReadQuestion | null): string {
-  // Un seul fait : la phrase se suffit, l'habiller de trois intertitres
-  // donnerait un plan de cours pour une ligne.
-  if (facts.length === 1) return facts[0]!.sourceExcerpt;
+  /*
+    Un seul fait : la phrase se suffit, l'habiller de trois intertitres
+    donnerait un plan de cours pour une ligne.
+
+    Sauf s'il PORTE UNE LISTE. Depuis qu'un fait peut emporter les éléments
+    qui l'annoncent, rendre son extrait brut recrachait les puces du document
+    telles quelles — « • Chaque branche … : » suivi de trois « § ». La mise en
+    forme de liste s'applique donc aussi au fait unique.
+  */
+  if (facts.length === 1) {
+    const only = facts[0]!;
+    return only.items && only.items.length >= 2
+      ? renderFact(only).join('\n')
+      : only.sourceExcerpt;
+  }
 
   const lines: string[] = [`**${subject}** — voici ce que ton cours en dit.`, ''];
 
@@ -393,6 +415,11 @@ function composeAnswer(subject: string, facts: RawFact[], asked: ReadQuestion | 
  * réponse.
  */
 const MAX_SECTIONS = 3;
+/**
+ * En dessous, une section titrée n'a pas assez de matière pour tenir lieu de
+ * réponse à elle seule : les faits reprennent la main.
+ */
+const MIN_TITLED_LINES = 3;
 const MAX_LINES_PER_SECTION = 8;
 
 /**
@@ -412,41 +439,113 @@ const MAX_LINES_PER_SECTION = 8;
 function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredChunk[]): {
   passages: string[];
   chunkIds: string[];
+  /**
+   * Vrai quand une section porte les termes de la question DANS SON TITRE :
+   * c'est la section que le cours consacre au sujet, et elle doit passer
+   * devant un fait isolé (voir `findLocalAnswer`).
+   */
+  titled: boolean;
 } {
-  const found: { rendered: string; chunkId: string; score: number }[] = [];
+  /*
+    TOUTES les sections sont d'abord relevées, dans l'ordre du document —
+    y compris celles qui ne portent pas les termes de la question.
+
+    C'est ce qui permet de rendre une section AVEC SA SUITE. Un cours ne
+    répète pas son sujet à chaque intertitre : sous « Nerf lacrymal », la
+    suite s'intitule « Ce nerf reçoit une anastomose… » et ne contient plus le
+    mot « lacrymal ». Filtrer d'abord, c'était couper la réponse au bout de
+    trois lignes — mesuré sur le vrai cours, la réponse sur le nerf lacrymal
+    tenait en UNE ligne alors que le document lui consacre une page.
+  */
+  interface Section {
+    rendered: string;
+    chunkId: string;
+    order: number;
+    /** Nombre de termes de la question portés par le TITRE. */
+    inHeading: number;
+    /** La section porte-t-elle tous les termes exigés, titre et corps confondus ? */
+    onTopic: boolean;
+  }
+
+  const sections: Section[] = [];
   const seen = new Set<string>();
+  let order = 0;
 
   for (const { chunk } of scoredChunks) {
     for (const section of courseSections(chunk.text)) {
+      order += 1;
       const body = section.lines.map((line) => stripBulletPrefix(line).trim()).filter(Boolean);
       const whole = [section.heading ?? '', ...body].join(' ');
-
-      // La section doit porter TOUS les termes distinctifs : une section qui ne
-      // contient que « nerf » dans un cours de neuro-anatomie ne traite pas
-      // spécifiquement de ce qui est demandé.
-      if ([...required].some((term) => !significantWords(whole).has(term))) continue;
 
       const key = whole.slice(0, 160).toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-
-      const headingTerms = section.heading ? significantWords(section.heading) : new Set<string>();
-      const inHeading = [...required].filter((term) => headingTerms.has(term)).length;
-      // Titre entièrement concordant : c'est LA section du sujet.
-      const score = inHeading === required.size ? 100 + inHeading : inHeading;
 
       const rendered = section.heading
         ? [`**${section.heading}**`, ...body.slice(0, MAX_LINES_PER_SECTION).map((line) => `  - ${line}`)]
         : body.slice(0, MAX_LINES_PER_SECTION).map((line) => `- ${line}`);
       if (rendered.length === 0) continue;
 
-      found.push({ rendered: rendered.join('\n'), chunkId: chunk.id, score });
+      const words = significantWords(whole);
+      const headingTerms = section.heading ? significantWords(section.heading) : new Set<string>();
+      sections.push({
+        rendered: rendered.join('\n'),
+        chunkId: chunk.id,
+        order,
+        inHeading: [...required].filter((term) => headingTerms.has(term)).length,
+        onTopic: [...required].every((term) => words.has(term)),
+      });
     }
   }
 
-  found.sort((a, b) => b.score - a.score);
-  const kept = found.slice(0, MAX_SECTIONS);
-  return { passages: kept.map((entry) => entry.rendered), chunkIds: kept.map((entry) => entry.chunkId) };
+  /*
+    UNE SECTION QUI S'INTITULE DU SUJET EST *LA* RÉPONSE — elle et sa suite.
+
+    Deux erreurs opposées, toutes deux mesurées sur le cours du trijumeau :
+
+     - garder les trois sections les mieux classées donnait, sur « par où
+       passe le nerf ophtalmique ? », la bonne section suivie de vingt lignes
+       voisines dont aucune ne parlait du trajet demandé ;
+     - ne garder QUE la section titrée coupait « le nerf frontal » au bout de
+       trois lignes, alors que le cours poursuit juste en dessous avec ses
+       deux branches et leurs trois catégories.
+
+    Un cours se lit dans son ORDRE : on prend la section titrée et ce qui la
+    suit immédiatement, dans le même document.
+  */
+  const leads = sections.filter((section) => section.onTopic && section.inHeading === required.size);
+
+  const kept =
+    leads.length > 0
+      ? sections
+          .filter((section) =>
+            leads.some(
+              (lead) =>
+                section.chunkId === lead.chunkId &&
+                section.order >= lead.order &&
+                section.order < lead.order + MAX_SECTIONS,
+            ),
+          )
+          .sort((a, b) => a.order - b.order)
+          .slice(0, MAX_SECTIONS)
+      : sections
+          .filter((section) => section.onTopic)
+          .sort((a, b) => b.inHeading - a.inHeading || a.order - b.order)
+          .slice(0, MAX_SECTIONS);
+
+  /*
+    « Titrée » ne suffit pas : encore faut-il que la section DISE quelque
+    chose. Celle du nerf lacrymal tient en une ligne — le cours enchaîne
+    ensuite dans un autre fragment. Lui laisser la priorité sur les faits
+    revenait à répondre en une phrase là où le moteur en avait dix.
+  */
+  const bodyLines = kept.reduce((total, section) => total + section.rendered.split('\n').length, 0);
+
+  return {
+    passages: kept.map((section) => section.rendered),
+    chunkIds: kept.map((section) => section.chunkId),
+    titled: leads.length > 0 && bodyLines >= MIN_TITLED_LINES,
+  };
 }
 
 /**
@@ -497,6 +596,24 @@ export function findLocalAnswer(
 
   const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
 
+  /*
+    LA SECTION QUI PORTE LE TITRE DEMANDÉ PASSE AVANT TOUT.
+
+    Les faits étaient toujours essayés en premier. Depuis qu'ils emportent
+    leurs listes, ils réussissent bien plus souvent — et un fait isolé se
+    mettait à couper l'herbe sous le pied de la section entière. Mesuré :
+    « le nerf frontal » ne renvoyait plus que les trois catégories de branches
+    du nerf supra-orbitaire, là où le cours consacre au nerf frontal une
+    section complète — son entrée dans l'orbite, son trajet, ses deux
+    branches, puis ces catégories.
+
+    Quand une section du cours S'INTITULE du sujet demandé, c'est la meilleure
+    réponse possible : elle est écrite pour ça. Le passage par les faits
+    reprend la main dès que ce n'est pas le cas.
+  */
+  const sections = relevantPassages(required, scoredChunks);
+  if (sections.titled) return passageAnswer(sections, terms, chunkById, lookup);
+
   // ── Étage 1 : les faits reconnus ──
   const matches: { fact: RawFact; chunkId: string; score: number; order: number }[] = [];
   let order = 0;
@@ -545,26 +662,37 @@ export function findLocalAnswer(
   }
 
   // ── Étage 2 : à défaut de fait reconnu, ce que le cours dit du sujet ──
-  const { passages, chunkIds } = relevantPassages(required, scoredChunks);
-  if (passages.length === 0) return null;
+  return passageAnswer(sections, terms, chunkById, lookup);
+}
 
-  const label = [...terms].join(' ');
+/**
+ * Rendu commun aux deux usages des passages : quand une section porte le titre
+ * demandé (avant les faits), et quand aucun fait n'a répondu (après eux).
+ */
+function passageAnswer(
+  sections: { passages: string[]; chunkIds: string[] },
+  terms: ReadonlySet<string>,
+  chunkById: Map<string, ScoredChunk['chunk']>,
+  lookup: ContextLookup,
+): LocalAnswer | null {
+  if (sections.passages.length === 0) return null;
+
   const text = [
-    `Voici ce que ton cours dit à propos de **${label}** :`,
+    `Voici ce que ton cours dit à propos de **${[...terms].join(' ')}** :`,
     '',
-    ...passages.map((passage) => passage),
+    ...sections.passages,
     '',
     '_Ces lignes viennent telles quelles de ton document. Le moteur local les retrouve et les regroupe ; il ne les reformule pas._',
   ].join('\n');
 
-  const passageCitations: Citation[] = [];
-  const seenChunks = new Set<string>();
-  chunkIds.forEach((chunkId, index) => {
-    if (seenChunks.has(chunkId)) return;
-    seenChunks.add(chunkId);
+  const citations: Citation[] = [];
+  const seen = new Set<string>();
+  sections.chunkIds.forEach((chunkId, index) => {
+    if (seen.has(chunkId)) return;
+    seen.add(chunkId);
     const chunk = chunkById.get(chunkId);
-    if (chunk) passageCitations.push(citationFromChunk(chunk, lookup, passages[index]!));
+    if (chunk) citations.push(citationFromChunk(chunk, lookup, sections.passages[index]!));
   });
 
-  return { text, citations: passageCitations };
+  return { text, citations };
 }
