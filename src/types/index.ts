@@ -44,6 +44,17 @@ export interface Profile {
    * entière est libre — sans plage activée, il ne propose rien.
    */
   availability?: StoredAvailability;
+  /**
+   * VERSION DE MISE EN FORME appliquée aux documents déjà importés.
+   *
+   * L'extraction des PDF a été corrigée après coup : un cours importé avant
+   * la correction garde en base un texte aplati, et l'assistant répond
+   * « absent de tes cours » sur un sujet pourtant traité. Ce numéro dit
+   * quelle version du traitement a réellement été appliquée à la
+   * bibliothèque ; `runPendingReindex` la remet à niveau quand il a pris du
+   * retard. Champ additif non indexé : aucune migration Dexie.
+   */
+  courseLayoutVersion?: number;
   /** Durée par défaut d'une séance planifiée, en minutes. */
   sessionMinutes?: number;
 }

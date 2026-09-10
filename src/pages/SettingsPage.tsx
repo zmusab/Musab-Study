@@ -214,12 +214,12 @@ export function SettingsPage() {
           <Card>
             <CardTitle>Retraiter mes cours</CardTitle>
             <CardSubtitle>
-              L’extraction des PDF a été corrigée : elle rend maintenant à tes documents la mise
-              en page que le PDF avait aplatie (titres, puces, accents détachés, en-têtes
-              répétés). Sans cette structure, l’assistant répondait « absent de tes cours » sur
-              des sujets pourtant traités. Les documents importés AVANT la correction gardent
-              l’ancien texte — ce bouton les remet à niveau sans rien réimporter, et sans
-              toucher à tes flashcards ni à ton historique.
+              L’extraction des PDF rend à tes documents la mise en page que le PDF avait
+              aplatie (titres, puces, accents détachés, en-têtes répétés). Sans cette
+              structure, l’assistant répond « absent de tes cours » sur des sujets pourtant
+              traités. Cette remise à niveau se fait désormais TOUTE SEULE au démarrage : tu
+              n’as rien à faire. Ce bouton ne sert plus qu’à la relancer à la main, si tu veux
+              t’en assurer — il ne touche ni à tes flashcards ni à ton historique.
             </CardSubtitle>
             <div className="mt-4">
               <Button loading={reindexing} onClick={handleReindex} data-settings-reindex>

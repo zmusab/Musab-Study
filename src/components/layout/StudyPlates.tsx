@@ -24,8 +24,13 @@
  *  - Le trait seul, jamais de remplissage, à très basse opacité : elles
  *    passent DERRIÈRE les cartes, qui sont opaques, et n'apparaissent que dans
  *    les marges et les zones libres.
- *  - `hidden lg:block` : en dessous de 1024 px il n'y a aucune marge où les
- *    poser, elles passeraient derrière le texte.
+ *  - SEUIL D'AFFICHAGE. Les planches principales apparaissent dès `md`
+ *    (768 px). Les trois planches de la colonne latérale — molaire, formules
+ *    de l'application, lois de physique — étaient à `xl`, soit 1280 px.
+ *    Un iPad Pro 11 en PAYSAGE fait 1194 px : elles ne s'affichaient donc
+ *    JAMAIS sur l'appareil de travail, et « les calculs n'apparaissent
+ *    toujours pas » était exact. Elles sont à `lg` (1024 px), seuil auquel la
+ *    colonne latérale existe réellement.
  *
  * Le dessin est anatomiquement orienté (crâne de profil, cerveau en vue
  * latérale, molaire en coupe, arcade maxillaire à seize dents) sans prétendre
@@ -598,7 +603,7 @@ export function StudyPlates() {
         À gauche elle serait collée au rail opaque : on n'en verrait que la
         moitié.
       */}
-      <div className="absolute right-[2vh] top-[38vh] hidden h-[22vh] w-[24vh] xl:block">
+      <div className="absolute right-[2vh] top-[38vh] hidden h-[22vh] w-[24vh] lg:block">
         <Plate slot="dent">
           <Molar />
         </Plate>
@@ -609,7 +614,7 @@ export function StudyPlates() {
         faite de texte : elle a besoin d'une zone calme, et le haut de page est
         occupé par l'en-tête, qui est étroit.
       */}
-      <div className="absolute left-[14.5rem] top-[4vh] hidden h-[19vh] w-[22vh] xl:block">
+      <div className="absolute left-[14.5rem] top-[4vh] hidden h-[19vh] w-[22vh] lg:block">
         <Calculations />
       </div>
 
@@ -620,7 +625,7 @@ export function StudyPlates() {
         Elle n'apparaît qu'à partir de `xl` : en dessous, cette colonne
         n'existe pas et la planche passerait sous le texte.
       */}
-      <div className="absolute left-[14.5rem] top-[26vh] hidden h-[46vh] w-[34vh] xl:block">
+      <div className="absolute left-[14.5rem] top-[26vh] hidden h-[46vh] w-[34vh] lg:block">
         <Physics />
       </div>
     </div>

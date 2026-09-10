@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { ConfirmProvider, ToastProvider, Spinner } from '@/components/ui';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { refreshProviderStatus } from '@/services/ai/providerStatus';
+import { runPendingReindex } from '@/services/local/autoReindex';
 import { MorePage } from '@/pages/MorePage';
 
 /**
@@ -96,6 +97,25 @@ export function App() {
   // silencieusement et les deux restent indisponibles, sans rien casser.
   useEffect(() => {
     void refreshProviderStatus();
+  }, []);
+
+  /*
+    Les cours importés AVANT la correction de l'extraction PDF gardent en base
+    un texte aplati — et l'assistant répond alors « absent de tes cours » sur
+    un sujet pourtant traité. La remise à niveau se fait ici, SEULE, une fois.
+
+    Un bouton existait dans les Paramètres : il fallait le trouver et savoir
+    qu'on en avait besoin, ce que rien n'indiquait à quelqu'un qui constate
+    juste que « l'IA n'arrive pas à répondre ». Il reste disponible pour un
+    retraitement manuel, mais il n'est plus la condition du bon
+    fonctionnement.
+
+    L'appel n'est pas attendu : l'interface s'affiche pendant ce temps, et
+    toute erreur est absorbée par `runPendingReindex` sans avancer la version
+    — un prochain lancement réessaiera.
+  */
+  useEffect(() => {
+    void runPendingReindex();
   }, []);
 
   return (
