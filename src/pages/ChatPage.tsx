@@ -22,6 +22,7 @@ import {
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
 import { findLocalAnswer } from '@/services/local/localAnswer';
+import { findAnatomyReference, renderAnatomyReference } from '@/services/local/anatomyReference';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
 
@@ -208,6 +209,31 @@ export function ChatPage() {
             citations: local.citations,
           });
           setAwaitingAiChoice(null);
+          return;
+        }
+
+        /*
+          AVANT L'IMPASSE : LA NOMENCLATURE.
+
+          « Ce n'est pas dans tes cours » est honnête, et c'est un cul-de-sac.
+          L'application connaît pourtant 961 structures anatomiques — 305 pour
+          la seule tête et le cou, dont 109 nerfs et les 28 dents permanentes
+          avec leur numérotation FDI — déjà présentes hors ligne pour la vue
+          3D. Ne rien en dire alors qu'on les a sous la main n'aide personne.
+
+          Ce n'est PAS du cours, et l'interface le dit : nom latin, famille,
+          région, et de quoi aller voir la structure en 3D. Le trajet et les
+          rapports restent dans le document, qui reste à importer.
+        */
+        const reference = findAnatomyReference(trimmed);
+        if (reference) {
+          await appendChatMessage({
+            subjectId,
+            role: 'assistant',
+            text: renderAnatomyReference(reference),
+            provenance: 'course-local',
+          });
+          setAwaitingAiChoice(trimmed);
           return;
         }
 

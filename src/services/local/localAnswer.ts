@@ -1,6 +1,6 @@
 import { extractFacts, type FactPredicate, type RawFact } from './relationExtraction';
 import { citationFromChunk } from './citation';
-import { stripBulletPrefix } from './textStructure';
+import { stripBulletPrefix, topLevelColonIndex } from './textStructure';
 import { courseSections } from './courseLayout';
 import { readQuestion, type ReadQuestion } from './questionIntent';
 import { significantWords } from '@/core/text';
@@ -252,7 +252,13 @@ function renderFact(fact: RawFact): string[] {
     sépare l'annonce de ses éléments. Sans cette coupe, le lecteur lit la
     phrase entière puis relit chaque élément juste en dessous.
   */
-  const colon = excerpt.indexOf(':');
+  /*
+    Le deux-points de tête, et lui seul : « Les nerfs palatins (x 3 :
+    antérieur, moyen postérieur) : » en contient DEUX, dont le premier est une
+    précision entre parenthèses. Couper dessus ouvrait une parenthèse dans le
+    titre et la refermait dans le dernier élément (voir `topLevelColonIndex`).
+  */
+  const colon = topLevelColonIndex(excerpt);
   if (colon > 0) {
     const announcement = excerpt.slice(0, colon + 1).trim();
     const after = excerpt.slice(colon + 1);

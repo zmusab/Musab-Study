@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { bulletDepth, detectBulletEnumerations } from '@/services/local/textStructure';
+import {
+  bulletDepth,
+  detectBulletEnumerations,
+  detectInlineEnumeration,
+  topLevelColonIndex,
+} from '@/services/local/textStructure';
 import { extractFacts } from '@/services/local/relationExtraction';
 import { restoreCourseLayout } from '@/services/local/courseLayout';
 import type { DocumentChunk } from '@/types';
@@ -132,5 +137,61 @@ describe('restoreCourseLayout — les renvois au schéma ne coupent pas les phra
   it('ouvre encore une ligne sur une puce cerclée suivie d’une majuscule', () => {
     const text = restoreCourseLayout(['❶ Première partie ❷ Deuxième partie']);
     expect(text.split('\n').filter((line) => line.startsWith('❶') || line.startsWith('❷'))).toHaveLength(2);
+  });
+});
+
+/**
+ * LE DEUX-POINTS QUI SÉPARE VRAIMENT.
+ *
+ * Signalé par l'utilisateur, capture d'écran à l'appui. « Peux-tu expliquer
+ * les nerfs » lui rendait ceci :
+ *
+ *     • Les nerfs palatins (x 3 :
+ *       ◦ Antérieur
+ *       ◦ Moyen postérieur) :
+ *
+ * La ligne du cours est « Les nerfs palatins (x 3 : antérieur, moyen
+ * postérieur) : ». Elle contient DEUX deux-points, et seul le second annonce
+ * quelque chose — le premier est une précision entre parenthèses. En coupant
+ * sur le premier, on ouvrait une parenthèse dans le titre et on la refermait
+ * dans le dernier élément.
+ *
+ * Chaque morceau était exact. L'ensemble ne voulait plus rien dire.
+ */
+describe('topLevelColonIndex — la ponctuation avant tout', () => {
+  it('ignore un deux-points enfermé dans une parenthèse', () => {
+    const line = 'Les nerfs palatins (x 3 : antérieur, moyen postérieur) :';
+    // Celui qui annonce est le DERNIER, hors parenthèse — pas le premier.
+    expect(topLevelColonIndex(line)).toBe(line.lastIndexOf(':'));
+  });
+
+  it('trouve le deux-points ordinaire', () => {
+    const line = 'Le nerf trijumeau possède trois branches : V1, V2, V3';
+    expect(topLevelColonIndex(line)).toBe(line.indexOf(':'));
+  });
+
+  it('renvoie -1 quand il n’y en a aucun au niveau zéro', () => {
+    expect(topLevelColonIndex('Une phrase sans deux-points')).toBe(-1);
+    expect(topLevelColonIndex('Une remarque (voir plus haut : page 4) sans annonce')).toBe(-1);
+  });
+});
+
+describe('detectInlineEnumeration — jamais une parenthèse coupée en deux', () => {
+  it('ne fabrique pas une liste à partir d’une parenthèse', () => {
+    // Rien n'est annoncé APRÈS le deux-points de tête : pas de liste inline.
+    expect(detectInlineEnumeration('Les nerfs palatins (x 3 : antérieur, moyen postérieur) :')).toBeNull();
+  });
+
+  it('reconnaît toujours une vraie liste inline', () => {
+    const match = detectInlineEnumeration('Le nerf trijumeau donne trois branches : ophtalmique, maxillaire et mandibulaire.');
+    expect(match).not.toBeNull();
+    expect(match!.items).toEqual(['ophtalmique', 'maxillaire', 'mandibulaire']);
+  });
+
+  it('reconnaît une liste dont l’annonce contient une parenthèse fermée', () => {
+    const match = detectInlineEnumeration('Le nerf maxillaire (V2) donne : le nerf infra-orbitaire, les nerfs palatins et le nerf zygomatique.');
+    expect(match).not.toBeNull();
+    expect(match!.intro).toBe('Le nerf maxillaire (V2) donne');
+    expect(match!.items).toHaveLength(3);
   });
 });

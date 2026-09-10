@@ -126,20 +126,60 @@ export interface EnumerationMatch {
 }
 
 /**
+ * DEUX-POINTS QUI SÉPARE VRAIMENT — c'est-à-dire hors de toute parenthèse.
+ *
+ * Un cours écrit couramment : « Les nerfs palatins (x 3 : antérieur, moyen
+ * postérieur) : ». Il y a DEUX deux-points, et seul le second annonce quelque
+ * chose ; le premier est une précision entre parenthèses.
+ *
+ * Découper sur le premier donnait, tel quel, dans une réponse à l'écran :
+ *
+ *     • Les nerfs palatins (x 3 :
+ *       ◦ Antérieur
+ *       ◦ Moyen postérieur) :
+ *
+ * — une parenthèse ouverte au titre, refermée dans le dernier élément. Chaque
+ * morceau est exact, l'ensemble ne veut plus rien dire.
+ *
+ * On ne compte donc que les deux-points au NIVEAU ZÉRO. Le repérage suit
+ * l'ouverture et la fermeture des parenthèses et des crochets, sans rien
+ * comprendre au texte : c'est de la ponctuation, pas du sens.
+ */
+export function topLevelColonIndex(text: string): number {
+  let depth = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]!;
+    if (char === '(' || char === '[') depth += 1;
+    else if (char === ')' || char === ']') depth = Math.max(0, depth - 1);
+    else if (char === ':' && depth === 0) return i;
+  }
+  return -1;
+}
+
+/**
  * Motif « X : a, b et c » — inline, sans dépendre de sauts de ligne : le
  * rendu d'une liste dans un PDF ne garantit pas des puces sur des lignes
  * séparées, le texte extrait est souvent un flux continu.
  */
-const INLINE_LIST_PATTERN = /^(.{3,100}?)\s*:\s*(.{3,240})$/;
+const INTRO_MIN = 3;
+const INTRO_MAX = 100;
+const BODY_MIN = 3;
+const BODY_MAX = 240;
 
 export function detectInlineEnumeration(sentence: string): EnumerationMatch | null {
   const trimmed = sentence.trim();
-  const match = INLINE_LIST_PATTERN.exec(trimmed);
-  if (!match) return null;
-  const [, intro, body] = match;
-  const items = splitEnumerationItems(body!.replace(/\.\s*$/, ''));
+
+  const colon = topLevelColonIndex(trimmed);
+  if (colon < 0) return null;
+
+  const intro = trimmed.slice(0, colon).trim();
+  const body = trimmed.slice(colon + 1).trim();
+  if (intro.length < INTRO_MIN || intro.length > INTRO_MAX) return null;
+  if (body.length < BODY_MIN || body.length > BODY_MAX) return null;
+
+  const items = splitEnumerationItems(body.replace(/\.\s*$/, ''));
   if (items.length < 2) return null;
-  return { intro: intro!.trim(), items, sourceExcerpt: trimmed };
+  return { intro, items, sourceExcerpt: trimmed };
 }
 
 /**
