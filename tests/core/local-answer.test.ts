@@ -265,4 +265,44 @@ describe('findLocalAnswer — pertinence réelle, pas un simple partage de mots'
     expect(answer).not.toBeNull();
     expect(answer!.text).toContain('trijumeau');
   });
+
+  /**
+   * TITRE DE RÉPONSE TRONQUÉ.
+   *
+   * Sur un vrai cours, une ligne repliée par le PDF donne parfois un sujet
+   * amputé. La réponse à « nerf maxillaire » s'ouvrait sur « **le nerf** —
+   * voici ce que ton cours en dit » : un titre qui n'annonce rien.
+   *
+   * Le titre doit contenir les termes distinctifs de la question ET ressembler
+   * à un groupe nominal. À défaut, on reprend les mots de la question —
+   * exact, et sans rien affirmer de plus.
+   */
+  it('n’ouvre jamais une réponse sur un sujet tronqué', () => {
+    // La première phrase donne le sujet « Le nerf » : aussi bien classé que
+    // « Le nerf maxillaire » (tous ses mots porteurs sont dans la question),
+    // et rencontré en premier — c'est donc lui qui titrait la réponse.
+    const chunk = makeChunk(
+      'Le nerf est donc en contact direct avec le sinus maxillaire. ' +
+        'Le nerf maxillaire est situé sur la paroi inférieure de l’orbite. ' +
+        'Le nerf maxillaire possède plusieurs branches collatérales.',
+    );
+    const answer = findLocalAnswer('nerf maxillaire', [scored(chunk)], LOOKUP);
+    expect(answer).not.toBeNull();
+    const heading = answer!.text.split('\n')[0]!;
+    expect(heading).not.toMatch(/\*\*le nerf\*\*/i);
+    // Le titre nomme quelque chose : soit un vrai groupe nominal du cours,
+    // soit les mots mêmes de la question.
+    expect(heading.toLowerCase()).toContain('maxillaire');
+  });
+
+  it('garde le sujet du cours quand il est complet', () => {
+    const chunk = makeChunk(
+      'Le nerf ophtalmique de Willis donne trois branches terminales : ' +
+        'le nerf naso-ciliaire, le nerf frontal et le nerf lacrymal. ' +
+        'Le nerf ophtalmique de Willis chemine par le canal le plus interne.',
+    );
+    const answer = findLocalAnswer('nerf ophtalmique', [scored(chunk)], LOOKUP);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('Le nerf ophtalmique de Willis');
+  });
 });

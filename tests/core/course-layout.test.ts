@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { restoreCourseLayout, stripRunningHeaders } from '@/services/local/courseLayout';
+import { restoreCourseLayout, restoreCourseLayoutPages, stripRunningHeaders } from '@/services/local/courseLayout';
 import { chunkDocument } from '@/services/rag/chunking';
 import { extractFacts } from '@/services/local/relationExtraction';
 import { findLocalAnswer } from '@/services/local/localAnswer';
@@ -157,5 +157,55 @@ describe('le moteur local sur un cours réellement structuré en listes', () => 
   it('s’abstient toujours quand le cours ne parle pas du sujet demandé', () => {
     const scored = chunksOf(restoreCourseLayout(PAGES)).map((chunk) => ({ chunk, score: 1 }));
     expect(findLocalAnswer('le ligament parodontal', scored as never, LOOKUP)).toBeNull();
+  });
+
+  /**
+   * NUMÉRO DE PAGE resté seul après le retrait de l'en-tête courant.
+   * Mesuré sur le vrai cours : l'assistant répondait « combien de branches a
+   * le nerf trijumeau ? » en citant, comme premier point, « 10 » — le numéro
+   * de la page.
+   */
+  it('retire l’en-tête courant même sur la page dont le numéro a deux chiffres', () => {
+    // Le cas réel : neuf pages numérotées à un chiffre, une à deux. Le masque
+    // par CHIFFRE arrêtait le préfixe commun avant la fin de l'en-tête, et la
+    // page 10 gardait le sien — puis le voyait promu en titre de section.
+    const pages = Array.from(
+      { length: 10 },
+      (_, i) => `ANATOMIE - DIVISIONS DU NERF TRIJUMEAU\n${i + 1}\nContenu de la page ${i + 1}.`,
+    );
+    const restored = restoreCourseLayoutPages(pages);
+    for (const page of restored) {
+      expect(page).not.toContain('ANATOMIE - DIVISIONS DU NERF TRIJUMEAU');
+    }
+    // Et surtout : aucun chiffre orphelin collé au contenu. Retirer le préfixe
+    // par LONGUEUR laissait « 0 » en tête de la page 10.
+    expect(restored[9]).toBe('Contenu de la page 10.');
+  });
+
+  it('ne laisse pas le numéro de page devenir une ligne de contenu', () => {
+    // Ici le numéro est en PIED de page : il ne part pas avec l'en-tête et
+    // doit être reconnu pour lui-même.
+    const pages = [
+      'Le nerf trijumeau possede trois branches.\n1',
+      'Le nerf ophtalmique chemine par le canal interne.\n2',
+      'Le nerf maxillaire traverse le foramen rond.\n10',
+    ];
+    const lines = restoreCourseLayout(pages).split('\n').map((line) => line.trim());
+    expect(lines).not.toContain('1');
+    expect(lines).not.toContain('2');
+    expect(lines).not.toContain('10');
+    expect(lines).toContain('Le nerf maxillaire traverse le foramen rond.');
+  });
+
+  it('ne touche jamais à un nombre porteur de sens', () => {
+    const pages = [
+      'Il donne 3 branches terminales.',
+      'Il se detache a environ 5mm en avant de la terminaison.',
+      'Les nerfs III, IV et VI passent dans le sinus caverneux.',
+    ];
+    const text = restoreCourseLayout(pages);
+    expect(text).toContain('3 branches terminales');
+    expect(text).toContain('5mm');
+    expect(text).toContain('III, IV et VI');
   });
 });

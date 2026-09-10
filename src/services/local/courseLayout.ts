@@ -181,7 +181,20 @@ function joinHyphenatedTerms(text: string): string {
 export function stripRunningHeaders(pages: readonly string[]): string[] {
   if (pages.length < MIN_RUNNING_HEADER_REPEATS) return [...pages];
 
-  const masked = pages.map((page) => page.replace(/\d/g, '#'));
+  /*
+    Le numéro de page est masqué comme un TOUT, pas chiffre par chiffre.
+    Avec un masque par chiffre, « … TRIJUMEAU 9 » donnait « … TRIJUMEAU # »
+    et « … TRIJUMEAU 10 » donnait « … TRIJUMEAU ## » : le préfixe commun
+    s'arrêtait avant la fin de l'en-tête, et la page 10 — la seule à deux
+    chiffres — gardait son en-tête entier. Mesuré sur un vrai cours :
+    l'assistant répondait « combien de branches a le nerf trijumeau ? » en
+    citant « ANATOMIE ¾ - DIVISIONS DU NERF TRIJUMEAU » comme un titre de
+    section, puis « 10 » comme un fait.
+
+    Le masque est un caractère nul, jamais présent dans un texte extrait —
+    contrairement à « # », qui peut appartenir au cours.
+  */
+  const masked = pages.map((page) => page.replace(DIGIT_RUN, DIGIT_MASK));
 
   // Longueur du préfixe commun à toutes les pages sauf, éventuellement, les
   // premières (page de garde) — d'où la comparaison sur la majorité.
@@ -194,13 +207,52 @@ export function stripRunningHeaders(pages: readonly string[]): string[] {
     common = length;
   }
 
+  /*
+    UN EN-TÊTE TIENT SUR UNE OU DEUX LIGNES — titre, puis numéro de page.
+    Sans cette borne, des pages qui se ressemblent beaucoup (même gabarit,
+    seul le numéro change) partagent un préfixe long de toute la page, et le
+    retrait emporterait le contenu avec l'en-tête. On ramène donc le préfixe
+    à la dernière frontière de ligne qu'il contient, au plus deux lignes.
+
+    Quand il n'y a AUCUN retour à la ligne — le cas d'une page entièrement
+    aplatie par l'extraction, celui pour lequel ce module existe — la borne ne
+    s'applique pas : il n'y a pas de frontière où reculer.
+  */
+  let prefixText = reference.slice(0, common);
+  const lastBreak = prefixText.lastIndexOf('\n');
+  if (lastBreak >= 0) {
+    const headerLines = prefixText.slice(0, lastBreak + 1).split('\n').slice(0, MAX_RUNNING_HEADER_LINES);
+    prefixText = headerLines.join('\n') + '\n';
+  }
+
   // Un préfixe commun trop court n'est pas un en-tête, c'est une coïncidence
   // (« Le », « La »). En dessous de douze caractères, on ne touche à rien.
-  if (common < 12) return [...pages];
+  if (prefixText.length < 12) return [...pages];
 
-  return pages.map((page, index) =>
-    masked[index]!.startsWith(reference.slice(0, common)) ? page.slice(common).trimStart() : page,
-  );
+  /*
+    Le retrait se fait par MOTIF et non par longueur. Un nombre masqué occupe
+    un caractère quel que soit son nombre de chiffres : couper `common`
+    caractères du texte d'origine décalerait tout sur la page 10 et y
+    laisserait un « 0 » collé au premier mot.
+  */
+  const pattern = new RegExp('^' + prefixText.split(DIGIT_MASK).map(escapeRegExp).join('\\d+'));
+
+  return pages.map((page) => {
+    const stripped = page.replace(pattern, '');
+    return stripped === page ? page : stripped.trimStart();
+  });
+}
+
+/** Titre, puis numéro de page : au-delà, ce n'est plus un en-tête. */
+const MAX_RUNNING_HEADER_LINES = 2;
+
+/** Nombre entier, masqué d'un seul tenant. */
+const DIGIT_RUN = /\d+/g;
+/** Caractère nul : il ne peut pas venir du texte, donc jamais de collision. */
+const DIGIT_MASK = '\u0000';
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -244,8 +296,30 @@ export function restoreCourseLayoutPages(pages: readonly string[]): string[] {
       .split('\n')
       .map((line) => line.replace(/[ \t]+/g, ' ').trim())
       .filter((line) => line.length > 0)
+      .filter((line) => !isPageArtefact(line))
       .join('\n');
   });
+}
+
+/**
+ * NUMÉRO DE PAGE resté seul sur sa ligne.
+ *
+ * `stripRunningHeaders` retire l'en-tête répété (« ANATOMIE - LE NERF
+ * TRIJUMEAU ») mais pas le numéro qui le suit : celui-ci se retrouve isolé et
+ * devient une ligne de contenu comme une autre. L'assistant répondait alors
+ * « combien de branches a le nerf trijumeau ? » en citant, en premier point,
+ * « 10 » — le numéro de la page.
+ *
+ * Est retenue comme artefact une ligne qui ne contient QUE de quoi numéroter :
+ * un nombre d'au plus trois chiffres, éventuellement précédé de « page » ou
+ * accompagné d'un total (« 10/24 », « - 10 - »). Un nombre plus long ou
+ * accompagné de la moindre lettre est du contenu — « 3 branches terminales »,
+ * « 5mm », « V3 » ne sont jamais touchés.
+ */
+const PAGE_ARTEFACT = /^(?:page\s*)?[-–—\s]*\d{1,3}(?:\s*\/\s*\d{1,3})?[-–—\s.]*$/i;
+
+function isPageArtefact(line: string): boolean {
+  return PAGE_ARTEFACT.test(line.trim());
 }
 
 /** Même traitement, rendu en un seul texte — pratique pour mesurer et tester. */

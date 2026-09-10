@@ -213,6 +213,48 @@ function renderFact(fact: RawFact): string[] {
   return [`- ${excerpt}`];
 }
 
+/**
+ * SUJET AFFICHÉ EN TÊTE DE RÉPONSE.
+ *
+ * Il était pris tel quel sur le fait le mieux classé. Sur un vrai cours, une
+ * ligne repliée par le PDF donne parfois un sujet tronqué : « inconstante : le
+ * nerf est donc en contact direct avec le sinus maxillaire » produisait le
+ * sujet « le nerf », et la réponse à « nerf maxillaire » s'ouvrait sur
+ * « **le nerf** — voici ce que ton cours en dit ». Le titre n'annonce alors
+ * plus rien.
+ *
+ * Un sujet n'est retenu que s'il contient TOUS les termes distinctifs de la
+ * question — c'est la définition même d'un sujet de réponse. À défaut, on ne
+ * bricole pas un titre : on reprend les mots de la question, ce qui est exact
+ * et n'affirme rien de plus que « voilà ce que ton cours en dit ».
+ */
+function headingSubject(
+  facts: readonly RawFact[],
+  required: ReadonlySet<string>,
+  questionTerms: ReadonlySet<string>,
+  fallback: string,
+): string {
+  for (const fact of facts) {
+    const words = significantWords(fact.subject);
+
+    // Tous les termes distinctifs, sinon ce n'est pas le sujet de la réponse.
+    if (![...required].every((term) => words.has(term))) continue;
+
+    /*
+      Et il doit ressembler à un vrai groupe nominal. Les termes distinctifs
+      seuls ne suffisent pas : « nerf » est trop fréquent dans un cours
+      d'anatomie pour être distinctif, si bien qu'un fragment comme
+      « maxillaires » les contenait tous et devenait le titre de la réponse à
+      « nerf maxillaire ». On exige donc en plus, soit tous les mots de la
+      question, soit au moins deux mots porteurs — de quoi nommer quelque
+      chose plutôt que d'en montrer un morceau.
+    */
+    const complete = [...questionTerms].every((term) => words.has(term));
+    if (complete || words.size >= 2) return fact.subject;
+  }
+  return fallback;
+}
+
 function composeAnswer(subject: string, facts: RawFact[]): string {
   // Un seul fait : la phrase se suffit, l'habiller de trois intertitres
   // donnerait un plan de cours pour une ligne.
@@ -393,7 +435,8 @@ export function findLocalAnswer(
   }
 
   if (kept.length > 0) {
-    return { text: composeAnswer(kept[0]!.subject, kept), citations };
+    const subject = headingSubject(kept, required, questionTerms, [...questionTerms].join(' '));
+    return { text: composeAnswer(subject, kept), citations };
   }
 
   // ── Étage 2 : à défaut de fait reconnu, ce que le cours dit du sujet ──
