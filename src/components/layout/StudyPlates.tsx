@@ -461,12 +461,12 @@ function Calculations() {
     'pH critique ≈ 5,5',
   ];
   return (
-    <svg viewBox="0 0 150 130" className="h-full w-full" {...{ 'aria-hidden': true }}>
+    <svg viewBox="0 0 122 130" className="h-full w-full" {...{ 'aria-hidden': true }}>
       {/* Filet de marge, comme sur une page de cahier. */}
       <path d="M6 2 V128" stroke="currentColor" strokeWidth={0.9} fill="none" opacity={0.7} />
       <g fill="currentColor" stroke="none" fontFamily="var(--font-serif, Georgia, serif)" fontStyle="italic">
         {lines.map((line, index) => (
-          <text key={line} x={13} y={14 + index * 17} fontSize={9.5}>
+          <text key={line} x={12} y={14 + index * 17} fontSize={11}>
             {line}
           </text>
         ))}
@@ -511,11 +511,13 @@ function Physics() {
     { name: 'Décroissance', formula: 'N(t) = N₀ e^(−λt)', note: 't½ = ln 2 / λ' },
   ];
 
-  const LINE = 20;
+  // Trois lignes par loi (nom, formule, usage) au lieu de deux avec l'usage
+  // en colonne : la colonne bridait la largeur des formules, donc leur taille.
+  const LINE = 30;
   const height = 12 + laws.length * LINE;
 
   return (
-    <svg viewBox={`0 0 300 ${height}`} className="h-full w-full" {...{ 'aria-hidden': true }}>
+    <svg viewBox={`0 0 200 ${height}`} className="h-full w-full" {...{ 'aria-hidden': true }}>
       {/* Filet de marge, comme sur une page de cahier. */}
       <path d={`M6 2 V${height - 2}`} stroke="currentColor" strokeWidth={0.9} fill="none" opacity={0.7} />
       <g fill="currentColor" stroke="none" fontFamily="var(--font-serif, Georgia, serif)">
@@ -524,20 +526,75 @@ function Physics() {
           return (
             <g key={law.name}>
               {/* Le nom de la loi, droit : c'est une étiquette, pas une variable. */}
-              <text x={13} y={y} fontSize={7} letterSpacing="0.06em">
+              <text x={13} y={y} fontSize={8} letterSpacing="0.06em">
                 {law.name.toUpperCase()}
               </text>
-              <text x={13} y={y + 9} fontSize={9} fontStyle="italic">
+              <text x={13} y={y + 12} fontSize={13} fontStyle="italic">
                 {law.formula}
               </text>
               {/*
                 Ce que la loi sert à calculer ICI — sans quoi une formule n'est
-                qu'un alignement de symboles. La colonne est posée à 160, pas
-                132 : en serif italique, « pH = pKa + log([A⁻]/[AH]) » dépassait
-                et les deux textes se chevauchaient.
+                qu'un alignement de symboles. Posé SOUS la formule, plus en
+                colonne à droite : la colonne bridait la largeur disponible, et
+                donc la taille de la formule elle-même, qui était le reproche.
               */}
-              <text x={160} y={y + 9} fontSize={6.5} fontStyle="italic" opacity={0.75}>
+              <text x={13} y={y + 22} fontSize={7.5} fontStyle="italic" opacity={0.7}>
                 {law.note}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * PLANCHE CENTRALE — chimie et biomécanique de la dent.
+ *
+ * Le bas du milieu de page restait vide : le contenu y est déjà terminé, et
+ * les planches vivaient toutes sur les bords. Celle-ci occupe cette bande,
+ * derrière les cartes qui sont opaques — elle n'apparaît donc que dans les
+ * espaces réellement libres.
+ *
+ * Contenu volontairement DIFFÉRENT de la planche de physique : ce qui se
+ * passe chimiquement dans la bouche, et ce que la dent encaisse. Comme
+ * ailleurs, aucune réaction ni valeur n'est inventée — l'équilibre de
+ * déminéralisation de l'hydroxyapatite, l'équilibre carbonate de la salive,
+ * les charges occlusales et les duretés sont des données de cours.
+ */
+function ChemistryPlate() {
+  const lines: readonly { formula: string; note: string }[] = [
+    { formula: 'Ca₁₀(PO₄)₆(OH)₂ + 8 H⁺ ⇌ 10 Ca²⁺ + 6 HPO₄²⁻ + 2 H₂O', note: 'déminéralisation de l’émail' },
+    { formula: 'CO₂ + H₂O ⇌ H₂CO₃ ⇌ H⁺ + HCO₃⁻', note: 'tampon carbonate de la salive' },
+    { formula: 'Ca₁₀(PO₄)₆(OH)₂ + 2 F⁻ → Ca₁₀(PO₄)₆F₂ + 2 OH⁻', note: 'fluoroapatite, plus résistante' },
+    { formula: 'pH < 5,5 → dissolution ; pH > 5,5 → reminéralisation', note: 'seuil critique de l’émail' },
+    { formula: 'Force occlusale ≈ 400–800 N (molaires)', note: 'charge masticatoire' },
+    { formula: 'Dureté Knoop : émail ≈ 340 · dentine ≈ 68', note: 'kg·mm⁻²' },
+  ];
+
+  const LINE = 30;
+  const height = 14 + lines.length * LINE;
+
+  return (
+    /*
+      290 de large, pas 250 : la demi-équation de déminéralisation
+      (« … ⇌ 10 Ca²⁺ + 6 HPO₄²⁻ + 2 H₂O ») sortait du cadre et se terminait en
+      plein vide. Une équation coupée en deux ne vaut rien — autant ne pas la
+      mettre.
+    */
+    <svg viewBox={`0 0 290 ${height}`} className="h-full w-full" {...{ 'aria-hidden': true }}>
+      <path d={`M6 2 V${height - 2}`} stroke="currentColor" strokeWidth={0.9} fill="none" opacity={0.7} />
+      <g fill="currentColor" stroke="none" fontFamily="var(--font-serif, Georgia, serif)">
+        {lines.map((line, index) => {
+          const y = 16 + index * LINE;
+          return (
+            <g key={line.formula}>
+              <text x={13} y={y} fontSize={11} fontStyle="italic">
+                {line.formula}
+              </text>
+              <text x={13} y={y + 11} fontSize={7.5} fontStyle="italic" opacity={0.7}>
+                {line.note}
               </text>
             </g>
           );
@@ -614,7 +671,7 @@ export function StudyPlates() {
         faite de texte : elle a besoin d'une zone calme, et le haut de page est
         occupé par l'en-tête, qui est étroit.
       */}
-      <div className="absolute left-[14.5rem] top-[4vh] hidden h-[19vh] w-[22vh] lg:block">
+      <div className="absolute left-[14.5rem] top-[3vh] hidden h-[21vh] w-[26vh] lg:block">
         <Calculations />
       </div>
 
@@ -625,8 +682,22 @@ export function StudyPlates() {
         Elle n'apparaît qu'à partir de `xl` : en dessous, cette colonne
         n'existe pas et la planche passerait sous le texte.
       */}
-      <div className="absolute left-[14.5rem] top-[26vh] hidden h-[46vh] w-[34vh] lg:block">
+      <div className="absolute left-[14.5rem] top-[24vh] hidden h-[58vh] w-[40vh] lg:block">
         <Physics />
+      </div>
+
+      {/*
+        Chimie de la dent — la bande médiane, entre la colonne de physique (à
+        gauche) et la molaire (à droite).
+
+        Une première version la centrait sur la page : à 1194 px — la largeur
+        de l'iPad, l'appareil de travail — elle recouvrait le tiers droit des
+        lois de physique, et les deux textes se lisaient l'un par-dessus
+        l'autre. Ancrée au bord droit, sa position ne dépend plus de la
+        largeur de l'écran : elle reste dans le couloir laissé libre.
+      */}
+      <div className="absolute right-[25vh] top-[45vh] hidden h-[26vh] w-[40vh] lg:block">
+        <ChemistryPlate />
       </div>
     </div>
   );
