@@ -7,6 +7,7 @@ import {
   availableMinutes,
   busyRanges,
   firstFreeWindow,
+  freeMinutesRemaining,
   normalizeAvailability,
   serializeAvailability,
   toMinutes,
@@ -176,6 +177,81 @@ describe('plages disponibles', () => {
     expect(firstFreeWindow(slot, [{ start: '14:00', end: '14:45' }], 45)).toBeNull();
   });
 
+  /**
+   * L'HEURE QU'IL EST compte, et seulement pour aujourd'hui.
+   *
+   * Le planificateur proposait un créneau à 14 h alors qu'il était 22 h : un
+   * rendez-vous dans le passé, impossible à honorer, qui décrédibilise tout
+   * le plan qui l'accompagne.
+   */
+  it('ne propose jamais un créneau déjà passé', () => {
+    const slot = daySlot('14:00', '18:00');
+    // 22 h révolues : plus rien ne tient dans la plage 14 h–18 h.
+    expect(firstFreeWindow(slot, [], 60, 22 * 60)).toBeNull();
+  });
+
+  it('démarre à l’heure actuelle quand la plage a déjà commencé', () => {
+    const slot = daySlot('14:00', '18:00');
+    // 15 h 30 : la séance commence maintenant, pas à l'ouverture de la plage.
+    expect(firstFreeWindow(slot, [], 60, 15 * 60 + 30)).toEqual({ start: '15:30', end: '16:30' });
+  });
+
+  it('garde l’ouverture de la plage quand celle-ci n’a pas encore commencé', () => {
+    const slot = daySlot('14:00', '18:00');
+    expect(firstFreeWindow(slot, [], 60, 9 * 60)).toEqual({ start: '14:00', end: '15:00' });
+  });
+
+  it('saute une plage entièrement écoulée et passe à la suivante', () => {
+    const day: DayAvailability = {
+      morning: { id: 'morning', label: 'Matin', enabled: true, start: '09:00', end: '12:00' },
+      afternoon: { id: 'afternoon', label: 'Après-midi', enabled: false, start: '14:00', end: '18:00' },
+      evening: { id: 'evening', label: 'Soir', enabled: true, start: '20:00', end: '22:00' },
+    };
+    expect(firstFreeWindow(day, [], 60, 13 * 60)).toEqual({ start: '20:00', end: '21:00' });
+  });
+
+  /**
+   * `freeMinutesRemaining` répond à « combien de temps me reste-t-il
+   * vraiment », là où `dayLoad.freeCapacity` répond à « combien la journée en
+   * offre au total ». La différence n'apparaît qu'en cours de journée — et
+   * c'est exactement là qu'on pose la question.
+   */
+  it('mesure le temps libre restant sans compter deux fois un créneau écoulé', () => {
+    const slot = daySlot('14:00', '18:00');
+    // Cours 14 h–16 h, il est 15 h : reste 16 h → 18 h, soit 120 min.
+    expect(freeMinutesRemaining(slot, [{ start: '14:00', end: '16:00' }], 15 * 60)).toBe(120);
+    // Sans borne d'heure, la même journée offre les deux mêmes heures.
+    expect(freeMinutesRemaining(slot, [{ start: '14:00', end: '16:00' }], 0)).toBe(120);
+  });
+
+  it('additionne les trous de part et d’autre d’un créneau occupé', () => {
+    const slot = daySlot('14:00', '18:00');
+    expect(freeMinutesRemaining(slot, [{ start: '15:00', end: '16:00' }], 0)).toBe(180);
+  });
+
+  it('ne retire jamais deux fois deux créneaux occupés qui se chevauchent', () => {
+    const slot = daySlot('14:00', '18:00');
+    const busy = [
+      { start: '14:00', end: '16:00' },
+      { start: '15:00', end: '17:00' },
+    ];
+    // L'union occupe 14 h–17 h : il reste une heure, pas moins.
+    expect(freeMinutesRemaining(slot, busy, 0)).toBe(60);
+  });
+
+  it('renvoie zéro quand la journée est finie', () => {
+    expect(freeMinutesRemaining(daySlot('14:00', '18:00'), [], 23 * 60)).toBe(0);
+  });
+
+  it('ignore un créneau occupé qui s’achève avant l’heure actuelle', () => {
+    const slot = daySlot('14:00', '18:00');
+    // Le cours de 14 h–15 h est terminé ; à 16 h la place libre commence à 16 h.
+    expect(firstFreeWindow(slot, [{ start: '14:00', end: '15:00' }], 60, 16 * 60)).toEqual({
+      start: '16:00',
+      end: '17:00',
+    });
+  });
+
   it('déduit les créneaux occupés des événements réellement datés', () => {
     const events = [
       event({ id: 'a', day: TODAY, startTime: '14:00', endTime: '15:00' }),
@@ -251,6 +327,38 @@ describe('placement des séances', () => {
     expect(session!.startTime).toMatch(/^\d{2}:\d{2}$/);
     expect(session!.endTime).toMatch(/^\d{2}:\d{2}$/);
     expect(toMinutes(session!.endTime!) - toMinutes(session!.startTime!)).toBe(45);
+  });
+
+  /**
+   * Le cas le plus visible du bug : on ouvre « Planifier ma semaine » le soir,
+   * et le plan propose une séance le jour même à 14 h. Impossible à honorer,
+   * et il suffit d'une ligne comme celle-là pour que tout le plan paraisse
+   * fabriqué au hasard.
+   */
+  it('lancé en soirée, s’abstient plutôt que de proposer une heure déjà passée', () => {
+    const evening = new Date('2026-03-18T22:30:00.000Z');
+    // `horizonDays: 1` force la décision sur AUJOURD'HUI : sans cette
+    // contrainte le planificateur préfère de toute façon le lendemain, et le
+    // test passerait même avec le bug — il ne verrouillerait rien.
+    const result = scheduleSessions([request()], [], availability, { now: evening, horizonDays: 1 });
+    // La seule plage déclarée est 14 h–18 h : à 22 h 30 il n'en reste rien.
+    expect(result.sessions).toEqual([]);
+    expect(result.unplaced).toHaveLength(1);
+  });
+
+  it('lancé en soirée, reporte la séance plutôt que de la poser dans le passé', () => {
+    const evening = new Date('2026-03-18T22:30:00.000Z');
+    const result = scheduleSessions([request()], [], availability, { now: evening, horizonDays: 3 });
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.day).not.toBe(dayKey(evening));
+  });
+
+  it('lancé en milieu de plage, commence maintenant et non à l’ouverture', () => {
+    const midway = new Date('2026-03-18T15:30:00.000Z');
+    const result = scheduleSessions([request()], [], availability, { now: midway, horizonDays: 1 });
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.day).toBe(dayKey(midway));
+    expect(toMinutes(result.sessions[0]!.startTime!)).toBeGreaterThanOrEqual(15 * 60 + 30);
   });
 
   it('ne place rien sur un créneau déjà occupé', () => {

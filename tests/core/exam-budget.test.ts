@@ -124,6 +124,36 @@ describe('studyBudgetUntil', () => {
     expect(fullyBooked.freeMinutes).toBe(0);
   });
 
+  /**
+   * Le piège : un cours DÉJÀ TERMINÉ ne doit pas être retranché deux fois —
+   * une fois parce qu'il occupe la journée, une fois parce que l'heure à
+   * laquelle il avait lieu est passée. La première version le faisait, et
+   * sous-estimait le temps restant d'exactement la durée du cours écoulé.
+   */
+  it('ne retranche pas deux fois un cours déjà terminé', () => {
+    const budget = studyBudgetUntil(
+      '2026-01-06',
+      [event({ day: '2026-01-05', kind: 'lecture', startTime: '14:00', endTime: '16:00' })],
+      availabilityWith({ start: '14:00', end: '18:00' }),
+      45,
+      // 15 h : le cours court encore jusqu'à 16 h. Reste 16 h → 18 h.
+      new Date('2026-01-05T15:00:00'),
+    );
+    expect(budget.freeMinutes).toBe(120);
+  });
+
+  it('compte le temps libre qui suit un cours terminé plus tôt dans la journée', () => {
+    const budget = studyBudgetUntil(
+      '2026-01-06',
+      [event({ day: '2026-01-05', kind: 'lecture', startTime: '14:00', endTime: '15:00' })],
+      availabilityWith({ start: '14:00', end: '18:00' }),
+      45,
+      // 17 h : le cours est fini depuis longtemps, il reste 17 h → 18 h.
+      new Date('2026-01-05T17:00:00'),
+    );
+    expect(budget.freeMinutes).toBe(60);
+  });
+
   it('ne compte pas les heures d’aujourd’hui déjà écoulées', () => {
     // 16 h : la plage 14 h–18 h n'offre plus que deux heures aujourd'hui.
     const budget = studyBudgetUntil(

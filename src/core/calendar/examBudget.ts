@@ -2,7 +2,12 @@ import type { CalendarEvent, DayKey } from '@/types';
 import { addDays, dayKey, daysBetweenDayKeys, parseDayKey } from '@/lib/date';
 import { dayLoad } from './load';
 import { isStudySession } from './index';
-import { SLOT_ORDER, availabilityFor, toMinutes, type WeeklyAvailability } from './availability';
+import {
+  availabilityFor,
+  freeMinutesRemaining,
+  toMinutes,
+  type WeeklyAvailability,
+} from './availability';
 
 /**
  * TEMPS RÉELLEMENT DISPONIBLE D'ICI UNE ÉVALUATION.
@@ -89,14 +94,24 @@ export function studyBudgetUntil(
     const load = dayLoad(day, events, availability);
     declaredCapacity += load.capacity;
 
-    // AUJOURD'HUI ne compte que pour ce qu'il en reste. On retire les plages
-    // dont l'heure de fin est déjà passée ; les autres sont conservées
-    // entières, faute de savoir si l'utilisateur peut commencer à l'instant.
-    const usable =
-      offset === 0
-        ? Math.max(0, load.freeCapacity - elapsedFreeMinutes(load.day, availability, nowMinutes))
-        : load.freeCapacity;
-    freeMinutes += usable;
+    /*
+      AUJOURD'HUI ne compte que pour ce qu'il en reste.
+      Une première version retranchait la portion écoulée de `freeCapacity` :
+      un cours déjà terminé était alors compté DEUX FOIS — une fois par
+      `freeCapacity`, une fois par le temps écoulé qui le recouvre. À 15 h,
+      une plage 14 h–18 h avec un cours de 14 h à 16 h annonçait 60 min libres
+      au lieu de 120.
+      `freeMinutesRemaining` fait la soustraction créneau par créneau et donne
+      directement le bon chiffre. On garde le minimum avec `freeCapacity`, qui
+      tient compte en plus des événements datés SANS horaire, absents des
+      plages occupées.
+    */
+    const remainingToday = freeMinutesRemaining(
+      availabilityFor(availability, day),
+      load.busy,
+      offset === 0 ? nowMinutes : 0,
+    );
+    freeMinutes += Math.max(0, Math.min(load.freeCapacity, remainingToday));
 
     plannedMinutes += events
       .filter((event) => event.day === day && isStudySession(event) && !event.done)
@@ -114,21 +129,6 @@ export function studyBudgetUntil(
     hasDeclaredAvailability: declaredCapacity > 0,
     isOver: false,
   };
-}
-
-/** Minutes des plages du jour dont l'heure de FIN est déjà dépassée. */
-function elapsedFreeMinutes(day: DayKey, availability: WeeklyAvailability, nowMinutes: number): number {
-  const slots = SLOT_ORDER.map((id) => availabilityFor(availability, day)[id]);
-  let elapsed = 0;
-  for (const slot of slots) {
-    if (!slot.enabled) continue;
-    const start = toMinutes(slot.start);
-    const end = toMinutes(slot.end);
-    if (end <= start) continue;
-    if (nowMinutes >= end) elapsed += end - start;
-    else if (nowMinutes > start) elapsed += nowMinutes - start;
-  }
-  return elapsed;
 }
 
 /**

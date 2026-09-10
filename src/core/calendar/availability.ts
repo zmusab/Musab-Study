@@ -223,16 +223,74 @@ export function busyRanges(events: readonly CalendarEvent[], day: DayKey): TimeR
  * la journée ne peut rien accueillir — le planificateur passe alors au jour
  * suivant plutôt que de superposer deux séances.
  */
+/**
+ * MINUTES RÉELLEMENT LIBRES d'une journée : le temps des plages activées,
+ * moins les créneaux occupés, moins ce qui est déjà écoulé.
+ *
+ * `dayLoad.freeCapacity` répond presque à la même question, mais globalement :
+ * il soustrait la durée totale des cours du total de la journée. Impossible
+ * d'en déduire ce qui reste APRÈS une heure donnée — retrancher en plus la
+ * portion écoulée compterait deux fois un cours situé dans le passé. Ici la
+ * soustraction est faite créneau par créneau, dans l'ordre, ce qui donne le
+ * seul chiffre honnête : le temps qu'il reste vraiment.
+ *
+ * Les plages occupées peuvent se chevaucher : le curseur n'avance jamais en
+ * arrière, donc un même intervalle n'est jamais retiré deux fois.
+ */
+export function freeMinutesRemaining(
+  day: DayAvailability,
+  busy: readonly TimeRange[],
+  notBefore = 0,
+): number {
+  const ranges = busy
+    .map((range) => ({ start: toMinutes(range.start), end: toMinutes(range.end) }))
+    .filter((range) => range.end > range.start)
+    .sort((a, b) => a.start - b.start);
+
+  let free = 0;
+  for (const id of SLOT_ORDER) {
+    const slot = day[id];
+    if (!slot.enabled) continue;
+
+    const slotEnd = toMinutes(slot.end);
+    let cursor = Math.max(toMinutes(slot.start), notBefore);
+    if (slotEnd <= cursor) continue;
+
+    for (const range of ranges) {
+      if (range.end <= cursor) continue;
+      if (range.start >= slotEnd) break;
+      const gap = Math.min(range.start, slotEnd) - cursor;
+      if (gap > 0) free += gap;
+      cursor = Math.min(Math.max(cursor, range.end), slotEnd);
+      if (cursor >= slotEnd) break;
+    }
+    if (cursor < slotEnd) free += slotEnd - cursor;
+  }
+  return free;
+}
+
 export function firstFreeWindow(
   day: DayAvailability,
   busy: readonly TimeRange[],
   minutes: number,
+  /**
+   * Minute de la journée avant laquelle on ne place RIEN (0 = début de
+   * journée). Le planificateur y passe l'heure qu'il est quand le jour visé
+   * est aujourd'hui : sans cela, une session lancée à 22 h proposait
+   * tranquillement un créneau à 14 h — un rendez-vous dans le passé, que
+   * l'utilisateur ne peut évidemment pas honorer, et qui décrédibilise tout
+   * le plan.
+   */
+  notBefore = 0,
 ): TimeRange | null {
   for (const id of SLOT_ORDER) {
     const slot = day[id];
     if (!slot.enabled) continue;
 
-    let cursor = toMinutes(slot.start);
+    // `cursor` démarre au plus tard des deux : l'ouverture de la plage, ou
+    // l'instant présent. Le calcul des chevauchements en dépend et doit donc
+    // venir APRÈS cet ajustement.
+    let cursor = Math.max(toMinutes(slot.start), notBefore);
     const slotEnd = toMinutes(slot.end);
     const overlapping = busy
       .map((range) => ({ start: toMinutes(range.start), end: toMinutes(range.end) }))

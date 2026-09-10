@@ -165,6 +165,9 @@ export function planStudySessions(
         end: event.endTime ?? event.startTime!,
       })),
       minutes,
+      // Même règle que le planificateur : si la veille de l'examen est
+      // aujourd'hui, la relecture ne peut pas être posée à une heure passée.
+      generalDay === dayKey(now) ? now.getHours() * 60 + now.getMinutes() : 0,
     );
     sessions.push({
       day: generalDay,

@@ -126,6 +126,8 @@ export function scheduleSessions(
   const horizon = options.horizonDays ?? 21;
   const config = { ...DEFAULT_SCHEDULING_CONFIG, ...options.config };
   const today = dayKey(now);
+  /** Minutes écoulées depuis minuit — la borne basse des créneaux d'aujourd'hui. */
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   const days: DayKey[] = Array.from({ length: horizon }, (_, i) => dayKey(addDays(now, i)));
   const loads = new Map<DayKey, DayLoad>(days.map((day) => [day, dayLoad(day, events, availability)]));
@@ -198,6 +200,10 @@ export function scheduleSessions(
         availabilityFor(availability, day),
         [...load.busy, ...extra.busy],
         request.minutes,
+        // AUJOURD'HUI ne commence pas à minuit. Sans cette borne, le
+        // planificateur proposait une séance à une heure déjà passée dès
+        // qu'on le lançait en fin de journée.
+        day === today ? nowMinutes : 0,
       );
       if (!slot) return;
 
