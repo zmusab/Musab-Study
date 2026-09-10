@@ -22,6 +22,11 @@ import { clearAllData } from '@/data/db';
 import type { ThemePreference } from '@/types';
 import { agree, plural } from '@/lib/plural';
 import { reindexAllDocuments } from '@/data/repositories/documents';
+import {
+  exportBackupArchive,
+  importBackupArchive,
+  looksLikeArchive,
+} from '@/services/backupArchive';
 
 const THEME_SEGMENTS = [
   { value: 'light' as const, label: 'Clair', icon: '☀️' },
@@ -29,8 +34,7 @@ const THEME_SEGMENTS = [
   { value: 'system' as const, label: 'Système', icon: '🖥️' },
 ];
 
-function downloadJson(data: unknown, filename: string): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -38,6 +42,17 @@ function downloadJson(data: unknown, filename: string): void {
   anchor.click();
   // Sans révocation, le blob resterait en mémoire pour toute la session.
   URL.revokeObjectURL(url);
+}
+
+function downloadJson(data: unknown, filename: string): void {
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename);
+}
+
+/** « 12,4 Mo » — une taille de fichier se lit, elle ne se compte pas en octets. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} Mo`;
 }
 
 export function SettingsPage() {
@@ -102,6 +117,28 @@ export function SettingsPage() {
     }
   };
 
+  /**
+   * Export COMPLET, PDF d'origine compris. Séparé de l'export JSON et non
+   * substitué à lui : l'archive pèse le poids réel des documents, ce qui n'a
+   * pas de sens pour une sauvegarde rapide et régulière. Le décompte annoncé
+   * est celui des fichiers RÉELLEMENT joints, jamais le nombre de documents.
+   */
+  const handleExportArchive = async () => {
+    setBusy(true);
+    try {
+      const { blob, files, bytes } = await exportBackupArchive();
+      downloadBlob(blob, `musab-study-complet-${new Date().toISOString().slice(0, 10)}.zip`);
+      notify(
+        files === 0
+          ? `Sauvegarde téléchargée (${formatBytes(bytes)}). Aucun PDF d’origine à joindre.`
+          : `Sauvegarde complète téléchargée : ${plural(files, 'PDF', 'PDF')} joints, ${formatBytes(bytes)}.`,
+        'success',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleImportFile = async (file: File) => {
     const ok = await confirm({
       title: 'Remplacer toutes tes données ?',
@@ -114,6 +151,17 @@ export function SettingsPage() {
 
     setBusy(true);
     try {
+      // Le FORMAT est reconnu au contenu, pas à l'extension : un fichier
+      // renommé, ou téléchargé sous un autre nom, reste lisible.
+      if (await looksLikeArchive(file)) {
+        const report = await importBackupArchive(file);
+        notify(
+          `Import réussi : ${plural(report.subjects, 'matière')}, ${plural(report.flashcards, 'carte')}, ${plural(report.reviewLogs, 'révision')}, ${plural(report.files, 'PDF', 'PDF')} ${agree(report.files, 'restauré')}.`,
+          'success',
+        );
+        return;
+      }
+
       const parsed: unknown = JSON.parse(await file.text());
       const bundle = isLegacyDump(parsed)
         ? convertLegacyDump(parsed)
@@ -234,10 +282,8 @@ export function SettingsPage() {
             <CardTitle>Sauvegarde et migration</CardTitle>
             <CardSubtitle>
               Tes données vivent sur cet appareil. Exporte régulièrement — c’est ta seule copie.
-              L’import accepte aussi les sauvegardes de ton ancien prototype HTML, historique de
-              révision compris. Les fichiers PDF originaux ne sont pas inclus dans la
-              sauvegarde (elle resterait trop volumineuse) — seuls leurs textes extraits le sont ;
-              ré-importe les PDF eux-mêmes si tu changes d’appareil.
+              L’import reconnaît les deux formats ci-dessous, ainsi que les sauvegardes de ton
+              ancien prototype HTML, historique de révision compris.
             </CardSubtitle>
             <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
               <Button variant="secondary" loading={busy} onClick={handleExport}>
@@ -247,10 +293,32 @@ export function SettingsPage() {
                 Importer une sauvegarde
               </Button>
             </div>
+            <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+              Le fichier <code>.json</code> emporte tout ton travail — matières, textes de cours,
+              flashcards, notes, historique — mais pas les PDF d’origine. Léger, à exporter
+              souvent.
+            </p>
+
+            {/*
+              L'export COMPLET est une action distincte, pas un remplacement :
+              l'archive pèse le poids réel des documents, ce qui n'a pas de sens
+              pour une sauvegarde qu'on refait chaque semaine. Le choix reste à
+              l'utilisateur, avec la contrepartie écrite.
+            */}
+            <div className="mt-4 border-t border-[var(--line)] pt-4">
+              <Button variant="secondary" loading={busy} onClick={handleExportArchive} data-settings-export-full>
+                Exporter tout, PDF compris
+              </Button>
+              <p className="mt-2 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+                Une archive <code>.zip</code> qui contient la même sauvegarde ET tes PDF
+                d’origine. Plus lourde, mais c’est la seule qui te permette de changer
+                d’appareil sans rien réimporter à la main.
+              </p>
+            </div>
             <input
               ref={fileInput}
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,application/zip,.zip"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
