@@ -15,7 +15,6 @@ import { useSubjectNotes } from '@/hooks/useNotes';
 import { listChunks } from '@/data/repositories/documents';
 import { getChapterAnalysis, saveChapterAnalysis } from '@/data/repositories/notions';
 import { createFlashcard } from '@/data/repositories/cards';
-import { hasApiKey } from '@/services/ai/settings';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { weakPoints } from '@/core/progress';
 import { priorityItems, mainRecommendation, upcomingEvaluations } from '@/core/progress/exam';
@@ -212,11 +211,13 @@ function StudyPanel({
   const scopeChapterId = chapterId === 'all' ? null : chapterId;
   const scopeLabel = chapterId === 'all' ? 'toute la matière' : chapters.find((c) => c.id === chapterId)?.name ?? 'ce chapitre';
 
+  /*
+    `studyChapter` construit désormais le résumé et la fiche SANS RÉSEAU (voir
+    services/assistant/chapterStudy.ts). Le garde-fou sur la clé API a donc
+    disparu d'ici : ces deux actions étaient les dernières fonctions d'étude
+    à répondre « Ajoute ta clé API » et à ne rien faire de plus.
+  */
   const runChapterStudy = async (mode: ChapterStudyMode, key: string, userText: string) => {
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour utiliser l’assistant.', 'error');
-      return;
-    }
     setRunning(key);
     try {
       const result = await studyChapter({ subjectId, chapterId: scopeChapterId }, mode, program);
@@ -288,10 +289,8 @@ function StudyPanel({
     if (!noteId || !notes) return;
     const note = notes.find((n) => n.id === noteId);
     if (!note) return;
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour utiliser l’assistant.', 'error');
-      return;
-    }
+    // `summarizeNote` résume désormais localement par défaut : plus de clé
+    // requise pour un texte que l'utilisateur a écrit lui-même.
     setRunning('note');
     try {
       const summary = await summarizeNote({ note });

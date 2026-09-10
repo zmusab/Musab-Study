@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Button, Modal, Select, Textarea, useToast } from '@/components/ui';
 import { createFlashcard } from '@/data/repositories/cards';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
-import { hasApiKey } from '@/services/ai/settings';
 import { generateNoteCardDrafts, InsufficientNoteContentError, type NoteCardDraft } from '@/services/notes/flashcards';
 import type { Note } from '@/types';
 
@@ -48,10 +47,8 @@ export function NoteFlashcardDraftsModal({
   };
 
   const start = async () => {
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour générer des flashcards avec l’IA.', 'error');
-      return;
-    }
+    // `generateNoteCardDrafts` utilise le moteur local par défaut : plus de
+    // clé requise pour un texte que l'utilisateur a écrit lui-même.
     setGenerating(true);
     try {
       const generated = await generateNoteCardDrafts({ note, count });

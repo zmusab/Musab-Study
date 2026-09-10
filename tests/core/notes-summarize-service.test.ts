@@ -37,6 +37,14 @@ beforeEach(() => {
   askMock.mockReset();
 });
 
+/*
+  `source: 'ai'` est désormais explicite ici.
+
+  « Résumer ma note » répondait « Ajoute ta clé API dans Paramètres » et ne
+  faisait rien de plus — pour un texte que l'utilisateur a écrit lui-même et
+  qui est déjà sur son appareil. Le résumé est maintenant local par défaut ;
+  le chemin IA, vérifié ci-dessous, n'a pas bougé.
+*/
 describe('summarizeNote', () => {
   it('refuse une note trop courte sans appeler le modèle', async () => {
     await expect(summarizeNote({ note: note('Trop court.') })).rejects.toBeInstanceOf(InsufficientNoteContentError);
@@ -47,20 +55,46 @@ describe('summarizeNote', () => {
     askMock.mockResolvedValueOnce(
       JSON.stringify({ summary: 'Le trijumeau a trois branches.', excerpt: 'Il comporte trois branches' }),
     );
-    await summarizeNote({ note: note(NOTE_TEXT) });
+    await summarizeNote({ note: note(NOTE_TEXT), source: 'ai' });
     expect(askMock.mock.calls[0]![0].task).toBe('note-summarize');
   });
 
   it('renvoie null quand l’extrait cité n’existe pas réellement dans la note', async () => {
     askMock.mockResolvedValueOnce(JSON.stringify({ summary: 'Résumé plausible.', excerpt: 'passage inventé' }));
-    expect(await summarizeNote({ note: note(NOTE_TEXT) })).toBeNull();
+    expect(await summarizeNote({ note: note(NOTE_TEXT), source: 'ai' })).toBeNull();
   });
 
   it('renvoie le résumé et son extrait quand la citation est vérifiée', async () => {
     askMock.mockResolvedValueOnce(
       JSON.stringify({ summary: 'Le trijumeau a trois branches.', excerpt: 'Il comporte trois branches' }),
     );
-    const result = await summarizeNote({ note: note(NOTE_TEXT) });
+    const result = await summarizeNote({ note: note(NOTE_TEXT), source: 'ai' });
     expect(result).toEqual({ summary: 'Le trijumeau a trois branches.', excerpt: 'Il comporte trois branches' });
+  });
+});
+
+/**
+ * LE CHEMIN PAR DÉFAUT — sans clé, sans réseau.
+ *
+ * Ce qui compte ici n'est pas qu'un résumé sorte, mais qu'il soit VÉRIFIABLE :
+ * l'extrait cité doit se retrouver mot pour mot dans la note. C'est la même
+ * garantie que celle exigée du modèle de langue — ici elle est vraie par
+ * construction, puisque rien n'est réécrit.
+ */
+describe('summarizeNote — sans IA', () => {
+  it('résume localement, sans appeler l’orchestrateur', async () => {
+    const result = await summarizeNote({ note: note(NOTE_TEXT) });
+
+    expect(askMock).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(NOTE_TEXT).toContain(result!.excerpt);
+    expect(result!.summary.length).toBeGreaterThan(0);
+  });
+
+  it('refuse une note trop courte, comme le chemin IA', async () => {
+    await expect(summarizeNote({ note: note('Trop court.') })).rejects.toBeInstanceOf(
+      InsufficientNoteContentError,
+    );
+    expect(askMock).not.toHaveBeenCalled();
   });
 });

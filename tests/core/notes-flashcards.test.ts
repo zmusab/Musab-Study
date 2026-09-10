@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { validateNoteCardDrafts, type RawNoteCardDraft } from '@/services/notes/flashcards';
+import {
+  generateNoteCardDraftsLocally,
+  validateNoteCardDrafts,
+  type RawNoteCardDraft,
+} from '@/services/notes/flashcards';
 
 /**
  * « Créer des flashcards avec l'IA » depuis une note — le principe testé
@@ -78,5 +82,45 @@ describe('validateNoteCardDrafts — jamais une réponse invérifiable', () => {
     const drafts = validateNoteCardDrafts(raw, NOTE_TEXT, 5);
     expect(drafts).toHaveLength(1);
     expect(drafts[0]!.question).toBe('Vraie');
+  });
+});
+
+/**
+ * LE CHEMIN PAR DÉFAUT — depuis une note, sans clé.
+ *
+ * Générer des cartes depuis une NOTE était la dernière action à exiger une
+ * clé API, alors que le faire depuis un COURS est local depuis longtemps :
+ * deux portes voisines pour le même geste, une seule fermée.
+ *
+ * Ce qui est vérifié ici est la garantie qui compte, la même que celle imposée
+ * au chemin IA : l'extrait affiché doit se retrouver MOT POUR MOT dans la
+ * note. Ici elle est vraie par construction — rien n'est réécrit — et ces
+ * tests tombent le jour où ce ne serait plus le cas.
+ */
+describe('generateNoteCardDraftsLocally — sans IA', () => {
+  it('tire des cartes de la note, sans le moindre appel réseau', () => {
+    const drafts = generateNoteCardDraftsLocally(
+      { id: 'n1', subjectId: 's1', chapterId: null, title: 'Trijumeau', text: NOTE_TEXT } as never,
+      5,
+    );
+    expect(drafts.length).toBeGreaterThan(0);
+  });
+
+  it('n’affiche que des extraits réellement présents dans la note', () => {
+    const drafts = generateNoteCardDraftsLocally(
+      { id: 'n1', subjectId: 's1', chapterId: null, title: 'Trijumeau', text: NOTE_TEXT } as never,
+      5,
+    );
+    for (const draft of drafts) {
+      expect(NOTE_TEXT.toLowerCase()).toContain(draft.excerpt.toLowerCase());
+    }
+  });
+
+  it('ne propose rien plutôt que du vide sur un texte sans relation exploitable', () => {
+    const drafts = generateNoteCardDraftsLocally(
+      { id: 'n2', subjectId: 's1', chapterId: null, title: 'Vide', text: 'aaa bbb ccc ddd eee fff.' } as never,
+      5,
+    );
+    expect(drafts).toEqual([]);
   });
 });

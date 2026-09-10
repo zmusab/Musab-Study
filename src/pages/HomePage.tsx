@@ -10,8 +10,6 @@ import { agree, plural } from '@/lib/plural';
 import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
 import { useDashboard } from '@/hooks/useDashboard';
-import { hasApiKey } from '@/services/ai/settings';
-import { useToast } from '@/components/ui';
 import { dayKey, daysBetweenDayKeys } from '@/lib/date';
 
 /**
@@ -61,16 +59,20 @@ export function HomePage() {
   const profile = useProfile();
   const data = useDashboard();
   const navigate = useNavigate();
-  const { notify } = useToast();
   const [aiInput, setAiInput] = useState('');
 
   const handleAskAi = (text: string) => {
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
-    if (!hasApiKey()) {
-      notify('Ajoute ta clé API dans Paramètres pour utiliser l’assistant.', 'error');
-      return;
-    }
+    /*
+      Aucun garde-fou sur la clé ici, et c'est une correction.
+
+      La page IA répond sur les cours SANS RÉSEAU (moteur local). Le raccourci
+      de l'accueil, lui, refusait la question et renvoyait vers Paramètres :
+      la porte était fermée devant une pièce ouverte. On navigue, et c'est la
+      page IA qui décide — localement d'abord, l'IA seulement si l'étudiant la
+      demande.
+    */
     navigate(`/ia?prompt=${encodeURIComponent(trimmed)}`);
   };
 

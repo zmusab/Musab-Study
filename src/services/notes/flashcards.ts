@@ -1,6 +1,9 @@
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { extractJsonArray } from '@/services/ai/parsing';
-import type { Note } from '@/types';
+import { chunkDocument } from '@/services/rag/chunking';
+import { generateLocalCardDrafts } from '@/services/local/localFlashcards';
+import type { ContextLookup } from '@/services/rag/retrieval';
+import type { DocumentChunk, Note } from '@/types';
 
 /**
  * « Créer des flashcards avec l'IA » à partir d'une note.
@@ -91,11 +94,63 @@ export interface GenerateNoteCardsInput {
   note: Note;
   count: number;
   signal?: AbortSignal;
+  /**
+   * `'local'` par défaut (aucun réseau) : la génération de cartes depuis une
+   * NOTE était la dernière à exiger une clé, alors que la génération depuis
+   * un COURS est locale depuis longtemps. Deux portes voisines, une seule
+   * fermée, pour le même geste.
+   */
+  source?: 'local' | 'ai';
+}
+
+/**
+ * CARTES DEPUIS UNE NOTE, SANS RÉSEAU.
+ *
+ * Une note n'est pas un document indexé : elle n'a pas de `DocumentChunk`. On
+ * la découpe donc à la volée, exactement comme un document importé, et on la
+ * confie au MÊME moteur que les cours (`generateLocalCardDrafts`). Une carte
+ * tirée d'une note et une carte tirée d'un PDF sont la même chose ; il n'y
+ * avait aucune raison qu'elles empruntent deux chemins différents.
+ *
+ * L'extrait affiché est la citation du fait : il vient mot pour mot de la
+ * note, ce qui satisfait par construction la vérification qu'on impose au
+ * chemin IA.
+ */
+export function generateNoteCardDraftsLocally(note: Note, count: number): NoteCardDraft[] {
+  const chunks: DocumentChunk[] = chunkDocument(note.text).map((draft, index) => ({
+    ...draft,
+    id: `note-${note.id}-${index}`,
+    documentId: `note-${note.id}`,
+    subjectId: note.subjectId,
+    chapterId: note.chapterId ?? '',
+    embedding: null,
+  }));
+
+  const lookup: ContextLookup = { subjects: new Map(), chapters: new Map(), documents: new Map() };
+  const drafts = generateLocalCardDrafts({
+    chunks,
+    lookup,
+    count,
+    importance: 2,
+    difficulty: 2,
+    existingQuestions: [],
+  });
+
+  return drafts
+    .map((draft) => ({
+      question: draft.question,
+      answer: draft.answer,
+      excerpt: draft.citations[0]?.excerpt ?? draft.answer,
+    }))
+    // Même garantie que le chemin IA : l'extrait doit VRAIMENT être dans la note.
+    .filter((draft) => normalize(note.text).includes(normalize(draft.excerpt)));
 }
 
 /** Génère des propositions de cartes depuis une note, déjà vérifiées contre son texte réel. */
 export async function generateNoteCardDrafts(input: GenerateNoteCardsInput): Promise<NoteCardDraft[]> {
   if (input.note.text.trim().length < MIN_NOTE_LENGTH) throw new InsufficientNoteContentError();
+
+  if (input.source !== 'ai') return generateNoteCardDraftsLocally(input.note, input.count);
 
   const raw = await aiOrchestrator.ask({
     system: systemPrompt(input.count, input.note.title, input.note.text),

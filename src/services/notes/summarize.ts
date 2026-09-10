@@ -1,5 +1,6 @@
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { extractJsonObject } from '@/services/ai/parsing';
+import { splitIntoSentences } from '@/services/local/textStructure';
 import type { Note } from '@/types';
 
 /**
@@ -65,11 +66,44 @@ ${noteText}`;
 export interface SummarizeNoteInput {
   note: Note;
   signal?: AbortSignal;
+  /**
+   * `'local'` par défaut (aucun réseau). `'ai'` est un choix explicite de
+   * l'utilisateur, au comportement strictement inchangé.
+   */
+  source?: 'local' | 'ai';
 }
 
-/** Résume une note, avec une vérification déjà faite contre son texte réel. */
+/**
+ * RÉSUMÉ LOCAL D'UNE NOTE — les phrases qui la portent, sans réseau.
+ *
+ * Une note n'a ni titres ni puces : c'est du texte au fil de l'eau. Le résumé
+ * extractif y prend donc sa forme la plus ancienne — les premières phrases,
+ * qui annoncent ce que la note développe.
+ *
+ * Rien n'est reformulé, et l'extrait cité est la première de ces phrases :
+ * la garantie de vérifiabilité du chemin IA (« cet extrait se retrouve mot
+ * pour mot dans la note ») est ici vraie par construction.
+ */
+const MAX_LOCAL_SENTENCES = 3;
+
+export function summarizeNoteLocally(note: Note): NoteSummary | null {
+  const sentences = splitIntoSentences(note.text).filter((sentence) => sentence.length >= 24);
+  if (sentences.length === 0) return null;
+
+  const kept = sentences.slice(0, MAX_LOCAL_SENTENCES);
+  return { summary: kept.join(' '), excerpt: kept[0]! };
+}
+
 export async function summarizeNote(input: SummarizeNoteInput): Promise<NoteSummary | null> {
   if (input.note.text.trim().length < MIN_NOTE_LENGTH) throw new InsufficientNoteContentError();
+
+  /*
+    Local par défaut, comme partout ailleurs dans l'application. « Résumer ma
+    note » répondait « Ajoute ta clé API dans Paramètres » et ne faisait rien
+    de plus — pour un texte que l'utilisateur a écrit lui-même, et qui est
+    déjà sur son appareil.
+  */
+  if (input.source !== 'ai') return summarizeNoteLocally(input.note);
 
   const raw = await aiOrchestrator.ask({
     system: systemPrompt(input.note.title, input.note.text),

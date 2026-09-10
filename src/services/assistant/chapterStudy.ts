@@ -1,6 +1,7 @@
 import { listChunks } from '@/data/repositories/documents';
 import { db } from '@/data/db';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
+import { buildLocalStudySheet } from '@/services/local/localSummary';
 import { courseSystemPrompt, verifyCourseAnswer, type VerifiedAnswer } from '@/services/ai/tutor';
 import { buildContext, type ContextLookup, type ScoredChunk } from '@/services/rag/retrieval';
 import type { DocumentChunk, ID } from '@/types';
@@ -68,11 +69,52 @@ export async function studyChapter(
   mode: ChapterStudyMode,
   program: string,
   signal?: AbortSignal,
+  /**
+   * `'local'` par défaut : le résumé et la fiche se construisent SANS RÉSEAU,
+   * comme les flashcards et les notions. `'ai'` est un choix explicite de
+   * l'utilisateur (« Régénérer avec l'IA »), au comportement inchangé.
+   */
+  source: 'local' | 'ai' = 'local',
 ): Promise<ChapterStudyResult | null> {
   const chunks = await listChunks({ subjectId: scope.subjectId, chapterId: scope.chapterId });
   if (chunks.length === 0) return null;
 
   const lookup = await loadContextLookup(scope.subjectId);
+
+  /*
+    LE MOTEUR LOCAL D'ABORD.
+
+    Le résumé de chapitre et la fiche de révision étaient les deux dernières
+    fonctions d'étude entièrement bloquées derrière une clé API : sans clé,
+    l'assistant répondait « Ajoute ta clé API dans Paramètres » et il ne se
+    passait rien. Elles sont maintenant EXTRACTIVES par défaut — le cours
+    rangé, jamais réécrit — et l'IA reste disponible pour une reformulation,
+    sur demande explicite.
+  */
+  if (source === 'local') {
+    const local = buildLocalStudySheet(mode, chunks, lookup);
+    if (local) {
+      return {
+        verified: {
+          text: local.text,
+          // `course-local` et non `course` : l'interface doit dire d'où vient
+          // la fiche. Présenter un rangement local comme une réponse d'IA
+          // serait exactement le mensonge que ce projet s'interdit.
+          provenance: 'course-local',
+          citations: local.citations,
+          // Rien à invalider : chaque ligne EST un extrait du cours, il n'y a
+          // pas de référence inventée à écarter comme pour une réponse de
+          // modèle de langue.
+          invalidReferences: [],
+        },
+        chunkCount: chunks.length,
+      };
+    }
+    // Rien d'exploitable localement : on le dit, on n'appelle pas le réseau
+    // dans le dos de l'utilisateur.
+    return null;
+  }
+
   const context = buildContext(chunksInReadingOrder(chunks), lookup, CONTEXT_BUDGET);
 
   const raw = await aiOrchestrator.ask({
