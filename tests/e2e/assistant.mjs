@@ -229,9 +229,32 @@ check(
 if ((await sheet().count()) === 0) await openIntent('etudier');
 await category('Étudier').click();
 await page.waitForTimeout(300);
+/*
+  « Résumer ce cours » exigeait une clé API — c'était la dernière fonction
+  d'étude entièrement fermée, avec la fiche de révision. Elle est désormais
+  EXTRACTIVE : le cours rangé dans son ordre, sans réseau, chaque ligne
+  vérifiable mot pour mot dans le document.
+
+  Ce qui est vérifié ici est donc l'inverse de ce qui l'était : le résumé
+  arrive, et aucun renvoi vers les Paramètres ne s'affiche.
+*/
 await page.locator('[data-assistant-study-summary]').click();
-await page.waitForTimeout(500);
-check('« Résumer ce cours » demande aussi honnêtement une clé API', /Ajoute ta clé API/.test(await toast()));
+await page.waitForTimeout(1200);
+check(
+  '« Résumer ce cours » ne réclame plus de clé API',
+  !/Ajoute ta clé API/.test(await toast()),
+  (await toast()).replace(/\n/g, ' | ').slice(0, 120),
+);
+
+/*
+  La feuille se referme après une action RÉUSSIE (c'est vérifié plus haut).
+  Le résumé échouait auparavant faute de clé, si bien qu'elle restait ouverte
+  et que l'action suivante était encore là. Maintenant qu'il aboutit, il faut
+  la rouvrir — ce qui est le comportement voulu, pas un contournement.
+*/
+if ((await sheet().count()) === 0) await openIntent('etudier');
+await category('Étudier').click();
+await page.waitForTimeout(300);
 
 // « Notions importantes / difficiles » exige un chapitre précis (pas « toute la matière »).
 await page.locator('[data-assistant-study-notions]').click();

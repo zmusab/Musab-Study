@@ -127,12 +127,26 @@ await nav.getByRole('link', { name: 'Accueil', exact: true }).first().click();
 await page.waitForTimeout(600);
 check('L’accueil reflète la séance terminée (plus rien de dû)', await page.getByText('Aucune carte due pour l’instant').isVisible());
 
-// ---------- Assistant IA : sans clé API ----------
+/* ---------- Assistant : la question part, MÊME SANS CLÉ ----------
+ *
+ * Ces deux vérifications affirmaient l'inverse : sans clé, l'accueil devait
+ * refuser la question et renvoyer vers Paramètres. C'était le comportement
+ * réel, et c'était un défaut — la page IA, elle, répond sur les cours SANS
+ * RÉSEAU. La porte était fermée devant une pièce ouverte.
+ *
+ * Ce qui est vérifié maintenant est donc l'inverse exact : la question
+ * navigue, et c'est la page IA qui décide — localement d'abord, l'IA
+ * seulement si l'étudiant la demande lui-même.
+ */
 await page.getByPlaceholder('Demande quelque chose à Musab Study…').fill('Explique-moi le nerf vague');
 await page.getByRole('button', { name: 'Demander', exact: true }).click();
-await page.waitForTimeout(500);
-check('Sans clé API, le refus est signalé au lieu de naviguer', await page.getByText('Ajoute ta clé API dans Paramètres').isVisible());
-check('Reste bien sur l’accueil (pas de navigation silencieuse)', page.url().endsWith('/#/'));
+await page.waitForTimeout(800);
+check('Sans clé API, la question part quand même', !page.url().endsWith('/#/'));
+check('Elle arrive bien sur la page IA', page.url().includes('/ia'));
+check(
+  'Aucun renvoi vers Paramètres',
+  !(await page.getByText('Ajoute ta clé API dans Paramètres').isVisible().catch(() => false)),
+);
 
 await page.screenshot({ path: `${SHOT}/ipad-home.png`, fullPage: false });
 

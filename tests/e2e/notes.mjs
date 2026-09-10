@@ -238,9 +238,24 @@ check('La modale de génération de flashcards s’ouvre', await page.locator('[
 await page.locator('[data-note-generate-flashcards]').click();
 await page.waitForTimeout(600);
 const aiToast = await page.locator('[aria-live="polite"]').innerText().catch(() => '');
+/*
+  Cette vérification attendait « Ajoute ta clé API ». Ce n'est plus le
+  comportement, et c'est une correction : la génération depuis une note passe
+  maintenant par le MÊME moteur local que la génération depuis un cours —
+  aucune clé, aucun réseau.
+
+  Ce qui compte n'a pas changé : sur une note dont rien de vérifiable ne peut
+  être tiré, le moteur s'abstient ET LE DIT, au lieu d'inventer des cartes.
+  C'est la garantie qu'on protège ici, pas le message d'une porte fermée.
+*/
 check(
-  'Sans clé API, la génération le dit honnêtement plutôt que d’inventer des cartes',
-  /clé API/i.test(aiToast),
+  'Rien de vérifiable dans la note : le moteur s’abstient et le dit',
+  /ne permet pas|aucune flashcard|pas de flashcard/i.test(aiToast),
+  aiToast.replace(/\n/g, ' | '),
+);
+check(
+  'Et il ne renvoie plus vers les Paramètres pour une clé',
+  !/clé API/i.test(aiToast),
   aiToast.replace(/\n/g, ' | '),
 );
 const afterAi = await dbCounts();
