@@ -292,12 +292,13 @@ export function restoreCourseLayoutPages(pages: readonly string[]): string[] {
     // que l'aplatissement avait soudées à leur titre.
     text = text.replace(SENTENCE_RESTART, '$1\n');
 
-    return text
+    const lines = text
       .split('\n')
       .map((line) => line.replace(/[ \t]+/g, ' ').trim())
       .filter((line) => line.length > 0)
-      .filter((line) => !isPageArtefact(line))
-      .join('\n');
+      .filter((line) => !isPageArtefact(line));
+
+    return rejoinWrappedLines(lines).join('\n');
   });
 }
 
@@ -320,6 +321,81 @@ const PAGE_ARTEFACT = /^(?:page\s*)?[-–—\s]*\d{1,3}(?:\s*\/\s*\d{1,3})?[-–
 
 function isPageArtefact(line: string): boolean {
   return PAGE_ARTEFACT.test(line.trim());
+}
+
+/**
+ * REND SA PHRASE À UNE LIGNE QUE LA MISE EN PAGE AVAIT COUPÉE EN DEUX.
+ *
+ * Une diapositive coupe ses phrases pour tenir dans la largeur. pdf.js
+ * rapporte fidèlement cette coupure (`hasEOL`), et jusqu'ici on la gardait :
+ * chaque morceau devenait une ligne à part entière, donc une puce de réponse,
+ * une carte, un extrait cité. D'où ce que l'assistant renvoyait réellement sur
+ * le cours des branches du trijumeau :
+ *
+ *     - Une branche externe qui chemine sur le bord inférieur de l’os du nez et
+ *     - qui finit en donnant la peau du nez
+ *     - terminales :
+ *     - maxillaires est représentée par ces dents.
+ *
+ * Quatre lignes justes, extraites mot pour mot, et pourtant illisibles :
+ * aucune ne commence là où commence une idée. Le pire cas allait plus loin
+ * qu'illisible — « Ce » restait seul sur sa ligne et devenait un TITRE de
+ * section dans la réponse.
+ *
+ * Le repli visuel se reconnaît sans rien comprendre au texte : la ligne
+ * précédente ne se termine sur aucune ponctuation qui close quoi que ce soit,
+ * et la suivante commence par une minuscule ou une parenthèse fermante — deux
+ * choses qui ne commencent JAMAIS une phrase, un titre ni un élément de liste
+ * en français.
+ *
+ * ── POURQUOI CETTE RÈGLE ET PAS UNE PLUS LARGE ────────────────────────────
+ * Elle ne recolle que ce dont l'ouverture est impossible. Une ligne qui
+ * commence par une majuscule, un chiffre ou une puce est laissée intacte,
+ * même si la précédente semblait inachevée : un titre suivi de sa phrase, un
+ * « 3 branches » ouvrant un élément, un « Il chemine… » ouvert par
+ * `SENTENCE_RESTART` gardent leur ligne. Se tromper ici ne produirait pas une
+ * ligne mal coupée mais deux idées soudées, ce qui est bien pire.
+ *
+ * Le recollage reste À L'INTÉRIEUR d'une page : les décalages de page servent
+ * à dire « page 4 » sous une citation, et une phrase recollée par-dessus une
+ * frontière de page fausserait ce décompte. Une phrase coupée par un saut de
+ * page reste donc coupée — c'est le prix, assumé, d'une citation juste.
+ */
+
+/** Ponctuation qui CLÔT : après elle, la ligne suivante ouvre autre chose. */
+const CLOSES_A_LINE = /[.!?:;…]$/;
+/**
+ * Débuts impossibles pour une phrase, un titre ou un élément de liste — donc
+ * la signature d'une suite. Le « ) » et la virgule en font partie : un
+ * document n'ouvre pas une ligne dessus, ils ferment ce qui précède.
+ */
+const CONTINUES_PREVIOUS = /^[a-zà-ÿ)\],;»]/;
+
+/**
+ * SAUF la puce « o », qui est en minuscule et ressemble donc trait pour trait
+ * à une suite de phrase. Sans cette exception, la première version recollait
+ * « o Branches descendantes… » à la ligne d'avant et refondait en un seul
+ * paragraphe les trois catégories de branches du nerf supra-orbitaire — elle
+ * détruisait exactement la structure que ce fichier existe pour rendre.
+ */
+const LONE_O_LINE = /^o\s/;
+
+function rejoinWrappedLines(lines: readonly string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const previous = joined[joined.length - 1];
+    if (
+      previous !== undefined &&
+      !CLOSES_A_LINE.test(previous) &&
+      CONTINUES_PREVIOUS.test(line) &&
+      !LONE_O_LINE.test(line)
+    ) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+      continue;
+    }
+    joined.push(line);
+  }
+  return joined;
 }
 
 /** Même traitement, rendu en un seul texte — pratique pour mesurer et tester. */

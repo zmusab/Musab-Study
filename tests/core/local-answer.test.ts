@@ -306,3 +306,120 @@ describe('findLocalAnswer — pertinence réelle, pas un simple partage de mots'
     expect(answer!.text).toContain('Le nerf ophtalmique de Willis');
   });
 });
+
+/**
+ * LA FORME DE LA QUESTION, SÉPARÉE DE SON SUJET.
+ *
+ * Mesuré sur le vrai cours de l'utilisateur : « Où se situe le nerf
+ * lacrymal ? » répondait sur le nerf OPHTALMIQUE. Le moteur exigeait les trois
+ * termes de la question — « situe », « nerf », « lacrymal » — et la seule
+ * section à porter « nerf » et « situé » ensemble parlait d'un autre nerf, où
+ * le mot tombait dans une parenthèse de passage.
+ *
+ * Le défaut est de fond : « situe » ne nomme pas un sujet, il pose une
+ * question. L'exiger, c'est chercher un cours qui emploie le vocabulaire de la
+ * question au lieu d'un cours qui y répond.
+ */
+describe('findLocalAnswer — ce que la question demande', () => {
+  /** Un leurre : il contient le VERBE de la question, mais pas son sujet. */
+  const DECOY = makeChunk(
+    'Le nerf ophtalmique se situe dans la paroi du sinus caverneux. ' +
+      'Il se trouve au-dessus du nerf maxillaire.',
+    'chk-leurre',
+  );
+  const TRUTH = makeChunk(
+    'Le nerf lacrymal entre dans l’orbite par la fissure orbitaire supérieure. ' +
+      'Le nerf lacrymal possède deux branches : palpébrale et lacrymale.',
+    'chk-vrai',
+  );
+
+  it('ne cherche pas le verbe de la question dans le cours', () => {
+    const answer = findLocalAnswer('Où se situe le nerf lacrymal ?', [scored(DECOY), scored(TRUTH)], LOOKUP);
+
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('lacrymal');
+    // Le leurre emploie « se situe » et « se trouve » : c'est précisément ce
+    // qui le faisait gagner.
+    expect(answer!.text).not.toContain('sinus caverneux');
+  });
+
+  it('répond d’abord par le lieu quand la question est en « où »', () => {
+    const chunk = makeChunk(
+      'Le nerf frontal est un nerf sensitif. Le nerf frontal se situe sur la paroi supérieure de l’orbite.',
+    );
+    const answer = findLocalAnswer('Où se situe le nerf frontal ?', [scored(chunk)], LOOKUP);
+
+    expect(answer).not.toBeNull();
+    const où = answer!.text.indexOf('Où ça se situe');
+    const quoi = answer!.text.indexOf('Définition');
+    // Les deux rubriques sont là ; c'est leur ORDRE qui répond à la question.
+    expect(où).toBeGreaterThanOrEqual(0);
+    expect(quoi).toBeGreaterThanOrEqual(0);
+    expect(où).toBeLessThan(quoi);
+  });
+
+  it('garde son comportement habituel sur une question sans tournure reconnue', () => {
+    const chunk = makeChunk('Le nerf trijumeau possède trois branches : ophtalmique, maxillaire et mandibulaire.');
+    const answer = findLocalAnswer('Le nerf trijumeau', [scored(chunk)], LOOKUP);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('trois branches');
+  });
+});
+
+describe('findLocalAnswer — la mise en forme de la réponse', () => {
+  /**
+   * Une puce d'annonce suivie de ses sous-puces ne doit pas répéter ce qu'elle
+   * annonce. Sur un extrait à plusieurs lignes, la première version prenait
+   * TOUT ce qui précédait le deux-points pour annonce, et les lignes d'avant
+   * revenaient aussitôt en sous-puces : l'étudiant lisait deux fois la même
+   * phrase.
+   */
+  it('ne fait pas lire deux fois la même ligne', () => {
+    // Deux faits au moins : avec un seul, la réponse est l'extrait brut et
+    // la mise en forme testée ici n'est jamais atteinte.
+    const chunk = makeChunk(
+      'Le nerf ophtalmique est un nerf sensitif de la face.\n' +
+        'Le nerf ophtalmique chemine par le cavum de Meckel.\n' +
+        '• Puis il entre dans le sinus caverneux où il est en rapport avec :\n' +
+        '• L’artère carotide interne\n' +
+        '• Le sinus caverneux\n' +
+        '• Les nerfs III, IV et VI',
+    );
+    const answer = findLocalAnswer('Le nerf ophtalmique', [scored(chunk)], LOOKUP);
+
+    expect(answer).not.toBeNull();
+    // C'est L'ANNONCE qui était lue deux fois — une fois dans la puce, une
+    // fois en tête de ses propres sous-puces —, pas les éléments listés.
+    const occurrences = answer!.text.split('Puis il entre dans le sinus caverneux').length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  /**
+   * Un titre NOMME quelque chose ; une phrase en DIT quelque chose. La réponse
+   * s'ouvrait sur « **Donc ce dernier est la branche terminale du nerf
+   * maxillaire.** » — exact, tiré du cours, et inutilisable comme titre.
+   */
+  it('n’ouvre pas la réponse sur une phrase entière en guise de titre', () => {
+    /*
+      AUCUN fait ne porte ici un vrai groupe nominal pour sujet : les deux
+      listes sont introduites par des phrases entières. C'est le cas mesuré sur
+      le cours réel, et le seul où la règle se voit — s'il existe par ailleurs
+      un sujet propre, il gagne de toute façon au recouvrement.
+    */
+    const chunk = makeChunk(
+      'Donc ce dernier est la branche terminale du nerf maxillaire.\n' +
+        '• Branches ascendantes pour la paupière inférieure\n' +
+        '• Branches descendantes pour les joues\n' +
+        'Le nerf maxillaire change de direction.\n' +
+        '• Quand il sort du crâne\n' +
+        '• Quand il entre dans l’orbite',
+    );
+    const answer = findLocalAnswer('Le nerf maxillaire', [scored(chunk)], LOOKUP);
+
+    expect(answer).not.toBeNull();
+    const subject = /^\*\*(.+?)\*\*/.exec(answer!.text.split('\n')[0]!)?.[1];
+    expect(subject).toBeDefined();
+    // Le signe qui distingue les deux : une phrase se clôt, un nom jamais.
+    expect(subject!.endsWith('.')).toBe(false);
+  });
+});

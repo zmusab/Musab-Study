@@ -2,6 +2,7 @@ import { extractFacts, type FactPredicate, type RawFact } from './relationExtrac
 import { citationFromChunk } from './citation';
 import { stripBulletPrefix } from './textStructure';
 import { courseSections } from './courseLayout';
+import { readQuestion, type ReadQuestion } from './questionIntent';
 import { significantWords } from '@/core/text';
 import { wordSimilarity } from '@/services/search/fuzzy';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
@@ -54,6 +55,10 @@ const SUBJECT_OVERLAP_FLOOR = 0.34;
  */
 const MAX_FACTS_IN_ANSWER = 12;
 
+/**
+ * Ordre par défaut : celui d'un enseignant qui présente une notion — ce que
+ * c'est d'abord, où ça se trouve en dernier.
+ */
 const PREDICATE_PRIORITY: Record<FactPredicate, number> = {
   definition: 0,
   classification: 1,
@@ -62,6 +67,18 @@ const PREDICATE_PRIORITY: Record<FactPredicate, number> = {
   function: 2,
   location: 2,
 };
+
+/**
+ * …mais l'ordre d'un COURS n'est pas l'ordre d'une RÉPONSE. À « où se situe le
+ * nerf lacrymal ? », commencer par sa définition, c'est faire attendre
+ * l'étudiant pendant trois lignes avant de lui dire ce qu'il demandait. La
+ * nature de savoir appelée par la question passe donc devant tout le reste ;
+ * le reste garde son ordre habituel derrière elle.
+ */
+function predicateRank(predicate: FactPredicate, asked: ReadQuestion | null): number {
+  if (asked && predicate === asked.leads) return -1;
+  return PREDICATE_PRIORITY[predicate];
+}
 
 /** Part du sujet du fait effectivement nommée par la question. */
 function subjectOverlap(questionTerms: Set<string>, subjectTerms: Set<string>): number {
@@ -207,8 +224,32 @@ function renderFact(fact: RawFact): string[] {
   const colon = excerpt.indexOf(':');
 
   if (fact.items && fact.items.length >= 2 && colon > 0) {
-    const lead = excerpt.slice(0, colon + 1).trim();
-    return [`- ${lead}`, ...fact.items.map((item) => `  - ${capitalize(item)}`)];
+    /*
+      L'ANNONCE EST LA DERNIÈRE LIGNE AVANT LE DEUX-POINTS, pas tout ce qui le
+      précède. Sur un vrai extrait — « Le nerf ophtalmique de Willis / Il
+      chemine par le canal… / Puis il entre dans le sillon carotidien … en
+      rapport avec : » —, prendre le bloc entier pour annonce produisait une
+      puce de trois phrases, dont deux revenaient aussitôt en sous-puces :
+      l'étudiant lisait deux fois de suite le trajet du nerf.
+
+      Les lignes d'avant redeviennent donc des puces de plein droit, et les
+      sous-puces sont limitées à ce qui suit RÉELLEMENT le deux-points.
+    */
+    const leadLines = excerpt
+      .slice(0, colon + 1)
+      .split('\n')
+      .map((line) => stripBulletPrefix(line).trim())
+      .filter(Boolean);
+    const announcement = leadLines[leadLines.length - 1];
+    const listed = fact.items.filter((item) => excerpt.slice(colon + 1).includes(item));
+
+    if (announcement && listed.length >= 2) {
+      return [
+        ...leadLines.slice(0, -1).map((line) => `- ${line}`),
+        `- ${announcement}`,
+        ...listed.map((item) => `  - ${capitalize(item)}`),
+      ];
+    }
   }
   return [`- ${excerpt}`];
 }
@@ -228,6 +269,31 @@ function renderFact(fact: RawFact): string[] {
  * bricole pas un titre : on reprend les mots de la question, ce qui est exact
  * et n'affirme rien de plus que « voilà ce que ton cours en dit ».
  */
+/**
+ * Un titre NOMME quelque chose ; une phrase en DIT quelque chose.
+ *
+ * Sur le vrai cours, la réponse à « quelles sont les branches du nerf
+ * maxillaire ? » s'ouvrait sur :
+ *
+ *     **Donc ce dernier est la branche terminale du nerf maxillaire.**
+ *
+ * Le sujet extrait était une phrase entière — exacte, tirée du cours, et
+ * inutilisable comme titre : un titre qui affirme déjà quelque chose ne
+ * présente plus rien.
+ *
+ * Deux signes suffisent à distinguer les deux, sans rien comprendre au texte.
+ * Une phrase se termine par une ponctuation qui la clôt ; un groupe nominal
+ * jamais. Et un groupe nominal reste court : passé une dizaine de mots, ce
+ * n'est plus un nom, c'est un propos.
+ */
+const MAX_SUBJECT_WORDS = 10;
+
+function namesSomething(subject: string): boolean {
+  const trimmed = subject.trim();
+  if (/[.!?]$/.test(trimmed)) return false;
+  return trimmed.split(/\s+/).length <= MAX_SUBJECT_WORDS;
+}
+
 function headingSubject(
   facts: readonly RawFact[],
   required: ReadonlySet<string>,
@@ -235,6 +301,8 @@ function headingSubject(
   fallback: string,
 ): string {
   for (const fact of facts) {
+    if (!namesSomething(fact.subject)) continue;
+
     const words = significantWords(fact.subject);
 
     // Tous les termes distinctifs, sinon ce n'est pas le sujet de la réponse.
@@ -255,7 +323,14 @@ function headingSubject(
   return fallback;
 }
 
-function composeAnswer(subject: string, facts: RawFact[]): string {
+/** Mêmes intertitres, celui qu'appelle la question en tête. */
+function orderedSections(asked: ReadQuestion | null): typeof SECTIONS {
+  if (!asked) return SECTIONS;
+  const lead = SECTIONS.filter((section) => section.predicate === asked.leads);
+  return lead.length === 0 ? SECTIONS : [...lead, ...SECTIONS.filter((s) => !lead.includes(s))];
+}
+
+function composeAnswer(subject: string, facts: RawFact[], asked: ReadQuestion | null): string {
   // Un seul fait : la phrase se suffit, l'habiller de trois intertitres
   // donnerait un plan de cours pour une ligne.
   if (facts.length === 1) return facts[0]!.sourceExcerpt;
@@ -263,7 +338,7 @@ function composeAnswer(subject: string, facts: RawFact[]): string {
   const lines: string[] = [`**${subject}** — voici ce que ton cours en dit.`, ''];
 
   const used = new Set<RawFact>();
-  for (const section of SECTIONS) {
+  for (const section of orderedSections(asked)) {
     const group = facts.filter((fact) => fact.predicate === section.predicate);
     if (group.length === 0) continue;
     lines.push(`### ${section.heading}`);
@@ -292,11 +367,19 @@ function composeAnswer(subject: string, facts: RawFact[]): string {
    */
   const counted = facts.filter((fact) => fact.countWord && fact.countNoun);
   if (counted.length > 0) {
-    lines.push('### À retenir');
+    const retain = ['### À retenir'];
     for (const fact of counted) {
-      lines.push(`- ${capitalize(fact.subject)} : **${fact.countWord} ${fact.countNoun}**.`);
+      retain.push(`- ${capitalize(fact.subject)} : **${fact.countWord} ${fact.countNoun}**.`);
     }
-    lines.push('');
+    retain.push('');
+    /*
+      « Combien de branches a le nerf trijumeau ? » attend un nombre. Le lui
+      faire chercher au bas d'une fiche de six rubriques, c'est ne pas
+      répondre : quand la question EST un décompte, le décompte passe en tête,
+      juste après le titre.
+    */
+    if (asked?.intent === 'count') lines.splice(2, 0, ...retain);
+    else lines.push(...retain);
   }
 
   return lines.join('\n').trimEnd();
@@ -385,11 +468,31 @@ export function findLocalAnswer(
   scoredChunks: readonly ScoredChunk[],
   lookup: ContextLookup,
 ): LocalAnswer | null {
-  const questionTerms = significantWords(question, true);
-  if (questionTerms.size === 0) return null;
+  /*
+    LA FORME DE LA QUESTION D'ABORD, SON SUJET ENSUITE.
+
+    « Où se situe le nerf lacrymal ? » laissait trois termes — « situe »,
+    « nerf », « lacrymal » — et le moteur les exigeait tous les trois. Sur le
+    vrai cours, la seule section à porter « nerf » et « situé » ensemble parle
+    du nerf OPHTALMIQUE, où le mot tombe dans une parenthèse de passage : la
+    réponse partait sur un autre nerf que celui demandé.
+
+    « Situe » ne nomme pas un sujet, il pose une question. Il est donc retiré
+    des termes exigés — sans jamais être retiré du COURS, où il garde tout son
+    sens là où il est écrit.
+  */
+  const asked = readQuestion(question);
+  const rawTerms = significantWords(question, true);
+  const questionTerms = asked
+    ? new Set([...rawTerms].filter((term) => !asked.markers.has(term)))
+    : rawTerms;
+  // Filet : une question qui ne serait FAITE que de mots de forme (« c'est
+  // situé où ? ») garde ses termes d'origine plutôt que de n'en avoir aucun.
+  const terms = questionTerms.size > 0 ? questionTerms : rawTerms;
+  if (terms.size === 0) return null;
 
   const chunkTermSets = scoredChunks.map(({ chunk }) => significantWords(chunk.text));
-  const required = distinctiveTerms(questionTerms, chunkTermSets);
+  const required = distinctiveTerms(terms, chunkTermSets);
   if (required === null) return null;
 
   const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
@@ -405,7 +508,7 @@ export function findLocalAnswer(
       const factTerms = significantWords(`${fact.subject} ${fact.sourceExcerpt}`);
       if ([...required].some((term) => !factTerms.has(term))) continue;
 
-      const score = subjectOverlap(questionTerms, significantWords(fact.subject));
+      const score = subjectOverlap(terms, significantWords(fact.subject));
       if (score < SUBJECT_OVERLAP_FLOOR) continue;
 
       matches.push({ fact, chunkId: chunk.id, score, order });
@@ -414,7 +517,9 @@ export function findLocalAnswer(
 
   matches.sort(
     (a, b) =>
-      b.score - a.score || PREDICATE_PRIORITY[a.fact.predicate] - PREDICATE_PRIORITY[b.fact.predicate] || a.order - b.order,
+      b.score - a.score ||
+      predicateRank(a.fact.predicate, asked) - predicateRank(b.fact.predicate, asked) ||
+      a.order - b.order,
   );
 
   const seenExcerpts = new Set<string>();
@@ -435,15 +540,15 @@ export function findLocalAnswer(
   }
 
   if (kept.length > 0) {
-    const subject = headingSubject(kept, required, questionTerms, [...questionTerms].join(' '));
-    return { text: composeAnswer(subject, kept), citations };
+    const subject = headingSubject(kept, required, terms, [...terms].join(' '));
+    return { text: composeAnswer(subject, kept, asked), citations };
   }
 
   // ── Étage 2 : à défaut de fait reconnu, ce que le cours dit du sujet ──
   const { passages, chunkIds } = relevantPassages(required, scoredChunks);
   if (passages.length === 0) return null;
 
-  const label = [...questionTerms].join(' ');
+  const label = [...terms].join(' ');
   const text = [
     `Voici ce que ton cours dit à propos de **${label}** :`,
     '',

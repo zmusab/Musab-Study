@@ -209,3 +209,58 @@ describe('le moteur local sur un cours réellement structuré en listes', () => 
     expect(text).toContain('III, IV et VI');
   });
 });
+
+/**
+ * LIGNES REPLIÉES PAR LA MISE EN PAGE.
+ *
+ * Une diapositive coupe ses phrases pour tenir dans la largeur ; pdf.js
+ * rapporte fidèlement la coupure. Chaque morceau devenait une ligne — donc une
+ * puce de réponse, une carte, un extrait cité — et l'assistant rendait des
+ * bouts de phrase qui ne commençaient nulle part.
+ *
+ * Ce qui est vérifié ici n'est PAS « ça recolle » mais l'équilibre entre les
+ * deux erreurs possibles : recoller trop peu laisse des moitiés de phrase ;
+ * recoller trop soude deux idées, ce qui est bien pire, parce qu'on ne le voit
+ * plus. La moitié des cas ci-dessous vérifie donc qu'une ligne est LAISSÉE
+ * INTACTE.
+ */
+describe('restoreCourseLayout — les phrases repliées', () => {
+  it('rend sa phrase entière à une ligne coupée par la largeur', () => {
+    const text = restoreCourseLayout([
+      'Une branche externe qui chemine sur le bord inférieur de l’os propre du nez et\nqui finit en donnant la peau du nez',
+    ]);
+    expect(text).toContain('du nez et qui finit en donnant la peau du nez');
+    expect(text.split('\n')).toHaveLength(1);
+  });
+
+  it('recolle une parenthèse fermante restée seule au début de la ligne suivante', () => {
+    const text = restoreCourseLayout(['le nerf ophtalmique de Willis se divise en 3 branches\nterminales :']);
+    expect(text).toContain('3 branches terminales :');
+  });
+
+  it('ne recolle pas après une ponctuation qui clôt la phrase', () => {
+    const text = restoreCourseLayout(['Il chemine sur la paroi supérieure de l’orbite.\nil se divise en 2 branches']);
+    expect(text.split('\n')).toHaveLength(2);
+  });
+
+  it('ne recolle pas une ligne qui commence par une majuscule', () => {
+    // Un titre suivi de sa phrase : les souder rendrait la section introuvable.
+    const text = restoreCourseLayout(['Nerf frontal\nEntre dans l’orbite par la fissure orbitaire supérieure']);
+    expect(text.split('\n')).toHaveLength(2);
+  });
+
+  /**
+   * LE PIÈGE. La puce « o » est en minuscule : elle a exactement la forme
+   * d'une suite de phrase. La première version recollait donc « o Branches
+   * descendantes… » à la ligne d'avant et refondait en un seul paragraphe les
+   * trois catégories de branches du nerf supra-orbitaire — elle détruisait la
+   * structure que ce fichier existe pour rendre.
+   */
+  it('ne prend pas la puce « o » pour une suite de phrase', () => {
+    const text = restoreCourseLayout([
+      'Ce nerf finit en se divisant en 3 catégories de branches : o Branches ascendantes pour la peau du front o Branches descendantes pour la paupière o Branches osseuses pour l’os frontal',
+    ]);
+    const items = text.split('\n').filter((line) => line.startsWith('o '));
+    expect(items).toHaveLength(3);
+  });
+});
