@@ -106,9 +106,12 @@ describe('buildLocalStudySheet — la fiche de révision', () => {
    * elle doit paraître aux deux endroits plutôt que d'être consommée par le
    * premier qui la prend.
    */
-  it('remonte les pièges que le cours signale lui-même', () => {
+  it('remonte ce que le cours signale lui-même', () => {
     const sheet = buildLocalStudySheet('sheet', [chunk(COURSE)], LOOKUP);
-    expect(sheet!.text).toContain('Les pièges signalés par ton cours');
+    // La rubrique rassemble « Attention » et « Ne pas confondre », mais aussi
+    // « Remarque » et « PS » — qui ne sont pas des pièges. L'intitulé promettait
+    // donc plus que son contenu.
+    expect(sheet!.text).toContain('Ce que ton cours signale à part');
     expect(sheet!.text).toContain('ne pas confondre le nerf frontal externe');
     // Celle-ci est aussi une définition : elle doit figurer dans les pièges
     // malgré tout, et non disparaître parce qu'un fait l'a déjà consommée.
