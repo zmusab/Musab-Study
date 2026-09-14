@@ -20,9 +20,17 @@ import {
 import { useChapters, useSubjects } from '@/hooks/useSubjects';
 import { useFlashcards } from '@/hooks/useFlashcards';
 import { db } from '@/data/db';
-import { createFlashcard, deleteCard, updateCard } from '@/data/repositories/cards';
+import {
+  createFlashcard,
+  createFlashcards,
+  deleteCard,
+  setCardSuspended,
+  updateCard,
+} from '@/data/repositories/cards';
 import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
+import { parseCardFile, type ImportPreview } from '@/services/flashcards/importFile';
+import { isDuplicateQuestion } from '@/services/flashcards/dedupe';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { masteryStatus, MASTERY_COLOR_VARS } from '@/core/mastery';
 import { springSoft } from '@/components/motion/transitions';
@@ -96,6 +104,15 @@ export function FlashcardsPage() {
    */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  /**
+   * IMPORT — l'aperçu est montré AVANT d'écrire quoi que ce soit. Un import
+   * qui écrit d'abord et se raconte ensuite laisse l'utilisateur nettoyer des
+   * cartes cassées une par une ; ici il voit ce qui sera créé, ce qui a été
+   * refusé et pourquoi, puis il décide.
+   */
+  const [importOpen, setImportOpen] = useState(false);
+  const [preview, setPreview] = useState<(ImportPreview & { fileName: string }) | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
@@ -307,6 +324,69 @@ export function FlashcardsPage() {
     notify('Carte ajoutée.', 'success');
   };
 
+  /**
+   * LIRE LE FICHIER, sans rien écrire. `FileReader` reste local : aucun octet
+   * ne quitte l'appareil — c'est la même règle que pour les PDF de cours.
+   */
+  const handleImportFile = async (file: File) => {
+    const text = await file.text();
+    const parsed = parseCardFile(text);
+    setPreview({ ...parsed, fileName: file.name });
+    if (parsed.cards.length === 0) {
+      notify(
+        parsed.rejected.length > 0
+          ? 'Aucune carte lisible dans ce fichier.'
+          : 'Ce fichier est vide.',
+        'error',
+      );
+    }
+  };
+
+  /**
+   * ÉCRIRE les cartes de l'aperçu, en écartant les doublons de la
+   * bibliothèque — la même règle de déduplication que la génération
+   * (`isDuplicateQuestion`), pour qu'un import répété deux fois ne crée pas
+   * deux fois les mêmes cartes.
+   */
+  const handleImportConfirm = async () => {
+    if (!preview || !subjectId) return;
+    setImporting(true);
+    const existing = (cards ?? []).map((card) => card.question);
+    const kept: { question: string; answer: string }[] = [];
+    let duplicates = 0;
+    for (const row of preview.cards) {
+      if (isDuplicateQuestion(row.question, [...existing, ...kept.map((k) => k.question)])) {
+        duplicates += 1;
+        continue;
+      }
+      kept.push({ question: row.question, answer: row.answer });
+    }
+
+    if (kept.length > 0) {
+      await createFlashcards(
+        kept.map((row) => ({
+          subjectId,
+          chapterId: chapterId === 'all' ? null : chapterId,
+          question: row.question,
+          answer: row.answer,
+          origin: 'manual' as const,
+          importance,
+          difficulty,
+        })),
+      );
+    }
+    setImporting(false);
+    setPreview(null);
+    notify(
+      kept.length === 0
+        ? 'Rien à importer : toutes ces cartes existent déjà.'
+        : `${plural(kept.length, 'carte')} ${agree(kept.length, 'importée')}${
+            duplicates > 0 ? ` · ${duplicates} déjà ${agree(duplicates, 'présente')}` : ''
+          }.`,
+      kept.length === 0 ? 'info' : 'success',
+    );
+  };
+
   const handleDelete = async (card: Flashcard) => {
     const ok = await confirm({
       title: 'Supprimer cette carte ?',
@@ -410,6 +490,9 @@ export function FlashcardsPage() {
           <SubtleAction expanded={manualOpen} onClick={() => setManualOpen((open) => !open)}>
             Écrire une carte moi-même
           </SubtleAction>
+          <SubtleAction expanded={importOpen} onClick={() => setImportOpen((open) => !open)}>
+            Importer un fichier
+          </SubtleAction>
           <SubtleAction disabled={generating} onClick={() => void handleGenerate('ai')}>
             Régénérer avec l’IA
           </SubtleAction>
@@ -455,6 +538,121 @@ export function FlashcardsPage() {
                   <option value={2}>Moyenne</option>
                   <option value={3}>Difficile</option>
                 </Select>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/*
+          IMPORTER UN FICHIER — le pont avec Anki et Quizlet.
+
+          Les deux exportent du texte délimité ; c'est le seul format que les
+          deux savent produire et relire. Le fichier est lu SUR L'APPAREIL,
+          comme les PDF de cours : rien n'est envoyé nulle part.
+        */}
+        <AnimatePresence initial={false}>
+          {importOpen && (
+            <motion.div
+              key="import"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, height: 'auto' }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              transition={springSoft}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 flex flex-col gap-3 border-t border-[var(--line)] pt-4">
+                <p className="text-[0.8rem] leading-relaxed text-[var(--ink-soft)]">
+                  Un fichier <strong>.csv</strong>, <strong>.tsv</strong> ou <strong>.txt</strong> avec
+                  une carte par ligne : la question, puis la réponse. C’est exactement ce qu’exportent
+                  Anki (« Notes en texte brut ») et Quizlet (« Exporter »). Tout est lu sur ton iPad,
+                  rien n’est envoyé.
+                </p>
+                <input
+                  type="file"
+                  accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Le champ est remis à zéro pour qu'importer DEUX FOIS le
+                    // même fichier déclenche bien deux lectures.
+                    e.target.value = '';
+                    if (file) void handleImportFile(file);
+                  }}
+                  className="text-[0.82rem] text-[var(--ink-soft)] file:mr-3 file:rounded-[var(--radius-control)] file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-2 file:text-[0.82rem] file:font-medium file:text-[var(--ink)]"
+                  data-cards-import-file
+                />
+
+                {preview && (
+                  <div className="rounded-[var(--radius-control)] border border-[var(--line)] p-3" data-cards-import-preview>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Chip>{preview.fileName}</Chip>
+                      <Chip>Séparateur : {preview.delimiter}</Chip>
+                      {preview.headerSkipped && <Chip>En-tête ignoré</Chip>}
+                    </div>
+                    <p className="mt-2 text-[0.85rem] font-medium" data-cards-import-count={preview.cards.length}>
+                      {plural(preview.cards.length, 'carte')} {agree(preview.cards.length, 'lue')}
+                      {preview.rejected.length > 0
+                        ? ` · ${plural(preview.rejected.length, 'ligne')} ${agree(preview.rejected.length, 'refusée')}`
+                        : ''}
+                    </p>
+
+                    {preview.cards.length > 0 && (
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {preview.cards.slice(0, 4).map((row) => (
+                          <li key={row.line} className="text-[0.8rem] leading-snug">
+                            <span className="font-medium">{row.question}</span>
+                            <span className="text-[var(--ink-faint)]"> — {row.answer}</span>
+                          </li>
+                        ))}
+                        {preview.cards.length > 4 && (
+                          <li className="text-[0.78rem] text-[var(--ink-faint)]">
+                            … et {plural(preview.cards.length - 4, 'autre')}
+                          </li>
+                        )}
+                      </ul>
+                    )}
+
+                    {/*
+                      CE QUI A ÉTÉ REFUSÉ EST DIT, avec le numéro de ligne :
+                      une ligne perdue en silence est une carte que l'étudiant
+                      croit avoir et qui ne sortira jamais en révision.
+                    */}
+                    {preview.rejected.length > 0 && (
+                      <div className="mt-3 rounded-[var(--radius-control)] bg-[var(--warning-tint)] px-3 py-2">
+                        <p className="text-[0.78rem] font-semibold text-[var(--warning)]">
+                          Lignes non importées
+                        </p>
+                        <ul className="mt-1 flex flex-col gap-1">
+                          {preview.rejected.slice(0, 5).map((row) => (
+                            <li key={row.line} className="text-[0.76rem] leading-snug text-[var(--ink-soft)]">
+                              Ligne {row.line} — {row.reason}
+                              {row.text ? ` : « ${row.text.slice(0, 60)} »` : ''}
+                            </li>
+                          ))}
+                          {preview.rejected.length > 5 && (
+                            <li className="text-[0.76rem] text-[var(--ink-faint)]">
+                              … et {plural(preview.rejected.length - 5, 'autre')}
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        loading={importing}
+                        disabled={preview.cards.length === 0}
+                        onClick={() => void handleImportConfirm()}
+                        data-cards-import-confirm
+                      >
+                        Importer {plural(preview.cards.length, 'carte')}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
+                        Annuler
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -653,10 +851,32 @@ export function FlashcardsPage() {
                         {card.chapterId && <Chip>{chapterName(card.chapterId)}</Chip>}
                         {card.origin === 'ai' && <Chip>IA</Chip>}
                         {card.origin === 'local' && <Chip>Locale</Chip>}
+                        {/*
+                          UNE CARTE SUSPENDUE DOIT SE VOIR ICI, sinon elle
+                          devient introuvable : elle ne revient plus en
+                          révision, et rien dans la bibliothèque ne disait
+                          pourquoi. C'est aussi le seul endroit depuis lequel
+                          on peut la remettre en circulation.
+                        */}
+                        {card.suspended && (
+                          <Chip color="var(--warning)" data-card-suspended>
+                            Suspendue
+                          </Chip>
+                        )}
                       </div>
-                      <Button size="sm" variant="danger" onClick={() => handleDelete(card)}>
-                        Suppr.
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={card.suspended ? 'secondary' : 'ghost'}
+                          onClick={() => void setCardSuspended(card.id, !card.suspended)}
+                          data-card-toggle-suspend
+                        >
+                          {card.suspended ? 'Réactiver' : 'Suspendre'}
+                        </Button>
+                        <Button size="sm" variant="danger" onClick={() => handleDelete(card)}>
+                          Suppr.
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </StaggerItem>

@@ -256,6 +256,30 @@ export interface Flashcard {
    */
   notionKey?: string | null;
   notionLabel?: string | null;
+
+  /**
+   * SUSPENDUE — retirée des révisions jusqu'à réactivation explicite.
+   *
+   * Une carte mal formulée, un doublon repéré trop tard, une notion pas encore
+   * vue en cours : jusqu'ici le seul moyen de ne plus la voir revenir était de
+   * la SUPPRIMER, c'est-à-dire de perdre son historique de révision et la
+   * mesure de maîtrise qui en découle. Suspendre la met de côté sans rien
+   * effacer, et la réactiver la remet exactement là où elle en était.
+   *
+   * ENTERRÉE — retirée jusqu'à une date, en pratique le lendemain.
+   *
+   * Deux cartes de la même notion tombent souvent dans la même session : en
+   * répondre une donne la réponse de l'autre, et la note qu'on met alors ne
+   * mesure plus rien. L'enterrer la repousse au lendemain, sans toucher à son
+   * échéance SM-2 : `due` reste ce que `scheduleNext` a posé, seule la
+   * VISIBILITÉ change.
+   *
+   * Champs additifs et non indexés : aucune migration Dexie (règle documentée
+   * dans `db.ts`). Absents sur toutes les cartes existantes, ce qui se lit
+   * exactement comme « ni suspendue ni enterrée ».
+   */
+  suspended?: boolean;
+  buriedUntil?: ISODateTime | null;
   createdAt: ISODateTime;
 }
 

@@ -164,10 +164,53 @@ describe('isDuplicateQuestion', () => {
     expect(isDuplicateQuestion('Où se situe le nerf facial ?', ['où se situe le nerf facial'])).toBe(true);
   });
 
-  it('reconnaît une reformulation superficielle (même vocabulaire, ordre différent)', () => {
+  it('reconnaît une reformulation qui ne change que la tournure', () => {
     expect(
-      isDuplicateQuestion('Quelles sont les branches du nerf trijumeau ?', ['Quelles sont les trois branches du trijumeau ?']),
+      isDuplicateQuestion('Quelles sont les branches du trijumeau ?', ['Quels sont les branches du trijumeau ?']),
     ).toBe(true);
+  });
+
+  /*
+    LE DOUTE PROFITE À LA CARTE.
+
+    Le recouvrement se mesure sur les mots PORTEURS DE SENS (voir `dedupe.ts`),
+    et deux questions dont les termes distinctifs diffèrent ne sont plus
+    fusionnées. C'est un choix explicite : perdre une carte qu'on voulait est
+    pire que voir une carte de trop, qu'un clic suffit à supprimer.
+
+    Contrepartie assumée : « Quelles sont les branches du NERF trijumeau ? »
+    et « Quelles sont les TROIS branches du trijumeau ? » coexistent
+    désormais, alors qu'elles posent la même question. Le mot en trop de
+    chaque côté suffit à faire tomber le recouvrement des mots porteurs sous
+    le seuil, et aucune règle lexicale ne sait qu'ici « nerf » est un
+    classifieur et « trois » un compte, alors qu'ailleurs ce sont eux qui
+    portent la question.
+  */
+  it('ne fusionne pas deux questions dont les termes distinctifs diffèrent', () => {
+    // Deux dents différentes : la 46 et la 36. L'ancienne règle, qui comptait
+    // aussi les mots outils, trouvait 0,71 de recouvrement et faisait
+    // disparaître la seconde carte en silence.
+    expect(
+      isDuplicateQuestion('Combien de racines a la 46 ?', ['Combien de racines a la 36 ?']),
+    ).toBe(false);
+    // Deux notions différentes, formulées à l'identique — le cas le plus
+    // fréquent dans un jeu de cartes de cours.
+    expect(
+      isDuplicateQuestion('Qu’est-ce que le parodonte ?', ['Qu’est-ce que le sulcus ?']),
+    ).toBe(false);
+  });
+
+  it('reconnaît toujours une question identique au mot près', () => {
+    expect(
+      isDuplicateQuestion('Qu’est-ce que le parodonte ?', ['Qu’est-ce que le parodonte ?']),
+    ).toBe(true);
+  });
+
+  it('reconnaît une question identique même sans aucun mot porteur de sens', () => {
+    // « Et après ? » : que des mots outils. L'égalité exacte des libellés
+    // normalisés reste testée en premier, précisément pour ce cas.
+    expect(isDuplicateQuestion('Et après ?', ['Et après ?'])).toBe(true);
+    expect(isDuplicateQuestion('Et après ?', ['Et avant ?'])).toBe(false);
   });
 
   it('ne confond pas deux questions distinctes qui partagent seulement un même sujet', () => {

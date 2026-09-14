@@ -1,4 +1,5 @@
 import { masteryPct } from '@/core/mastery';
+import { isBuried } from '@/core/srs';
 import { singularize } from '@/core/text';
 import { chapterProgress, weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
@@ -209,35 +210,48 @@ function overlapsSignificantly(a: string, b: string): boolean {
  */
 export function scopeCards(scope: QuizScope, tables: QuizTables, now: Date = new Date()): Flashcard[] {
   const nowIso = now.toISOString();
+  /*
+    UNE CARTE SUSPENDUE NE REVIENT PAR AUCUNE PORTE.
+
+    Suspendre veut dire « ne me la montre plus » : la retirer des révisions
+    mais la laisser ressortir en quiz aurait vidé le geste de son sens. Le
+    filtre est posé sur le vivier, donc avant TOUTES les branches — un scope
+    ajouté plus tard en hérite sans qu'on ait à y penser.
+
+    L'ENTERREMENT, lui, ne concerne que ce qui est programmé AUJOURD'HUI : il
+    est appliqué à la branche « à revoir », pas à un quiz que l'étudiant
+    demande explicitement sur une matière ou un chapitre.
+  */
+  const cards = tables.cards.filter((card) => card.suspended !== true);
   switch (scope.kind) {
     case 'subject':
-      return tables.cards.filter((card) => card.subjectId === scope.subjectId);
+      return cards.filter((card) => card.subjectId === scope.subjectId);
     case 'subjects': {
       const wanted = new Set(scope.subjectIds);
-      return tables.cards.filter((card) => wanted.has(card.subjectId));
+      return cards.filter((card) => wanted.has(card.subjectId));
     }
     case 'chapter':
-      return tables.cards.filter(
+      return cards.filter(
         (card) => card.subjectId === scope.subjectId && card.chapterId === scope.chapterId,
       );
     case 'due':
-      return tables.cards.filter((card) => card.due <= nowIso);
+      return cards.filter((card) => card.due <= nowIso && !isBuried(card, now));
     case 'exam':
-      return tables.cards.filter((card) => card.subjectId === scope.subjectId);
+      return cards.filter((card) => card.subjectId === scope.subjectId);
     case 'weak': {
-      const weak = weakPoints(tables.subjects, tables.chapters, tables.cards, tables.logs, 20);
+      const weak = weakPoints(tables.subjects, tables.chapters, cards, tables.logs, 20);
       const wantedCardIds = new Set(weak.flatMap((point) => point.cardIds));
-      return tables.cards.filter((card) => wantedCardIds.has(card.id));
+      return cards.filter((card) => wantedCardIds.has(card.id));
     }
     case 'exam-likely': {
-      const subjectCards = tables.cards.filter((card) => card.subjectId === scope.subjectId);
+      const subjectCards = cards.filter((card) => card.subjectId === scope.subjectId);
       if (scope.chapterIds.length === 0) return subjectCards;
       const wantedChapters = new Set(scope.chapterIds);
       return subjectCards.filter((card) => card.chapterId !== null && wantedChapters.has(card.chapterId));
     }
     case 'cards': {
       const wanted = new Set(scope.cardIds);
-      return tables.cards.filter((card) => wanted.has(card.id));
+      return cards.filter((card) => wanted.has(card.id));
     }
     default:
       return [];

@@ -1,6 +1,6 @@
-import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/data/db';
+import { countDueCards } from '@/data/repositories/cards';
 import type { Chapter, ID, Subject } from '@/types';
 import type { DocumentSummary } from '@/data/repositories/documents';
 
@@ -63,10 +63,11 @@ export function useSubjectOverviews(): Record<ID, SubjectOverview> | undefined {
           db.chapters.where('subjectId').equals(subject.id).count(),
           db.documents.where('subjectId').equals(subject.id).count(),
           db.flashcards.where('subjectId').equals(subject.id).count(),
-          db.flashcards
-            .where('[subjectId+due]')
-            .between([subject.id, Dexie.minKey], [subject.id, now], true, true)
-            .count(),
+          // Passe par le dépôt, JAMAIS par l'index directement : c'est lui qui
+          // sait qu'une carte suspendue ou enterrée n'est pas une carte à
+          // réviser. Recompter ici « à la main » faisait annoncer des cartes
+          // dues que la session de révision n'ouvrait pas.
+          countDueCards(subject.id, new Date(now)),
           db.notes.where('subjectId').equals(subject.id).count(),
         ]);
         return [subject.id, { chapters, documents, cards, dueCards, notes }];

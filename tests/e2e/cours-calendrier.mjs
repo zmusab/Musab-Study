@@ -42,6 +42,34 @@ const NEXT_MONDAY = isoDay(mondayOffset + 7);
 const THIRD_MONDAY = isoDay(mondayOffset + 14);
 const WEDNESDAY = isoDay(mondayOffset + 2);
 
+const WEEKDAY_IDS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const WEEKDAY_LABELS = {
+  sunday: 'dimanche',
+  monday: 'lundi',
+  tuesday: 'mardi',
+  wednesday: 'mercredi',
+  thursday: 'jeudi',
+  friday: 'vendredi',
+  saturday: 'samedi',
+};
+
+/**
+ * DEMAIN — le jour des cas où une plage horaire doit réellement être libre.
+ *
+ * « Planifier ma semaine » planifie la fenêtre de SEPT JOURS qui commence
+ * aujourd'hui, et ne propose jamais une heure déjà passée. Viser un jour
+ * nommé (« le lundi ») rendait donc le résultat dépendant du moment du
+ * lancement : exécuté un lundi à 15 h, le test n'ouvrait que lundi
+ * 08 h–12 h — entièrement derrière nous — et le planificateur avait raison
+ * de ne rien proposer, alors que la règle vérifiée, elle, était intacte.
+ *
+ * Demain est toujours devant nous, toujours dans la fenêtre, et son jour de
+ * semaine se déduit — c'est le seul repère qui tienne les sept jours.
+ */
+const DECISIVE_DAY = isoDay(1);
+const DECISIVE_WEEKDAY = WEEKDAY_IDS[weekday(DECISIVE_DAY)];
+const DECISIVE_LABEL = WEEKDAY_LABELS[DECISIVE_WEEKDAY];
+
 await mkdir(SHOT, { recursive: true });
 
 const browser = await chromium.launch(
@@ -55,6 +83,16 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => {
   if (m.type() === 'error') errors.push(m.text());
 });
+
+/**
+ * La carte d'agenda de la SÉRIE, désignée par son titre.
+ *
+ * « La première carte de cours du jour » cessait de désigner la série dès
+ * qu'un autre cours tombait le même jour — et le cas décisif en pose un.
+ * Le titre est ce qui identifie réellement ce qu'on veut modifier.
+ */
+const seriesCard = () =>
+  page.locator('[data-calendar-lecture]').filter({ hasText: 'Histologie' }).first();
 
 /** Sélectionne une date en vue Semaine, en avançant jusqu'à la trouver. */
 const selectDay = async (day) => {
@@ -335,7 +373,7 @@ for (const row of await storedEvents()) {
 }
 // Les occurrences de la série ne sont pas en base : on les recalcule ici.
 const seriesRanges = [minutes(master.startTime), minutes(master.endTime)];
-const seriesWeekdays = new Set(master.recurrence.weekdays.map((id) => ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].indexOf(id)));
+const seriesWeekdays = new Set(master.recurrence.weekdays.map((id) => WEEKDAY_IDS.indexOf(id)));
 
 check(
   'Aucune séance n’est placée pendant un cours récurrent',
@@ -367,6 +405,18 @@ await page.waitForTimeout(600);
 
 // ── Cas décisif : le SEUL jour disponible porte un cours. Le planificateur
 // doit poser la séance après le cours, pas au début de la plage déclarée.
+//
+// Le cours est posé sur DEMAIN, et la seule plage ouverte est celle de son
+// jour de semaine : la fenêtre 10 h–12 h qui reste après le cours est ainsi
+// toujours à venir, quel que soit le jour et l'heure du lancement.
+await createCourse({
+  title: 'Biochimie — CM',
+  day: DECISIVE_DAY,
+  start: '08:00',
+  end: '10:00',
+  room: 'Amphi A',
+});
+
 await page.locator('[data-calendar-availability]').click();
 await page.waitForTimeout(500);
 for (const label of ['Matin', 'Après-midi', 'Soir']) {
@@ -375,9 +425,9 @@ for (const label of ['Matin', 'Après-midi', 'Soir']) {
 }
 await page.locator('[data-availability-apply-all]').click();
 await page.waitForTimeout(250);
-await page.locator('[data-availability-day="monday"]').click();
+await page.locator(`[data-availability-day="${DECISIVE_WEEKDAY}"]`).click();
 await page.waitForTimeout(250);
-await page.getByLabel('Disponible le lundi : Matin').check();
+await page.getByLabel(`Disponible le ${DECISIVE_LABEL} : Matin`).check();
 await page.locator('[data-availability-slot="morning"]').getByLabel('De').fill('08:00');
 await page.locator('[data-availability-slot="morning"]').getByLabel('À').fill('12:00');
 await page.waitForTimeout(200);
@@ -386,7 +436,7 @@ await page.waitForTimeout(900);
 
 await page.locator('[data-calendar-plan-week]').click();
 await page.waitForTimeout(900);
-const mondayOnly = await page.locator('[data-plan-session]').evaluateAll((items) =>
+const singleDayPlan = await page.locator('[data-plan-session]').evaluateAll((items) =>
   items.map((item) => ({
     day: item.querySelector('input[type="date"]').value,
     time: item.querySelector('input[type="time"]').value,
@@ -394,13 +444,13 @@ const mondayOnly = await page.locator('[data-plan-session]').evaluateAll((items)
 );
 check(
   'Avec un seul jour disponible, la séance y est bien proposée',
-  mondayOnly.length === 1 && weekday(mondayOnly[0].day) === 1,
-  mondayOnly.map((row) => `${row.day} ${row.time}`).join(', '),
+  singleDayPlan.length === 1 && singleDayPlan[0].day === DECISIVE_DAY,
+  singleDayPlan.map((row) => `${row.day} ${row.time}`).join(', ') || 'aucune séance proposée',
 );
 check(
   'Le cours l’emporte sur la plage déclarée : la séance commence APRÈS lui',
-  mondayOnly.length === 1 && minutes(mondayOnly[0].time) >= 600,
-  mondayOnly.map((row) => `${row.day} ${row.time}`).join(', '),
+  singleDayPlan.length === 1 && minutes(singleDayPlan[0].time) >= 600,
+  singleDayPlan.map((row) => `${row.day} ${row.time}`).join(', ') || 'aucune séance proposée',
 );
 await page.locator('[data-plan-refuse]').click();
 await page.waitForTimeout(600);
@@ -439,7 +489,7 @@ check('Un cours n’écrit rien dans reviewLogs', logs === 0, `${logs} lignes`);
 // ────────────────── 8. Modifier UNE occurrence ──────────────────
 await goCalendar();
 check('La deuxième occurrence est atteignable dans la vue Semaine', await selectDay(NEXT_MONDAY));
-await page.locator('[data-calendar-lecture]').first().getByRole('button', { name: 'Modifier' }).click();
+await seriesCard().getByRole('button', { name: 'Modifier' }).click();
 await page.waitForTimeout(600);
 check(
   'Modifier un cours récurrent demande d’abord la portée',
@@ -483,7 +533,7 @@ check(
 await selectDay(NEXT_MONDAY);
 
 // ────────────────── 9. Modifier la série entière ──────────────────
-await page.locator('[data-calendar-lecture]').first().getByRole('button', { name: 'Modifier' }).click();
+await seriesCard().getByRole('button', { name: 'Modifier' }).click();
 await page.waitForTimeout(600);
 await page.locator('[data-series-scope-option="series"]').click();
 await page.waitForTimeout(600);
@@ -501,7 +551,7 @@ check(
 // ────────────────── 10. Supprimer une occurrence ──────────────────
 await selectDay(THIRD_MONDAY);
 const beforeCancel = await page.locator('[data-calendar-lecture]').count();
-await page.locator('[data-calendar-lecture]').first().getByRole('button', { name: 'Supprimer' }).click();
+await seriesCard().getByRole('button', { name: 'Supprimer' }).click();
 await page.waitForTimeout(600);
 await page.locator('[data-series-scope-option="occurrence"]').click();
 await page.waitForTimeout(1100);
@@ -532,7 +582,7 @@ check(
 
 // ────────────────── 12. Supprimer la série ──────────────────
 await selectDay(MONDAY);
-await page.locator('[data-calendar-lecture]').first().getByRole('button', { name: 'Supprimer' }).click();
+await seriesCard().getByRole('button', { name: 'Supprimer' }).click();
 await page.waitForTimeout(600);
 await page.locator('[data-series-scope-option="series"]').click();
 await page.waitForTimeout(1200);
@@ -567,9 +617,10 @@ check(
 // sans jamais compter comme du travail.
 await page.getByRole('tab', { name: 'Semaine' }).click();
 await page.waitForTimeout(500);
-// Le premier lundi à venir — le seul jour déclaré disponible, et il tombe
-// dans la fenêtre de sept jours du plan de semaine.
-const personalDay = MONDAY;
+// Le jour décisif — le seul jour déclaré disponible, et il tombe dans la
+// fenêtre de sept jours du plan de semaine. La série commence donc ce
+// jour-là, sinon elle ne recouvrirait pas la plage qu'elle doit saturer.
+const personalDay = DECISIVE_DAY;
 await createCourse({
   title: 'Natation',
   kind: 'personal',

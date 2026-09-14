@@ -1,7 +1,7 @@
-import Dexie from 'dexie';
 import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { nowISO } from '@/lib/date';
+import { countDueCards } from './cards';
 import type { Chapter, ID, Subject } from '@/types';
 
 /**
@@ -153,10 +153,9 @@ export async function getSubjectStats(subjectId: ID, now: Date = new Date()): Pr
     db.chapters.where('subjectId').equals(subjectId).count(),
     db.documents.where('subjectId').equals(subjectId).count(),
     db.flashcards.where('subjectId').equals(subjectId).count(),
-    db.flashcards
-      .where('[subjectId+due]')
-      .between([subjectId, Dexie.minKey], [subjectId, now.toISOString()], true, true)
-      .count(),
+    // Une seule définition de « carte due » pour toute l'application : voir
+    // `countDueCards`, qui écarte les cartes suspendues et enterrées.
+    countDueCards(subjectId, now),
     db.quizQuestions.where('subjectId').equals(subjectId).count(),
   ]);
   return { chapters, documents, cards, dueCards, quizQuestions };

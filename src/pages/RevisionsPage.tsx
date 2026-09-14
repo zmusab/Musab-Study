@@ -7,7 +7,16 @@ import { Button, Card, Chip, EmptyState, Icon, Swatch, Textarea } from '@/compon
 import { WisdomQuote } from '@/components/features/misc/WisdomQuote';
 import { springSoft } from '@/components/motion/transitions';
 import { useSubjectOverviews, useSubjects } from '@/hooks/useSubjects';
-import { listAllDueCards, listDueCards, reviewCard } from '@/data/repositories/cards';
+import {
+  buryCard,
+  listAllDueCards,
+  listDueCards,
+  reviewCardUndoable,
+  setCardSuspended,
+  undoReview,
+  updateCard,
+  type UndoableReview,
+} from '@/data/repositories/cards';
 import { db } from '@/data/db';
 import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
@@ -86,6 +95,28 @@ interface SessionSummary {
   correct: number;
 }
 
+/**
+ * LE DERNIER GESTE, gardé assez complet pour être défait.
+ *
+ * Annuler ne peut pas se contenter de toucher la base : la session tient son
+ * propre état — la file, dont l'ordre a changé si la note était « Encore », et
+ * les compteurs de la séance. Défaire la base sans défaire la session
+ * laisserait la carte derrière soi alors qu'elle n'a plus été notée.
+ *
+ * Une carte mise de côté ne compte PAS comme révisée : les compteurs ne
+ * bougent pas, il n'y a donc rien à leur rendre.
+ */
+type LastAction =
+  | {
+      kind: 'review';
+      review: UndoableReview;
+      queue: Flashcard[];
+      reviewed: number;
+      correct: number;
+      label: string;
+    }
+  | { kind: 'aside'; card: Flashcard; queue: Flashcard[]; label: string };
+
 function ReviewSession({
   initialQueue,
   subjectName,
@@ -108,6 +139,9 @@ function ReviewSession({
   const [answeredInMs, setAnsweredInMs] = useState(0);
   const [reviewed, setReviewed] = useState(0);
   const [correct, setCorrect] = useState(0);
+  /** Le dernier geste annulable — note posée, carte suspendue ou enterrée. */
+  const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  const [busy, setBusy] = useState(false);
   const total = initialQueue.length;
 
   const current = queue[0];
@@ -153,9 +187,28 @@ function ReviewSession({
     setPending(verdict ? deriveRating(verdict, elapsed, current.answer) : null);
   };
 
+  /** Remet l'écran dans l'état « carte non encore vue ». */
+  const resetCardView = () => {
+    setRevealed(false);
+    setAttempt('');
+    setPending(null);
+    setOverriding(false);
+    setAnsweredInMs(0);
+    setCardStartedAt(Date.now());
+  };
+
   const handleRate = async (rating: Rating, confidence: Confidence = CONFIDENCE_FOR_RATING[rating]) => {
-    if (!current) return;
-    await reviewCard(current.id, rating, confidence, answeredInMs);
+    if (!current || busy) return;
+    setBusy(true);
+    const review = await reviewCardUndoable(current.id, rating, confidence, answeredInMs);
+    setLastAction({
+      kind: 'review',
+      review,
+      queue,
+      reviewed,
+      correct,
+      label: `Note « ${RATING_LABELS[rating]} » annulée.`,
+    });
 
     const rest = queue.slice(1);
     const nextQueue = rating === 0 ? [...rest.slice(0, 2), current, ...rest.slice(2)] : rest;
@@ -165,14 +218,75 @@ function ReviewSession({
     setReviewed(nextReviewed);
     setCorrect(nextCorrect);
     setQueue(nextQueue);
-    setRevealed(false);
-    setAttempt('');
-    setPending(null);
-    setOverriding(false);
-    setAnsweredInMs(0);
-    setCardStartedAt(Date.now());
+    resetCardView();
+    setBusy(false);
 
     if (nextQueue.length === 0) onFinish({ reviewed: nextReviewed, correct: nextCorrect });
+  };
+
+  /**
+   * METTRE LA CARTE DE CÔTÉ sans la noter.
+   *
+   * Répondre à une carte qu'on ne veut pas traiter maintenant fausserait deux
+   * choses d'un coup : son échéance SM-2 et les statistiques de la séance. Ni
+   * suspendre ni enterrer n'écrit de réponse — le compteur de cartes révisées
+   * ne bouge donc pas, parce qu'aucune révision n'a eu lieu.
+   */
+  const handleSetAside = async (what: 'suspend' | 'bury') => {
+    if (!current || busy) return;
+    setBusy(true);
+    if (what === 'suspend') await setCardSuspended(current.id, true);
+    else await buryCard(current.id);
+    setLastAction({
+      kind: 'aside',
+      card: current,
+      queue,
+      label: what === 'suspend' ? 'Carte remise en circulation.' : 'Enterrement annulé.',
+    });
+
+    // Retirer TOUTES ses occurrences : une carte notée « Encore » plus tôt dans
+    // la séance a été réinsérée plus loin, et la suspendre doit la faire
+    // disparaître de la file entière, pas seulement de sa place actuelle.
+    const nextQueue = queue.filter((card) => card.id !== current.id);
+    setQueue(nextQueue);
+    resetCardView();
+    setBusy(false);
+
+    if (nextQueue.length === 0) onFinish({ reviewed, correct });
+  };
+
+  /**
+   * ANNULER — la base ET la session, ensemble.
+   *
+   * `undoReview` restaure l'état de planification exact d'avant la note et
+   * retire sa ligne de journal ; ici on remet la file et les compteurs de la
+   * séance tels qu'ils étaient. La carte annulée revient donc devant, et c'est
+   * bien ce qu'on attend d'une annulation.
+   */
+  const handleUndo = async () => {
+    if (!lastAction || busy) return;
+    setBusy(true);
+    if (lastAction.kind === 'review') {
+      const restored = await undoReview(lastAction.review);
+      // Carte supprimée entre-temps depuis un autre écran : il n'y a plus rien
+      // à remettre dans la file, et ce n'est pas une erreur.
+      setQueue(
+        restored
+          ? lastAction.queue
+          : lastAction.queue.filter((card) => card.id !== lastAction.review.card.id),
+      );
+      setReviewed(lastAction.reviewed);
+      setCorrect(lastAction.correct);
+    } else {
+      await updateCard(lastAction.card.id, {
+        suspended: lastAction.card.suspended ?? false,
+        buriedUntil: lastAction.card.buriedUntil ?? null,
+      });
+      setQueue(lastAction.queue);
+    }
+    setLastAction(null);
+    resetCardView();
+    setBusy(false);
   };
 
   if (!current) return null;
@@ -193,6 +307,41 @@ function ReviewSession({
           transition={springSoft}
         />
       </div>
+
+      {/*
+        ANNULER LE DERNIER GESTE — la touche d'Anki qui manquait.
+        Une note posée par erreur (le doigt qui glisse sur « Facile », la
+        réponse qu'on relit trop tard) repoussait la carte d'un mois sans
+        aucun recours : il fallait retrouver la carte dans la bibliothèque et
+        la supprimer pour effacer la faute. Le bandeau ne s'affiche qu'une
+        fois qu'il y a réellement quelque chose à défaire.
+      */}
+      <AnimatePresence initial={false}>
+        {lastAction && (
+          <motion.div
+            initial={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={springSoft}
+            className="overflow-hidden"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2">
+              <p className="text-[0.78rem] text-[var(--ink-soft)]">
+                {lastAction.kind === 'review' ? 'Dernière note enregistrée.' : 'Carte mise de côté.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleUndo()}
+                disabled={busy}
+                className="shrink-0 text-[0.78rem] font-semibold text-[var(--accent-ink)] underline underline-offset-2 disabled:opacity-50"
+                data-review-undo
+              >
+                Annuler
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -336,6 +485,35 @@ function ReviewSession({
           )}
         </div>
       )}
+
+      {/*
+        SUSPENDRE / ENTERRER — sortir une carte de la séance sans la noter.
+
+        Sans ces deux gestes, une carte mal formulée ou déjà donnée par sa
+        jumelle n'avait que deux issues : une note qui ne mesure rien, ou la
+        suppression, qui efface son historique. Ni l'une ni l'autre ne
+        touche à l'échéance SM-2 : c'est la VISIBILITÉ qui change.
+      */}
+      <div className="mt-4 flex items-center justify-center gap-4 border-t border-[var(--line)] pt-3">
+        <button
+          type="button"
+          onClick={() => void handleSetAside('bury')}
+          disabled={busy}
+          className="text-[0.78rem] text-[var(--ink-faint)] underline underline-offset-2 disabled:opacity-50"
+          data-review-bury
+        >
+          Enterrer jusqu’à demain
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSetAside('suspend')}
+          disabled={busy}
+          className="text-[0.78rem] text-[var(--ink-faint)] underline underline-offset-2 disabled:opacity-50"
+          data-review-suspend
+        >
+          Suspendre cette carte
+        </button>
+      </div>
     </div>
   );
 }

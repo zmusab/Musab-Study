@@ -19,8 +19,23 @@ import type { DocumentChunk, Difficulty, Importance } from '@/types';
  * coup (référence `[Sn]` recoupée avec le contexte transmis).
  */
 
+/**
+ * « a, b et c » — mais SEULEMENT quand ce sont des éléments, pas des phrases.
+ *
+ * Vu à l'écran : « C'est un nerf sensitif. ET Il chemine par le canal moyen
+ * du cavum Meckeli… ». Coordonner deux phrases complètes par « et » ne
+ * produit pas une liste, ça produit une faute de français.
+ *
+ * Dès qu'un des éléments se termine par une ponctuation de phrase, on les
+ * met bout à bout comme le document les avait — c'est un enchaînement, pas
+ * une énumération.
+ */
 const ITEMS_JOINER = (items: string[]): string => {
   if (items.length === 1) return items[0]!;
+
+  const sentences = items.some((item) => /[.!?]$/.test(item.trim()));
+  if (sentences) return items.map((item) => item.trim()).join(' ');
+
   return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}`;
 };
 
@@ -107,6 +122,20 @@ export interface GenerateLocalCardsInput {
  * voir `relationExtraction.ts`) ne produit jamais de carte : mieux ne rien
  * proposer qu'une carte potentiellement fausse.
  */
+/**
+ * UNE CARTE À TROUS N'EST PAS UN DOUBLON DE SA QUESTION DIRECTE.
+ *
+ * « Que possède le nerf trijumeau ? » et « Le nerf trijumeau possède ___
+ * branches. » portent sur le même fait, mais ce sont deux EXERCICES
+ * différents : l'un demande de restituer la liste, l'autre le compte. Les
+ * comparer entre eux faisait disparaître la carte à trous, parce qu'ils
+ * partagent forcément tout leur vocabulaire — c'est même ce qui fait d'eux
+ * une paire cohérente.
+ *
+ * Chaque forme est donc dédoublonnée contre les questions de SA forme.
+ */
+const isCloze = (question: string): boolean => question.includes('___');
+
 export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDraft[] {
   const drafts: CardDraft[] = [];
   const proposedQuestions: string[] = [...input.existingQuestions];
@@ -122,7 +151,8 @@ export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDra
 
       for (const candidate of candidates) {
         if (candidate.answer.trim().length === 0) continue;
-        if (isDuplicateQuestion(candidate.question, proposedQuestions)) continue;
+        const sameForm = proposedQuestions.filter((question) => isCloze(question) === isCloze(candidate.question));
+        if (isDuplicateQuestion(candidate.question, sameForm)) continue;
 
         drafts.push({
           question: candidate.question,

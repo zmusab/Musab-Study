@@ -133,6 +133,16 @@ describe('qualité des cartes sur un vrai cours', () => {
     }
   });
 
+  /**
+   * Vu à l'écran : « C'est un nerf sensitif. ET Il chemine par le canal
+   * moyen du cavum Meckeli… ». Coordonner deux phrases complètes par « et »
+   * ne produit pas une liste, ça produit une faute de français.
+   */
+  it('ne coordonne pas deux phrases entières par « et »', () => {
+    const bad = cards.filter((card) => /[.!?]\s+et\s+[A-ZÀ-Þ]/.test(card.answer));
+    expect(bad.map((c) => c.answer)).toEqual([]);
+  });
+
   it('aucune réponse ne commence par un connecteur', () => {
     const bad = cards.filter((card) => /^(?:Donc|Ensuite|Puis|Alors|Or|Mais|Car)\b/i.test(card.answer.trim()));
     expect(bad.map((c) => c.answer)).toEqual([]);

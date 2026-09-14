@@ -169,12 +169,56 @@ export function isDue(state: Pick<SchedulingState, 'due'>, now: Date = new Date(
 }
 
 /**
+ * MISE DE CÔTÉ — suspendre et enterrer, séparément de l'échéance.
+ *
+ * Ces deux états ne touchent JAMAIS `due`, `ease` ni `interval` : l'échéance
+ * reste exactement celle que `scheduleNext` a posée. Ils décident seulement si
+ * la carte est PRÉSENTÉE. C'est ce qui permet de réactiver une carte et de la
+ * retrouver là où elle en était, plutôt que de recommencer son historique.
+ */
+export interface SetAside {
+  /** Retirée jusqu'à réactivation explicite. */
+  suspended?: boolean;
+  /** Retirée jusqu'à cette date — en pratique le lendemain. */
+  buriedUntil?: string | null;
+}
+
+export function isSuspended(item: SetAside): boolean {
+  return item.suspended === true;
+}
+
+export function isBuried(item: SetAside, now: Date = new Date()): boolean {
+  if (!item.buriedUntil) return false;
+  const until = new Date(item.buriedUntil).getTime();
+  return Number.isFinite(until) && until > now.getTime();
+}
+
+/** Vrai si la carte peut être présentée : due, ni suspendue, ni enterrée. */
+export function isReviewable(item: SchedulingState & SetAside, now: Date = new Date()): boolean {
+  return isDue(item, now) && !isSuspended(item) && !isBuried(item, now);
+}
+
+/**
+ * L'instant où une carte enterrée ressort : le début du jour suivant.
+ * Enterrer à 23 h 50 ne doit pas la faire revenir dix minutes plus tard, et
+ * enterrer à 6 h du matin ne doit pas la retenir plus qu'une journée.
+ */
+export function buryUntil(now: Date = new Date()): string {
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return tomorrow.toISOString();
+}
+
+/**
  * File de révision : les éléments dus, les plus fragiles d'abord
  * (ease faible = difficulté ressentie élevée), puis les plus en retard.
+ *
+ * Le filtrage des cartes mises de côté se fait ICI, et nulle part ailleurs :
+ * toute file de révision de l'application passe par cette fonction, donc une
+ * carte suspendue ne peut pas réapparaître par un chemin oublié.
  */
-export function buildDueQueue<T extends SchedulingState>(items: T[], now: Date = new Date()): T[] {
+export function buildDueQueue<T extends SchedulingState & SetAside>(items: T[], now: Date = new Date()): T[] {
   return items
-    .filter((item) => isDue(item, now))
+    .filter((item) => isReviewable(item, now))
     .sort((a, b) => a.ease - b.ease || new Date(a.due).getTime() - new Date(b.due).getTime());
 }
 
