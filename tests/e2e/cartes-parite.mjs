@@ -178,10 +178,31 @@ await page.waitForTimeout(800);
 check('Le bandeau d’annulation apparaît après une note', await page.locator('[data-review-undo]').isVisible());
 check('La séance est passée à la carte suivante', /1\/2/.test(await main.innerText()));
 
+// On note une SECONDE carte avant d'annuler : l'annulation d'Anki empile, et
+// on ne s'aperçoit d'une mauvaise note qu'une ou deux cartes plus loin.
+await page.locator('[data-review-see-answer]').click();
+await page.waitForTimeout(500);
+await page.getByRole('button', { name: /^Encore/ }).click();
+await page.waitForTimeout(800);
+check(
+  'Le bandeau annonce combien de gestes restent annulables',
+  /2 gestes annulables/.test(await main.innerText()),
+  (await page.locator('[data-review-undo]').locator('..').innerText()).replace(/\n/g, ' | '),
+);
+
 await page.locator('[data-review-undo]').click();
 await page.waitForTimeout(900);
 check(
-  'Annuler remet le compteur de la séance où il était',
+  'La première annulation défait la SECONDE note',
+  /1\/2/.test(await main.innerText()),
+  (await main.innerText()).split('\n')[1] ?? '',
+);
+check('Il reste un geste à annuler', await page.locator('[data-review-undo]').isVisible());
+
+await page.locator('[data-review-undo]').click();
+await page.waitForTimeout(900);
+check(
+  'La seconde annulation remet la séance à son point de départ',
   /0\/2/.test(await main.innerText()),
   (await main.innerText()).split('\n')[1] ?? '',
 );

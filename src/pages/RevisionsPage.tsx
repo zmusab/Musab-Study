@@ -139,8 +139,17 @@ function ReviewSession({
   const [answeredInMs, setAnsweredInMs] = useState(0);
   const [reviewed, setReviewed] = useState(0);
   const [correct, setCorrect] = useState(0);
-  /** Le dernier geste annulable — note posée, carte suspendue ou enterrée. */
-  const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  /**
+   * LES GESTES ANNULABLES, en pile — pas un seul cran.
+   *
+   * Un seul niveau d'annulation suffit rarement : on s'aperçoit qu'on a mal
+   * noté DEUX cartes plus loin, pas tout de suite. Chaque entrée porte un
+   * instantané COMPLET de la séance (file, compteurs), donc dépiler restaure
+   * un état absolu — l'ordre des annulations ne peut pas dériver.
+   */
+  const [undoStack, setUndoStack] = useState<LastAction[]>([]);
+  const lastAction = undoStack[undoStack.length - 1] ?? null;
+  const pushUndo = (action: LastAction) => setUndoStack((stack) => [...stack, action]);
   const [busy, setBusy] = useState(false);
   const total = initialQueue.length;
 
@@ -201,7 +210,7 @@ function ReviewSession({
     if (!current || busy) return;
     setBusy(true);
     const review = await reviewCardUndoable(current.id, rating, confidence, answeredInMs);
-    setLastAction({
+    pushUndo({
       kind: 'review',
       review,
       queue,
@@ -237,7 +246,7 @@ function ReviewSession({
     setBusy(true);
     if (what === 'suspend') await setCardSuspended(current.id, true);
     else await buryCard(current.id);
-    setLastAction({
+    pushUndo({
       kind: 'aside',
       card: current,
       queue,
@@ -284,7 +293,7 @@ function ReviewSession({
       });
       setQueue(lastAction.queue);
     }
-    setLastAction(null);
+    setUndoStack((stack) => stack.slice(0, -1));
     resetCardView();
     setBusy(false);
   };
@@ -328,6 +337,9 @@ function ReviewSession({
             <div className="mb-3 flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2">
               <p className="text-[0.78rem] text-[var(--ink-soft)]">
                 {lastAction.kind === 'review' ? 'Dernière note enregistrée.' : 'Carte mise de côté.'}
+                {undoStack.length > 1 && (
+                  <span className="text-[var(--ink-faint)]"> · {undoStack.length} gestes annulables</span>
+                )}
               </p>
               <button
                 type="button"
@@ -623,10 +635,18 @@ export function RevisionsPage() {
 
       {summary && (
         <FadeUp className="mb-6 rounded-[var(--radius-card)] border border-[var(--success)]/40 bg-[var(--success-tint)] p-5 text-center">
-          <p className="text-[1.05rem] font-semibold">Révision terminée</p>
+          <p className="text-[1.05rem] font-semibold">
+            {/* Mettre de côté les dernières cartes termine la séance sans
+                qu'aucune note ait été posée : annoncer « 0/0 carte réussie »
+                là ressemblerait à un échec, alors qu'il ne s'est rien passé. */}
+            {summary.reviewed === 0 ? 'Séance close' : 'Révision terminée'}
+          </p>
           <p className="mt-1 text-[0.88rem] text-[var(--ink-soft)]">
-            {summary.correct}/{summary.reviewed} carte{summary.reviewed > 1 ? 's' : ''} réussie{summary.correct > 1 ? 's' : ''}
-            {summary.reviewed > 0 ? ` · ${Math.round((summary.correct / summary.reviewed) * 100)}%` : ''}
+            {summary.reviewed === 0
+              ? 'Aucune carte notée — tu as mis de côté ce qui restait.'
+              : `${summary.correct}/${summary.reviewed} carte${summary.reviewed > 1 ? 's' : ''} réussie${
+                  summary.correct > 1 ? 's' : ''
+                } · ${Math.round((summary.correct / summary.reviewed) * 100)}%`}
           </p>
           {totalDue === 0 ? (
             <p className="mt-1 text-[0.8rem] text-[var(--ink-faint)]">Plus aucune carte due pour l’instant.</p>
