@@ -7,7 +7,7 @@ import {
   splitEnumerationItems,
   splitIntoSentences,
 } from './textStructure';
-import { isPlausibleSubject, isPlausibleAnswerText } from './textQuality';
+import { isPlausibleSubject, isPlausibleAnswerText, subjectBeforeVerb } from './textQuality';
 import type { DocumentChunk, ID } from '@/types';
 
 /**
@@ -227,6 +227,16 @@ function factFromSentence(sentence: string, chunk: DocumentChunk): RawFact | nul
 /** Faits issus de listes à puces du fragment — hors du flux phrase par phrase. */
 function factsFromBullets(chunk: DocumentChunk): RawFact[] {
   return detectBulletEnumerations(chunk.text)
+    /*
+      La puce résiduelle et le deux-points d'annonce sont retirés AVANT
+      validation : « 4 muscles droits : » nomme bien les quatre muscles
+      droits, il ne faut le refuser ni pour sa ponctuation ni pour sa puce.
+    */
+    .map((match) => ({
+      ...match,
+      intro:
+        match.intro === null ? null : stripBulletPrefix(match.intro).replace(/\s*:\s*$/, '').trim(),
+    }))
     .filter((match) => match.intro !== null && isPlausibleSubject(match.intro))
     .map((match) => ({
       subject: match.intro!,
@@ -302,8 +312,17 @@ const HEADING_MAX_CHARS = 70;
  * La liste est celle de `SENTENCE_RESTART` (courseLayout) : les mots qui, en
  * français, ouvrent une reprise de phrase.
  */
+/*
+ * Le DÉMONSTRATIF suivi d'un nom est lui aussi une anaphore : « Ce nerf finit
+ * en se divisant en 3 catégories de branches : » désigne la structure nommée
+ * par le titre juste au-dessus, exactement comme « Il finit… ».
+ *
+ * Sans lui, la règle « le titre ne sert de sujet que si la phrase n'en a
+ * pas » faisait perdre de bonnes cartes : les trois catégories de branches du
+ * nerf frontal n'étaient plus rattachées à rien.
+ */
 const PRONOUN_SUBJECT =
-  /^(?:(?:puis|ensuite|enfin|alors|ainsi|donc|apr[èe]s)\s+)?(?:il|elle|ils|elles|celui-ci|celle-ci|ce dernier|cette dernière)\b/i;
+  /^(?:(?:puis|ensuite|enfin|alors|ainsi|donc|apr[èe]s)\s+)?(?:il|elle|ils|elles|celui-ci|celle-ci|ce dernier|cette dernière|ce|cet|cette|ces)(?=$|[^\wà-ÿ])/i;
 
 function headingCandidate(line: string): string | null {
   const trimmed = line.replace(/^[\s•§▪‣◦▫→⇒➔►o]+/u, '').replace(/\s*:\s*$/, '').trim();
@@ -390,7 +409,27 @@ function announcementFact(
   if (!ANNOUNCES_A_LIST.test(sentence)) return null;
 
   const own = sentence.replace(ANNOUNCES_A_LIST, '').trim();
-  const subject = isPlausibleSubject(own) ? own : heading;
+  /*
+    LE TITRE NE SERT DE SUJET QUE SI LA PHRASE N'EN A PAS.
+
+    Cette ligne retombait sur le titre courant dès que le sujet propre de la
+    phrase était rejeté. Mesuré sur un vrai cours : « Et 2 muscles obliques : »
+    est refusé (il commence par un connecteur), le moteur reprend alors le
+    dernier titre — « 4 muscles droits », trois lignes plus haut — et produit
+    une carte FAUSSE : « De quoi se compose 4 muscles droits ? » avec, pour
+    réponse, la liste des muscles OBLIQUES.
+
+    Une carte fausse est pire qu'une carte absente : l'étudiant l'apprend. Le
+    titre n'est donc emprunté que lorsque la phrase ne nomme rien elle-même,
+    c'est-à-dire quand elle commence par un pronom — le seul cas où le sujet
+    est réellement une ligne plus haut.
+  */
+  const subject = isPlausibleSubject(own)
+    ? own
+    : // La phrase nomme peut-être son sujet avant son verbe.
+      (subjectBeforeVerb(own) ??
+      // Sinon, et seulement si elle ne nomme rien, le titre de la section.
+      (PRONOUN_SUBJECT.test(sentence.trim()) ? heading : null));
   if (!subject) return null;
 
   return {

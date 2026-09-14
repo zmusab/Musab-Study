@@ -38,7 +38,11 @@ const TWO_LISTS = [
   '§ L’artère carotide interne',
   '§ Le sinus caverneux',
   '§ Les nerfs III, IV et VI',
-  '• Avant d’entrer dans l’orbite le nerf ophtalmique se divise en 3 branches terminales :',
+  // Le sujet est NOMMÉ dans la phrase. Une version antérieure de cette
+  // fixture ouvrait sur un complément (« Avant d'entrer dans l'orbite… »),
+  // et le moteur s'abstenait à juste titre : la phrase ne nommait alors son
+  // sujet nulle part où la règle pouvait le prendre.
+  '• Le nerf ophtalmique de Willis se divise en 3 branches terminales :',
   '§ Nerf naso-ciliaire',
   '§ Nerf frontal',
   '§ Nerf lacrymal',

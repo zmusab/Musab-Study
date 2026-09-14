@@ -377,13 +377,20 @@ describe('findLocalAnswer — la mise en forme de la réponse', () => {
   it('ne fait pas lire deux fois la même ligne', () => {
     // Deux faits au moins : avec un seul, la réponse est l'extrait brut et
     // la mise en forme testée ici n'est jamais atteinte.
+    /*
+      Un TITRE de section ouvre le fragment, comme dans un vrai polycopié.
+      Sans lui, la phrase à pronom (« Puis il entre… ») n'a aucun sujet où se
+      rattacher : l'ancienne fixture faisait passer ce test avec le sujet
+      « Puis il entre dans le sinus caverneux où il » — exactement le genre de
+      carte illisible que le filtre qualité élimine désormais.
+    */
     const chunk = makeChunk(
-      'Le nerf ophtalmique est un nerf sensitif de la face.\n' +
-        'Le nerf ophtalmique chemine par le cavum de Meckel.\n' +
+      'Le nerf ophtalmique de Willis\n' +
+        'Le nerf ophtalmique est un nerf sensitif de la face.\n' +
         '• Puis il entre dans le sinus caverneux où il est en rapport avec :\n' +
-        '• L’artère carotide interne\n' +
-        '• Le sinus caverneux\n' +
-        '• Les nerfs III, IV et VI',
+        '§ L’artère carotide interne\n' +
+        '§ Le sinus caverneux\n' +
+        '§ Les nerfs III, IV et VI',
     );
     const answer = findLocalAnswer('Le nerf ophtalmique', [scored(chunk)], LOOKUP);
 
