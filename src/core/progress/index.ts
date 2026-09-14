@@ -729,7 +729,15 @@ function latestAt(logs: readonly ReviewLog[]): ISODateTime | null {
 /** « 1 h 42 » / « 18 min » / « 45 s » — jamais « 0.7 h ». */
 export function formatDuration(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000);
-  if (totalMinutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`;
+  /*
+    PAS DE SECONDES DANS UN TEMPS D'ÉTUDE.
+
+    Après une première séance de trois cartes, la page annonçait « 2 s cette
+    semaine » — un chiffre exact, et une mesure qui se lit comme un bug. Une
+    semaine de travail ne se compte pas en secondes : sous la minute, on dit
+    que c'est sous la minute, ce qui est à la fois vrai et lisible.
+  */
+  if (totalMinutes < 1) return ms <= 0 ? '0 min' : 'moins d’1 min';
   if (totalMinutes < 60) return `${totalMinutes} min`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;

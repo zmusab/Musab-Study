@@ -375,11 +375,19 @@ describe('objectifs', () => {
 
 describe('formatage des durées', () => {
   it('n’affiche jamais une heure décimale', () => {
-    expect(formatDuration(0)).toBe('0 s');
-    expect(formatDuration(45_000)).toBe('45 s');
     expect(formatDuration(600_000)).toBe('10 min');
     expect(formatDuration(3_600_000)).toBe('1 h');
     expect(formatDuration(6_120_000)).toBe('1 h 42');
+  });
+
+  it('ne compte pas un temps d’étude en secondes', () => {
+    // « 2 s cette semaine » après une première séance : un chiffre exact, et
+    // une mesure qui se lit comme un bug.
+    expect(formatDuration(0)).toBe('0 min');
+    expect(formatDuration(2_000)).toBe('moins d’1 min');
+    expect(formatDuration(45_000)).toBe('moins d’1 min');
+    expect(formatDuration(59_999)).toBe('moins d’1 min');
+    expect(formatDuration(60_000)).toBe('1 min');
   });
 });
 

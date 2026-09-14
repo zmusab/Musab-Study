@@ -94,13 +94,27 @@ await goProgress();
 const masteryValue = async () =>
   ((await page.locator('[data-progress-mastery]').first().textContent()) ?? '').trim();
 check(
-  'Avec une seule carte, la maîtrise reste « non mesurable » au lieu d’un faux 0 %',
-  (await masteryValue()) === '—',
+  'Avec une seule carte, aucun pourcentage de maîtrise n’est publié',
+  !/%/.test(await masteryValue()),
+  await masteryValue(),
+);
+/*
+  L'ABSENCE DE MESURE NE S'AFFICHE PLUS COMME UN VIDE.
+
+  Le seuil est juste — un pourcentage calculé sur deux réponses serait une
+  fausse précision — mais il s'affichait « — », et la toute première chose
+  qu'on voyait après une vraie séance était une rangée de tirets. Un compte
+  réel (« 0/5 cartes révisées ») n'est pas une estimation : il est exact dès
+  la première carte, et il dit ce qu'il reste à faire.
+*/
+check(
+  'L’avancement vers le seuil est montré, pas un tiret',
+  /^\d+\/\d+$/.test(await masteryValue()),
   await masteryValue(),
 );
 check(
   'La page dit explicitement ce qu’il manque pour mesurer',
-  await page.getByText(/Encore \d+ cartes? à réviser pour la calculer/).isVisible(),
+  await page.getByText(/Encore \d+ cartes? et ta maîtrise s’affiche/).isVisible(),
 );
 const lowDataCounters = await page.locator('[data-progress-counters]').innerText();
 check(

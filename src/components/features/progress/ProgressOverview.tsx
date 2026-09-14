@@ -2,7 +2,15 @@ import type { ReactNode } from 'react';
 import { CountUp, useSeen } from '@/components/motion/Reveal';
 import { cn } from '@/lib/cn';
 import { plural } from '@/lib/plural';
-import { formatDuration, masteryBand, type AnswerStats, type Streak, type StudyTime } from '@/core/progress';
+import {
+  formatDuration,
+  masteryBand,
+  MIN_REVIEWED_CARDS,
+  MIN_REVIEWS_FOR_RATE,
+  type AnswerStats,
+  type Streak,
+  type StudyTime,
+} from '@/core/progress';
 import { readinessLevel } from '@/core/progress/exam';
 
 /**
@@ -59,9 +67,18 @@ export function ProgressOverview({
         caption={band?.label ?? null}
         color={band?.colorVar ?? null}
         bar={masteryPct}
+        progress={
+          masteryPct === null
+            ? {
+                done: Math.max(0, MIN_REVIEWED_CARDS - masteryMissing),
+                needed: MIN_REVIEWED_CARDS,
+                unit: 'cartes révisées',
+              }
+            : null
+        }
         note={
           masteryPct === null
-            ? `Encore ${plural(masteryMissing, 'carte')} à réviser pour la calculer.`
+            ? `Encore ${plural(masteryMissing, 'carte')} et ta maîtrise s’affiche.`
             : null
         }
       />
@@ -76,9 +93,18 @@ export function ProgressOverview({
         color={level?.colorVar ?? null}
         bar={readinessPct}
         info="Estimation basée sur tes performances, tes révisions et ta couverture du programme. Ce n’est pas une probabilité de réussite."
+        progress={
+          readinessPct === null
+            ? {
+                done: Math.min(answers.total, MIN_REVIEWS_FOR_RATE),
+                needed: MIN_REVIEWS_FOR_RATE,
+                unit: 'réponses enregistrées',
+              }
+            : null
+        }
         note={
           readinessPct === null
-            ? 'Pas encore assez de révisions pour l’estimer.'
+            ? `Encore ${plural(Math.max(1, MIN_REVIEWS_FOR_RATE - answers.total), 'réponse')} et l’estimation s’affiche.`
             : readinessSubjects > 1
               ? `Moyenne de ${readinessSubjects} matières.`
               : null
@@ -170,6 +196,7 @@ function Tile({
   caption,
   color,
   bar,
+  progress = null,
   info,
   note,
 }: {
@@ -188,6 +215,20 @@ function Tile({
   color: string | null;
   /** Pourcentage à dessiner sous la valeur, quand la mesure en est un. */
   bar?: number | null;
+  /**
+   * AVANCEMENT VERS LE SEUIL, quand la mesure n'est pas encore publiable.
+   *
+   * Les seuils sont justes et ils restent : un pourcentage calculé sur deux
+   * réponses serait une fausse précision. Mais l'ABSENCE s'affichait comme un
+   * tiret, et la toute première chose qu'on voyait après une vraie séance de
+   * révision était une rangée de tirets — d'un seuil atteignable, l'écran
+   * faisait un mur sans indication.
+   *
+   * Un compte réel (« 3/5 cartes révisées ») n'est pas une estimation : il est
+   * exact dès la première carte, et il dit ce qu'il reste à faire pour
+   * débloquer la mesure.
+   */
+  progress?: { done: number; needed: number; unit: string } | null;
   info?: string;
   note?: ReactNode;
 }) {
@@ -219,15 +260,20 @@ function Tile({
           className="text-[1.55rem] font-semibold leading-none tabular-nums"
           style={{ color: color ?? 'var(--ink-faint)' }}
         >
-          {count === null || count === undefined ? (
-            value
-          ) : (
+          {count !== null && count !== undefined ? (
             <CountUp value={count} suffix={countSuffix} />
+          ) : progress ? (
+            <>
+              <CountUp value={progress.done} />
+              <span className="text-[1.05rem] font-medium text-[var(--ink-faint)]">/{progress.needed}</span>
+            </>
+          ) : (
+            value
           )}
         </span>
-        {caption && (
+        {(caption ?? progress) && (
           <span className="min-w-0 text-[0.76rem] font-medium leading-tight" style={{ color: color ?? 'var(--ink-faint)' }}>
-            {caption}
+            {caption ?? progress!.unit}
           </span>
         )}
       </p>
@@ -237,8 +283,18 @@ function Tile({
           <div
             className="h-full rounded-full"
             style={{
-              width: `${seen ? (bar ?? 0) : 0}%`,
-              backgroundColor: color ?? 'var(--line-strong)',
+              /*
+                La barre montre l'avancement VERS le seuil tant que la mesure
+                n'est pas publiable : elle avance à chaque carte révisée au
+                lieu de rester plate, ce qui est exactement ce qui se passe.
+              */
+              width: `${
+                seen
+                  ? (bar ??
+                    (progress ? Math.min(100, Math.round((progress.done / progress.needed) * 100)) : 0))
+                  : 0
+              }%`,
+              backgroundColor: color ?? (progress ? 'var(--accent)' : 'var(--line-strong)'),
               transition: 'width 800ms cubic-bezier(0.22, 0.61, 0.36, 1)',
             }}
           />
