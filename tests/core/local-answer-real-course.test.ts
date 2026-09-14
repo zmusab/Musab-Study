@@ -186,4 +186,74 @@ describe('le moteur local répond sur le vrai cours', () => {
   it('s’abstient plutôt que de répondre à côté quand le cours ne dit rien', () => {
     expect(repondre('Quelle est la vascularisation du ligament parodontal ?')).toBeNull();
   });
+
+  /*
+    LA DOUZIÈME QUESTION.
+
+    « Quelle est la différence entre le nerf maxillaire et le nerf
+    mandibulaire ? » était la seule des douze à rester sans réponse, alors que
+    le cours définit les deux : « … est un nerf sensitif », « … est un nerf
+    mixte, sensitif et moteur ». Le moteur cherchait une ligne parlant des
+    DEUX à la fois — elle n'existe pas, et n'a pas à exister.
+  */
+  describe('les questions de comparaison', () => {
+    it('met les deux notions côte à côte, chacune telle que le cours la décrit', () => {
+      const reponse = repondre('Quelle est la différence entre le nerf maxillaire et le nerf mandibulaire ?');
+      expect(reponse).not.toBeNull();
+      expect(reponse).toContain('### Le nerf maxillaire');
+      expect(reponse).toContain('### Le nerf mandibulaire');
+      expect(reponse).toContain('nerf sensitif');
+      expect(reponse).toContain('mixte, sensitif et moteur');
+    });
+
+    it('ne conclut jamais la comparaison à la place de l’étudiant', () => {
+      const reponse = repondre('Quelle est la différence entre le nerf maxillaire et le nerf mandibulaire ?');
+      // Le moteur ne sait pas comparer ; l'affirmer serait inventer.
+      expect(reponse).not.toMatch(/la différence est|contrairement à|alors que le/i);
+      expect(reponse).toContain('c’est à toi de la faire');
+    });
+
+    it('s’abstient quand un seul des deux côtés est documenté', () => {
+      // Une comparaison à moitié documentée induit en erreur plus qu'elle n'aide.
+      expect(repondre('Quelle est la différence entre le nerf maxillaire et le nerf vestibulo-cochléaire ?')).toBeNull();
+    });
+
+    it('s’abstient quand la question ne nomme pas ses deux côtés', () => {
+      expect(repondre('Quelle est la différence entre les deux ?')).toBeNull();
+    });
+  });
+
+  /*
+    UNE SECTION TITRÉE S'ARRÊTE AU SUJET SUIVANT.
+
+    Un polycopié n'intitule pas tout : « Le nerf maxillaire est un nerf
+    sensitif. » est une phrase ordinaire, donc le découpage en sections la
+    range sous le titre précédent. La réponse sur le nerf OPHTALMIQUE
+    enchaînait alors sur le maxillaire puis le mandibulaire, comme si le cours
+    en parlait au même endroit. Dans une section, le contenu est à puces :
+    une ligne NUE qui revient plus bas ouvre autre chose.
+  */
+  it('ne fait pas déborder une section titrée sur le sujet suivant', () => {
+    const court = [
+      'Le nerf ophtalmique de Willis',
+      '• Il chemine par le canal le plus interne de Cavum Meckeli',
+      'Le nerf maxillaire est un nerf sensitif.',
+      '• Il sort du crâne par le foramen rond.',
+      'Le nerf mandibulaire est un nerf mixte, sensitif et moteur.',
+      '• Il sort du crâne par le foramen ovale.',
+    ].join('\n');
+    const petits: DocumentChunk[] = chunkDocument(restoreCourseLayout([court])).map((draft) => ({
+      ...draft,
+      id: `p${draft.index}`,
+      documentId: 'doc',
+      chapterId: 'ch',
+      subjectId: 's',
+      embedding: null,
+    }));
+    const question = 'Explique-moi le nerf ophtalmique de Willis';
+    const reponse = findLocalAnswer(question, bm25Retriever.retrieve(question, petits, 6), LOOKUP)?.text ?? '';
+    expect(reponse).toContain('Cavum Meckeli');
+    expect(reponse).not.toContain('foramen ovale');
+    expect(reponse).not.toContain('mixte, sensitif et moteur');
+  });
 });

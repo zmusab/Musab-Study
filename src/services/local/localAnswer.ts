@@ -544,6 +544,30 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
       .filter(Boolean);
   }
 
+
+  /*
+    UNE SECTION TITRÉE S'ARRÊTE AU SUJET SUIVANT.
+
+    Un polycopié n'intitule pas tout : « Le nerf maxillaire est un nerf
+    sensitif. » est une phrase ordinaire, pas un titre, donc le découpage en
+    sections la range sous le titre précédent. Résultat mesuré : la réponse
+    sur le nerf OPHTALMIQUE enchaînait sur le maxillaire puis le mandibulaire,
+    comme si le cours en parlait au même endroit.
+
+    Dans une section, le contenu est à puces. Une ligne NUE qui revient plus
+    bas ouvre autre chose — c'est la même hiérarchie de marqueurs que le plan
+    du résumé. On coupe là.
+  */
+  function ownBody(lines: readonly string[]): string[] {
+    const kept: string[] = [];
+    for (const [index, line] of lines.entries()) {
+      if (index > 0 && bulletDepth(line) === null) break;
+      const text = stripBulletPrefix(line).trim();
+      if (text.length > 0) kept.push(text);
+    }
+    return kept;
+  }
+
   const sections: Section[] = [];
   const seen = new Set<string>();
   let order = 0;
@@ -570,7 +594,7 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
       */
       const shownBody =
         inHeading === required.size && required.size > 0
-          ? body.slice(0, MAX_LINES_PER_SECTION)
+          ? ownBody(section.lines).slice(0, MAX_LINES_PER_SECTION)
           : (anchoredLines(section.lines, required) ?? body.slice(0, MAX_LINES_PER_SECTION));
 
       /*
@@ -741,11 +765,61 @@ export function findLocalAnswer(
   const terms = questionTerms.size > 0 ? questionTerms : rawTerms;
   if (terms.size === 0) return null;
 
+  /*
+    LA COMPARAISON SE TRAITE AVANT LA RÉSOLUTION DES TERMES.
+
+    `distinctiveTerms` suppose UN seul sujet : elle rend `null` — et le moteur
+    s'abstient — dès qu'un mot de la question manque au cours. Sur « la
+    différence entre A et B », c'est la garantie de ne jamais répondre dès que
+    B n'y est pas, sans même regarder ce que le cours dit de A.
+
+    Une comparaison se construit à partir de deux recherches SÉPARÉES, chacune
+    sur son propre sujet. Elle est donc tentée d'abord, et le chemin ordinaire
+    reprend la main si elle n'aboutit pas.
+  */
+  /*
+    UNE COMPARAISON SE RÉPOND EN DEUX COLONNES, pas en une.
+
+    « Quelle est la différence entre le nerf maxillaire et le nerf
+    mandibulaire ? » était la seule des douze questions mesurées sur le vrai
+    cours à rester sans réponse — alors que le document définit les deux :
+    « … est un nerf sensitif », « … est un nerf mixte, sensitif et moteur ».
+
+    Le moteur exigeait que TOUS les termes se trouvent ensemble : il cherchait
+    une ligne parlant des deux nerfs à la fois, qui n'existe pas et n'a pas à
+    exister. Une comparaison se construit à partir de deux réponses séparées.
+
+    RIEN N'EST CONCLU À LA PLACE DE L'ÉTUDIANT. Le moteur ne dit pas « la
+    différence est que… » — il ne sait pas comparer, et l'affirmer serait
+    inventer. Il met côte à côte ce que le cours dit de chacun, ce qui est
+    précisément ce qu'on cherche en posant la question.
+  */
+  if (asked?.intent === 'comparison' && asked.compared) {
+    const sides = asked.compared.map((subject) => ({
+      subject,
+      answer: findLocalAnswer(subject, scoredChunks, lookup),
+    }));
+    // Les deux côtés doivent répondre : une comparaison à moitié documentée
+    // induit en erreur plus qu'elle n'aide.
+    if (sides.every((side) => side.answer !== null)) {
+      return {
+        text: [
+          `**${asked.compared[0]}** et **${asked.compared[1]}** — ce que ton cours dit de chacun.`,
+          '',
+          ...sides.flatMap(({ subject, answer }) => [`### ${capitalize(subject)}`, answer!.text, '']),
+          '_Ton cours ne compare pas ces deux notions explicitement : les voici côte à côte, telles qu’il les décrit. La comparaison, c’est à toi de la faire — ou demande-la à l’IA._',
+        ].join('\n'),
+        citations: sides.flatMap(({ answer }) => answer!.citations),
+      };
+    }
+  }
+
   const chunkTermSets = scoredChunks.map(({ chunk }) => significantWords(chunk.text));
   const required = distinctiveTerms(terms, chunkTermSets);
   if (required === null) return null;
 
   const chunkById = new Map(scoredChunks.map(({ chunk }) => [chunk.id, chunk]));
+
 
   /*
     LA SECTION QUI PORTE LE TITRE DEMANDÉ PASSE AVANT TOUT.

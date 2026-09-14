@@ -32,7 +32,7 @@ import type { FactPredicate } from './relationExtraction';
  * question ne devient sans réponse à cause de ce fichier.
  */
 
-export type QuestionIntent = 'location' | 'count' | 'composition' | 'function' | 'definition';
+export type QuestionIntent = 'location' | 'count' | 'composition' | 'function' | 'definition' | 'comparison';
 
 /**
  * FRONTIÈRE DE MOT, ACCENTS COMPRIS.
@@ -76,6 +76,31 @@ interface IntentRule {
  * aussi « de quoi ».
  */
 const RULES: readonly IntentRule[] = [
+  /*
+    LA COMPARAISON PASSE EN PREMIER.
+
+    « Quelle est la différence entre le nerf maxillaire et le nerf
+    mandibulaire ? » contient « quelle » et parlerait volontiers de
+    définition — mais la demande n'est ni l'un ni l'autre : elle porte sur
+    DEUX sujets, et une réponse qui n'en traite qu'un rate la question.
+
+    C'est la question la plus fréquente d'un étudiant en anatomie, et la
+    seule des douze mesurées sur le vrai cours à laquelle le moteur
+    s'abstenait alors que le document définit les deux termes.
+  */
+  {
+    intent: 'comparison',
+    pattern: new RegExp(
+      [
+        `${word('diff[ée]rence|diff[ée]rences|distingue|distinguer|distinction')}`,
+        `${word('comparer|comparaison')}`,
+        `${word('oppose|opposent')}`,
+      ].join('|'),
+      'i',
+    ),
+    markers: ['difference', 'differences', 'distingue', 'distinguer', 'distinction', 'comparer', 'comparaison', 'entre', 'oppose'],
+    leads: 'definition',
+  },
   {
     intent: 'count',
     pattern: new RegExp(word('combien'), 'i'),
@@ -144,6 +169,37 @@ export interface ReadQuestion {
   leads: FactPredicate;
   /** Mots de forme à retirer des termes exigés, déjà normalisés. */
   markers: ReadonlySet<string>;
+  /**
+   * LES DEUX SUJETS COMPARÉS, tels qu'écrits dans la question.
+   *
+   * Renseigné uniquement pour une question de comparaison dont les deux côtés
+   * se laissent découper sans ambiguïté. `null` dès que ce n'est pas le cas —
+   * « la différence entre les deux » n'a aucun côté nommé, et deviner lequel
+   * serait exactement ce que ce projet refuse.
+   */
+  compared: readonly [string, string] | null;
+}
+
+/**
+ * « … entre A et B » — le seul découpage sans ambiguïté, et il est fréquent.
+ *
+ * On coupe au « et » (ou au « ou ») qui suit « entre ». Les deux côtés
+ * doivent porter du texte, sinon on rend `null` : une comparaison dont on ne
+ * sait pas nommer les deux termes n'est pas une comparaison exploitable.
+ */
+const BETWEEN = new RegExp(`(?:^|${WORD})entre${WORD}+(.+)$`, 'i');
+const AND_SPLIT = new RegExp(`${WORD}(?:et|ou)(?=${WORD})`, 'i');
+
+export function comparedSubjects(question: string): readonly [string, string] | null {
+  const after = BETWEEN.exec(question)?.[1];
+  if (!after) return null;
+  const cleaned = after.replace(/\s*\?\s*$/, '').trim();
+  const split = AND_SPLIT.exec(cleaned);
+  if (!split || split.index <= 0) return null;
+  const left = cleaned.slice(0, split.index).trim();
+  const right = cleaned.slice(split.index + split[0].length).trim();
+  if (left.length < 2 || right.length < 2) return null;
+  return [left, right];
 }
 
 /**
@@ -153,7 +209,12 @@ export interface ReadQuestion {
 export function readQuestion(question: string): ReadQuestion | null {
   for (const rule of RULES) {
     if (!rule.pattern.test(question)) continue;
-    return { intent: rule.intent, leads: rule.leads, markers: new Set(rule.markers) };
+    return {
+      intent: rule.intent,
+      leads: rule.leads,
+      markers: new Set(rule.markers),
+      compared: rule.intent === 'comparison' ? comparedSubjects(question) : null,
+    };
   }
   return null;
 }
