@@ -249,6 +249,25 @@ export function HomePage() {
           <p className="mt-1.5 text-[1rem] text-[var(--ink-soft)]">{data.greeting}</p>
         </StaggerItem>
 
+        <StaggerItem>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Link to="/calendrier?plan=week" className="surface-card p-5 hover:bg-[var(--surface-hover)]">
+              <Icon name="calendar" size={22} className="text-[var(--accent)]" />
+              <h2 className="mt-3 text-base font-semibold">Organiser ma semaine</h2>
+              <p className="mt-2 text-sm text-[var(--ink-soft)]">Placer mes séances autour de mes horaires.</p>
+            </Link>
+            <Link to="/progression" className="surface-card p-5 hover:bg-[var(--surface-hover)]">
+              <Icon name="review" size={22} className="text-[var(--accent)]" />
+              <h2 className="mt-3 text-base font-semibold">Mes points de vigilance</h2>
+              <p className="mt-2 text-sm text-[var(--ink-soft)]">Voir mes résultats et les notions à consolider.</p>
+            </Link>
+            <Link to="/calendrier" className="surface-card p-5 hover:bg-[var(--surface-hover)]">
+              <Icon name="quiz" size={22} className="text-[var(--accent)]" />
+              <h2 className="mt-3 text-base font-semibold">{nextExam ? nextExam.event.title : 'Mon prochain examen'}</h2>
+              <p className="mt-2 text-sm text-[var(--ink-soft)]">{nextExam ? eventTimingLabel(daysBetweenDayKeys(dayKey(), nextExam.event.day)) : 'Ajouter une échéance pour préparer mes révisions.'}</p>
+            </Link>
+          </div>
+        </StaggerItem>
         {/* Session recommandée — l'élément principal de l'accueil. */}
         <StaggerItem>
           {/*

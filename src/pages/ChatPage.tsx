@@ -22,7 +22,6 @@ import {
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
 import { findLocalAnswer } from '@/services/local/localAnswer';
-import { findAnatomyReference, renderAnatomyReference } from '@/services/local/anatomyReference';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
 
@@ -58,7 +57,7 @@ const INTENTS: { category: AssistantCategory; label: string }[] = [
  * répond une fois cette action déclenchée.
  */
 const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
-  { value: 'auto', label: 'Automatique (local d’abord)' },
+  { value: 'auto', label: 'Automatique' },
   { value: 'anthropic', label: 'Claude' },
   { value: 'openai', label: 'ChatGPT' },
   { value: 'gemini', label: 'Gemini' },
@@ -198,7 +197,7 @@ export function ChatPage() {
       // ── Mode « Mes cours », sans demande explicite d'IA : moteur local
       //    d'abord (même moteur que les flashcards/notions locales), jamais
       //    d'appel réseau tant que l'étudiant ne l'a pas demandé lui-même. ──
-      if (mode === 'cours' && !options.forceAi) {
+      if (mode === 'cours' && !options.forceAi && !aiOrchestrator.hasAvailableProvider()) {
         const local = findLocalAnswer(trimmed, scored, lookup);
         if (local) {
           await appendChatMessage({
@@ -225,17 +224,6 @@ export function ChatPage() {
           région, et de quoi aller voir la structure en 3D. Le trajet et les
           rapports restent dans le document, qui reste à importer.
         */
-        const reference = findAnatomyReference(trimmed);
-        if (reference) {
-          await appendChatMessage({
-            subjectId,
-            role: 'assistant',
-            text: renderAnatomyReference(reference),
-            provenance: 'course-local',
-          });
-          setAwaitingAiChoice(trimmed);
-          return;
-        }
 
         await appendChatMessage({
           subjectId,
@@ -540,7 +528,7 @@ export function ChatPage() {
                       : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
                   )}
                 >
-                  {value === 'cours' ? 'Mes cours' : 'Internet'}
+                  {value === 'cours' ? 'Mes cours' : 'Cours + Internet'}
                 </button>
               ))}
             </div>
