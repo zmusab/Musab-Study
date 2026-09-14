@@ -13,6 +13,7 @@ import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
 import { evaluateAnswer, type AnswerVerdict } from '@/core/revisions/evaluateAnswer';
 import { deriveRating, type AutoRating } from '@/core/revisions/autoRating';
+import { previewDelays } from '@/core/srs';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 import { agree, plural } from '@/lib/plural';
 
@@ -44,6 +45,14 @@ const RATING_LABELS: Record<Rating, string> = {
  * Poser les deux questions revenait à lui faire saisir deux fois la même
  * information — et `scheduleNext` attend toujours les deux.
  */
+/** Les quatre notes dans l'ordre où elles s'affichent, avec leur couleur. */
+const RATING_ORDER: { rating: Rating; variant: 'danger' | 'ghost' | 'secondary' | 'primary' }[] = [
+  { rating: 0, variant: 'danger' },
+  { rating: 1, variant: 'ghost' },
+  { rating: 2, variant: 'secondary' },
+  { rating: 3, variant: 'primary' },
+];
+
 const CONFIDENCE_FOR_RATING: Record<Rating, Confidence> = {
   0: 'low',
   1: 'medium',
@@ -108,6 +117,27 @@ function ReviewSession({
   // de la carte) n'a pas à être répété par l'étudiant pour que sa réponse
   // compte comme complète.
   const evaluation = current && hasAttempt ? evaluateAnswer(attempt, current.answer, current.question) : null;
+
+  /*
+    Le délai que chaque note entraînerait, calculé par le PLANIFICATEUR
+    lui-même (`scheduleNext`, fonction pure) : l'aperçu ne peut donc pas
+    diverger de ce qui sera réellement enregistré.
+  */
+  const delays = current
+    ? previewDelays(
+        {
+          ease: current.ease,
+          interval: current.interval,
+          reps: current.reps,
+          lapses: current.lapses,
+          due: current.due,
+          lastReview: current.lastReview,
+          importance: current.importance,
+          difficulty: current.difficulty,
+        },
+        (rating) => CONFIDENCE_FOR_RATING[rating],
+      )
+    : null;
 
   /**
    * Vérifier fige DEUX choses : le temps réellement mis à répondre, et la note
@@ -280,19 +310,27 @@ function ReviewSession({
                   ? 'Choisis la note qui correspond vraiment à ton rappel.'
                   : 'Le moteur ne peut pas juger cette réponse tout seul — à toi de dire ce que valait ton rappel.'}
               </p>
+              {/*
+                CHAQUE BOUTON ANNONCE SON DÉLAI — « Encore · 10 min »,
+                « Facile · 1 mois ». C'est ce qui rend la répétition espacée
+                croyable : on ne note plus à l'aveugle, on voit la
+                conséquence. Le délai vient de `scheduleNext` lui-même, donc
+                il ne peut pas mentir sur ce qui sera enregistré.
+              */}
               <div className="grid grid-cols-4 gap-2">
-                <Button variant="danger" onClick={() => void handleRate(0)}>
-                  {RATING_LABELS[0]}
-                </Button>
-                <Button variant="ghost" onClick={() => void handleRate(1)}>
-                  {RATING_LABELS[1]}
-                </Button>
-                <Button variant="secondary" onClick={() => void handleRate(2)}>
-                  {RATING_LABELS[2]}
-                </Button>
-                <Button variant="primary" onClick={() => void handleRate(3)}>
-                  {RATING_LABELS[3]}
-                </Button>
+                {RATING_ORDER.map(({ rating, variant }) => (
+                  <Button
+                    key={rating}
+                    variant={variant}
+                    onClick={() => void handleRate(rating)}
+                    className="flex-col gap-0 py-2 leading-tight"
+                  >
+                    <span>{RATING_LABELS[rating]}</span>
+                    {delays && (
+                      <span className="text-[0.68rem] font-normal opacity-75">{delays[rating]}</span>
+                    )}
+                  </Button>
+                ))}
               </div>
             </>
           )}

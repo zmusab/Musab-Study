@@ -251,6 +251,44 @@ export function FlashcardsPage() {
 
   const handleRejectDraft = () => setDraftIndex((i) => i + 1);
 
+  /**
+   * TOUT ACCEPTER — parce que valider trente cartes une par une, personne ne
+   * le fait deux fois.
+   *
+   * La validation carte par carte reste le chemin par défaut, et c'est
+   * volontaire : le moteur peut se tromper, l'étudiant doit pouvoir corriger
+   * ou écarter. Mais quand les propositions sont bonnes, trente clics ne
+   * protègent de rien — ils découragent. Les cartes restent modifiables et
+   * supprimables dans la bibliothèque juste en dessous : accepter n'est pas
+   * irréversible.
+   */
+  const handleAcceptAllDrafts = async () => {
+    if (!subjectId) return;
+    const scopeChapterId = chapterId === 'all' ? null : chapterId;
+    const remaining = drafts.slice(draftIndex);
+
+    for (const draft of remaining) {
+      await createFlashcard({
+        subjectId,
+        chapterId: scopeChapterId,
+        question: draft.question,
+        answer: draft.answer,
+        importance: draft.importance,
+        difficulty: draft.difficulty,
+        origin: draftsSource === 'ai' ? 'ai' : 'local',
+        sourceChunkIds: draft.sourceChunkIds,
+        notionKey: draft.notionKey,
+        notionLabel: draft.notionLabel,
+      });
+    }
+
+    setDraftIndex(drafts.length);
+    notify(
+      remaining.length === 1 ? '1 carte ajoutée.' : `${remaining.length} cartes ajoutées.`,
+      'success',
+    );
+  };
+
   const handleManualCreate = async () => {
     if (!subjectId) return;
     if (manualQuestion.trim().length === 0 || manualAnswer.trim().length === 0) {
@@ -519,6 +557,17 @@ export function FlashcardsPage() {
                 <Button size="sm" variant="ghost" icon={<Icon name="close" size={15} />} onClick={handleRejectDraft}>
                   Rejeter
                 </Button>
+                {drafts.length - draftIndex > 1 && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="ml-auto"
+                    onClick={() => void handleAcceptAllDrafts()}
+                    data-accept-all-drafts
+                  >
+                    Tout accepter ({drafts.length - draftIndex})
+                  </Button>
+                )}
               </div>
             </motion.div>
           )}

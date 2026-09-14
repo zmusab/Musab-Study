@@ -114,9 +114,33 @@ export function scheduleNext(
     ease = clampEase(item.ease + confMod);
     base = reps <= INTERVAL_STEPS.length ? INTERVAL_STEPS[reps - 1]! : item.interval * ease;
   } else {
+    /*
+      « FACILE » SAUTE UN BARREAU DE L'ÉCHELLE.
+
+      Auparavant : `INTERVAL_STEPS[reps - 1] * 1.4`. Sur une carte NEUVE, cela
+      donnait 1 × 1,4 = 1,4, arrondi à 1 jour — exactement comme « Bien » et
+      comme « Difficile ». Les trois boutons annonçaient le même délai, et le
+      choix de l'étudiant ne changeait rien : une carte sue par cœur revenait
+      le lendemain au même titre qu'une carte à peine retrouvée.
+
+      Monter d'un barreau exprime la même idée avec l'échelle qui existe
+      déjà : « Bien » avance d'un cran, « Facile » de deux. Au-delà de
+      l'échelle, on retombe sur l'espacement multiplicatif habituel.
+    */
     ease = clampEase(item.ease + 0.15 + confMod);
-    base =
-      (reps <= INTERVAL_STEPS.length ? INTERVAL_STEPS[reps - 1]! : item.interval * ease) * 1.4;
+
+    /*
+      …SANS JAMAIS PASSER SOUS « BIEN ».
+
+      Le barreau suivant et l'espacement multiplicatif ne se rejoignent pas au
+      bout de l'échelle : sur une carte mûre, prendre le barreau donnait 37
+      jours là où « Bien » en donnait 46 — « Facile » punissait l'étudiant qui
+      savait. On garde donc le PLUS GRAND des deux, ce qui rend l'ordre des
+      quatre boutons vrai par construction.
+    */
+    const goodBase = reps <= INTERVAL_STEPS.length ? INTERVAL_STEPS[reps - 1]! : item.interval * ease;
+    const nextRung = reps < INTERVAL_STEPS.length ? INTERVAL_STEPS[reps]! : 0;
+    base = Math.max(nextRung, goodBase * 1.4);
   }
 
   const interval = Math.max(
@@ -164,4 +188,58 @@ export function initialSchedulingState(now: Date = new Date()): SchedulingState 
     due: now.toISOString(),
     lastReview: null,
   };
+}
+
+/**
+ * CE QUE CHAQUE NOTE VA COÛTER, avant de la choisir.
+ *
+ * C'est la fonction la plus visible d'Anki, et celle qui rend la répétition
+ * espacée croyable : sous « Encore » on lit « 10 min », sous « Facile »
+ * « 1 mois ». L'étudiant ne note plus à l'aveugle — il voit la conséquence,
+ * et il comprend pourquoi une carte revient.
+ *
+ * Rien n'est réinventé ici : `scheduleNext` est une fonction PURE, on
+ * l'appelle simplement une fois par note. L'aperçu ne peut donc pas diverger
+ * de la planification réelle — c'est la même règle, exécutée à l'avance.
+ */
+
+/** Formate un délai comme le ferait un étudiant : « 10 min », « 3 j », « 2 mois ». */
+export function formatDelay(fromMs: number, toISO: string): string {
+  const ms = new Date(toISO).getTime() - fromMs;
+  if (ms <= 0) return 'maintenant';
+
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${Math.max(1, minutes)} min`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+
+  /*
+    LES JOURS JUSQU'À TROIS MOIS, et pas jusqu'à un seul.
+
+    Une première version basculait en mois dès 30 jours. Deux notes qui
+    donnent réellement 46 et 64 jours s'affichaient alors toutes les deux
+    « 2 mois » : l'aperçu écrasait la différence qu'il est censé montrer, et
+    les boutons « Bien » et « Facile » paraissaient faire la même chose.
+  */
+  const days = Math.round(ms / DAY_MS);
+  if (days < 90) return `${days} j`;
+
+  const months = Math.round(days / 30);
+  return months < 12 ? `${months} mois` : `${Math.round(months / 12)} an${months >= 24 ? 's' : ''}`;
+}
+
+/**
+ * Délai annoncé pour chacune des quatre notes, dans l'ordre 0→3.
+ * `confidenceFor` reproduit le couplage note/confiance de l'écran de révision,
+ * pour que l'aperçu corresponde EXACTEMENT à ce qui sera enregistré.
+ */
+export function previewDelays(
+  item: SchedulingInput,
+  confidenceFor: (rating: Rating) => Confidence,
+  now: Date = new Date(),
+): Record<Rating, string> {
+  const at = now.getTime();
+  const delay = (rating: Rating) => formatDelay(at, scheduleNext(item, rating, confidenceFor(rating), now).due);
+  return { 0: delay(0), 1: delay(1), 2: delay(2), 3: delay(3) };
 }
