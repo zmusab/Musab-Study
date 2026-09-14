@@ -1,4 +1,6 @@
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/cn';
+import { springSnappy } from '@/components/motion/transitions';
 import type { CalendarDay, DayAgenda } from '@/core/calendar';
 import { parseDayKey } from '@/lib/date';
 
@@ -23,6 +25,17 @@ export function MonthGrid({
   selected: string;
   onSelect: (day: string) => void;
 }) {
+  /*
+    LE CALENDRIER ÉTAIT LE SEUL ÉCRAN ENTIÈREMENT STATIQUE — zéro fichier
+    animé sur neuf. Changer de mois, choisir un jour : tout se remplaçait d'un
+    coup, sans qu'aucun mouvement ne dise ce qui venait de se passer.
+
+    Le mouvement ajouté ici ne décore pas, il INFORME : la case choisie se
+    soulève d'un ressort court, parce que c'est le geste qu'on vient de faire.
+    Rien d'autre ne bouge — une grille de trente-cinq cases qui s'agitent
+    serait illisible, et c'est une grille qu'on lit, pas un spectacle.
+  */
+  const reduced = useReducedMotion();
   return (
     <div data-calendar-month>
       <div className="grid grid-cols-7 gap-1 pb-2">
@@ -39,10 +52,15 @@ export function MonthGrid({
               const agenda = agendaFor(cell.day);
               const isSelected = cell.day === selected;
               return (
-                <button
+                <motion.button
                   key={cell.day}
                   type="button"
                   onClick={() => onSelect(cell.day)}
+                  // Le ressort ne joue qu'au CHANGEMENT de sélection : `animate`
+                  // sur une valeur constante ne rejoue rien au rendu suivant.
+                  animate={reduced ? undefined : { scale: isSelected ? 1.03 : 1 }}
+                  transition={springSnappy}
+                  whileTap={reduced ? undefined : { scale: 0.97 }}
                   aria-pressed={isSelected}
                   aria-label={`${cell.day}${agenda.isEmpty ? '' : ' — journée chargée'}`}
                   data-calendar-cell={cell.day}
@@ -139,7 +157,7 @@ export function MonthGrid({
                       )}
                     </span>
                   )}
-                </button>
+                </motion.button>
               );
             })}
           </div>

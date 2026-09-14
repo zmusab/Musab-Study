@@ -4,6 +4,8 @@ import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { Button, Card, Icon, SegmentedControl, useConfirm, useToast } from '@/components/ui';
 import { MonthGrid } from '@/components/features/calendar/MonthGrid';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { springSoft } from '@/components/motion/transitions';
 import { WeekView } from '@/components/features/calendar/WeekView';
 import { DayAgendaPanel } from '@/components/features/calendar/DayAgendaPanel';
 import { EventModal, type EventFormValues } from '@/components/features/calendar/EventModal';
@@ -88,6 +90,17 @@ export function CalendarPage() {
 
   const [view, setView] = useState<CalendarView>('month');
   const [anchor, setAnchor] = useState(() => new Date());
+  /*
+    LE SENS DU DÉPLACEMENT — pour que la période entre du bon côté.
+
+    Un mois qui apparaît toujours par la gauche ne dit rien ; un mois qui
+    entre par la DROITE quand on avance dit qu'on avance, exactement comme
+    dans le calendrier d'iOS. C'est la seule information que le mouvement
+    apporte ici, et elle suffit à savoir où l'on est allé sans relire le
+    titre.
+  */
+  const [direction, setDirection] = useState(0);
+  const reducedMotion = useReducedMotion();
   const [selected, setSelected] = useState<DayKey>(() => dayKey(new Date()));
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -204,16 +217,20 @@ export function CalendarPage() {
   if (!source) return null;
 
   const today = dayKey(now);
-  const step = (direction: number) => {
-    if (view === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + direction, 1));
-    else if (view === 'week') setAnchor(addDays(anchor, direction * 7));
+  const step = (towards: number) => {
+    setDirection(towards);
+    if (view === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + towards, 1));
+    else if (view === 'week') setAnchor(addDays(anchor, towards * 7));
     else {
-      const next = addDays(parseDayKey(selected), direction);
+      const next = addDays(parseDayKey(selected), towards);
       setSelected(dayKey(next));
       setAnchor(next);
     }
   };
   const goToday = () => {
+    // « Aujourd'hui » n'a pas de sens de déplacement : on revient, on n'avance
+    // pas. Un simple fondu, sans glissement qui mentirait sur la direction.
+    setDirection(0);
     setAnchor(new Date(now));
     setSelected(today);
   };
@@ -539,27 +556,44 @@ export function CalendarPage() {
         }
       >
         <Card>
-          {view === 'month' && (
-            <MonthGrid weeks={weeks} agendaFor={agendaFor} selected={selected} onSelect={setSelected} />
-          )}
-          {view === 'week' && (
-            <WeekView
-              days={weekDays}
-              agendaFor={agendaFor}
-              selected={selected}
-              today={today}
-              onSelect={setSelected}
-            />
-          )}
-          {view === 'day' && (
-            <WeekView
-              days={[selected]}
-              agendaFor={agendaFor}
-              selected={selected}
-              today={today}
-              onSelect={setSelected}
-            />
-          )}
+          {/*
+            LA PÉRIODE GLISSE DANS LE SENS OÙ ON VA. `mode="wait"` : l'ancienne
+            période s'efface avant que la nouvelle n'entre, sinon deux mois se
+            superposent le temps de la transition et la grille devient
+            illisible pendant 200 ms.
+          */}
+          <AnimatePresence mode="wait" initial={false} custom={direction}>
+            <motion.div
+              key={`${view}-${formatMonthYear(anchor)}-${weekDays[0] ?? selected}`}
+              custom={direction}
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: direction * 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: direction * -24 }}
+              transition={springSoft}
+            >
+              {view === 'month' && (
+                <MonthGrid weeks={weeks} agendaFor={agendaFor} selected={selected} onSelect={setSelected} />
+              )}
+              {view === 'week' && (
+                <WeekView
+                  days={weekDays}
+                  agendaFor={agendaFor}
+                  selected={selected}
+                  today={today}
+                  onSelect={setSelected}
+                />
+              )}
+              {view === 'day' && (
+                <WeekView
+                  days={[selected]}
+                  agendaFor={agendaFor}
+                  selected={selected}
+                  today={today}
+                  onSelect={setSelected}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </Card>
 
         <Card className="lg:max-h-[42rem]">
@@ -585,6 +619,22 @@ export function CalendarPage() {
               </span>
             </p>
           )}
+          {/*
+            LE PANNEAU DU JOUR SUIT LA SÉLECTION.
+
+            Toucher une case changeait son contenu d'un coup, à droite de
+            l'écran, loin du doigt : rien ne reliait le geste au résultat. Un
+            fondu montant de six pixels, calé sur le jour choisi, fait le lien
+            sans retarder la lecture.
+          */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={selected}
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={springSoft}
+            >
           <DayAgendaPanel
             agenda={selectedAgenda}
             onStart={start}
@@ -595,6 +645,8 @@ export function CalendarPage() {
             onCreate={openCreate}
             onOpenExam={(entry) => setExamEvent(entry.event)}
           />
+            </motion.div>
+          </AnimatePresence>
         </Card>
       </div>
 
