@@ -5,7 +5,7 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { notationFor } from '@/components/layout/notations';
 import { CountUp } from '@/components/motion/Reveal';
 import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
-import { Button, Card, Chip, EmptyState, Icon, Input, Swatch } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, Input, Spinner, Swatch } from '@/components/ui';
 import { agree, plural } from '@/lib/plural';
 import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
@@ -27,10 +27,10 @@ const AI_SUGGESTIONS = [
   'Qu’est-ce que je dois réviser ?',
 ];
 
-function ProgressBar({ value, max, color = 'var(--accent)' }: { value: number; max: number; color?: string }) {
+function ProgressBar({ value, max, label, color = 'var(--accent)' }: { value: number; max: number; label: string; color?: string }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
+    <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
       <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
     </div>
   );
@@ -77,7 +77,16 @@ export function HomePage() {
     navigate(`/ia?prompt=${encodeURIComponent(trimmed)}`);
   };
 
-  if (data === undefined) return null;
+  if (data === undefined) {
+    return (
+      <PageTransition>
+        <div className="flex min-h-48 items-center justify-center gap-3 text-[var(--ink-soft)]">
+          <Spinner size={22} />
+          <p>Chargement de ton espace d’étude…</p>
+        </div>
+      </PageTransition>
+    );
+  }
 
   if (!data.hasAnySubject) {
     return (
@@ -94,11 +103,18 @@ export function HomePage() {
             title="Commence par créer une matière"
             description="Une fois tes cours importés, l’accueil te dira chaque jour ce qu’il faut réviser et pourquoi — à partir de tes vraies données, jamais d’exemples."
             action={
-              <Link to="/cours">
-                <Button>Créer ma première matière</Button>
-              </Link>
+              <Button onClick={() => navigate('/cours')}>Créer ma première matière</Button>
             }
           />
+          <Card className="mt-6">
+            <h2 className="text-base font-semibold">Tu as déjà une sauvegarde ?</h2>
+            <p className="mt-2 text-base text-[var(--ink-soft)]">
+              Retrouve tes cours et tes révisions depuis les paramètres. Tes données restent enregistrées dans ce navigateur : pense à les exporter régulièrement.
+            </p>
+            <Link to="/parametres" className="mt-4 inline-flex min-h-11 items-center font-semibold text-[var(--accent)] hover:underline">
+              Ouvrir les paramètres de sauvegarde
+            </Link>
+          </Card>
         </div>
       </PageTransition>
     );
@@ -153,7 +169,7 @@ export function HomePage() {
                         Page {doc.lastReadPage} / {doc.pageCount}
                       </p>
                       <div className="mt-1.5">
-                        <ProgressBar value={doc.lastReadPage} max={doc.pageCount} color="var(--nav-turquoise)" />
+                        <ProgressBar value={doc.lastReadPage} max={doc.pageCount} label={`Lecture de ${doc.name}`} color="var(--nav-turquoise)" />
                       </div>
                     </>
                   )}
@@ -194,6 +210,9 @@ export function HomePage() {
             {nextExam.masteryPct}% des notions associées sont actuellement maîtrisées.
           </p>
         )}
+        <Link to="/calendrier" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)] hover:underline">
+          Ouvrir mon calendrier
+        </Link>
       </Card>
     </StaggerItem>
   );
@@ -326,7 +345,7 @@ export function HomePage() {
               </span>
             </div>
             <div className="mt-1.5">
-              <ProgressBar value={dailySummary.cardsReviewed} max={dailyCardGoal} color="var(--success)" />
+              <ProgressBar value={dailySummary.cardsReviewed} max={dailyCardGoal} label="Objectif quotidien de révision" color="var(--success)" />
             </div>
           </Card>
         </StaggerItem>
