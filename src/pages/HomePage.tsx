@@ -11,6 +11,7 @@ import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
 import { useDashboard } from '@/hooks/useDashboard';
 import { dayKey, daysBetweenDayKeys } from '@/lib/date';
+import { formatDuration } from '@/core/progress';
 
 /**
  * Accueil — centre de contrôle quotidien, pas un tableau de bord de
@@ -297,11 +298,25 @@ export function HomePage() {
         <StaggerItem>
           <Card>
             <p className="text-[0.95rem] font-semibold">Aujourd’hui</p>
+            {/*
+              LE GRAND CHIFFRE EST CELUI DE L'OBJECTIF, juste en dessous.
+
+              Il annonçait le temps — « 0 min étudiées » — au-dessus de
+              « 3 cartes révisées » et d'un objectif compté EN CARTES. Trois
+              unités, deux chiffres qui se contredisent, et c'est celui qui dit
+              zéro qu'on croit. Les cartes passent en tête : c'est ce que
+              l'objectif mesure, et ce qu'on vient réellement de faire.
+            */}
             <p className="mt-2 text-[1.6rem] font-semibold leading-none tabular-nums">
-              <CountUp value={dailySummary.minutesStudied} /> min étudiées
+              <CountUp value={dailySummary.cardsReviewed} />{' '}
+              {agree(dailySummary.cardsReviewed, 'carte')} {agree(dailySummary.cardsReviewed, 'révisée')}
             </p>
             <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-[var(--ink-soft)]">
-              <span>{plural(dailySummary.cardsReviewed, 'carte')} {agree(dailySummary.cardsReviewed, 'révisée')}</span>
+              {/* Le temps reste dit, mais jamais « 0 min » quand du travail a
+                  eu lieu : `formatDuration` écrit « moins d'1 min ». */}
+              <span data-home-time>
+                {dailySummary.msStudied > 0 ? `${formatDuration(dailySummary.msStudied)} étudiées` : 'pas encore de temps mesuré'}
+              </span>
               <span>{plural(dailySummary.documentsOpened, 'cours', 'cours')} {agree(dailySummary.documentsOpened, 'ouvert')}</span>
             </div>
             <div className="mt-4 flex items-center justify-between text-[0.78rem] text-[var(--ink-faint)]">

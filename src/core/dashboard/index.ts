@@ -148,12 +148,26 @@ export function computeGreeting(signals: GreetingSignals): string {
 export interface DailySummary {
   cardsReviewed: number;
   minutesStudied: number;
+  /**
+   * Temps brut, non arrondi.
+   *
+   * `minutesStudied` arrondit à la minute, donc rend 0 pour une séance courte :
+   * l'accueil annonçait « 0 min étudiées » juste au-dessus de « 3 cartes
+   * révisées ». Les deux chiffres se contredisaient à l'écran, et c'est celui
+   * qui dit zéro qu'on croit. Le temps brut permet de l'écrire honnêtement.
+   */
+  msStudied: number;
   documentsOpened: number;
 }
 
 /** Résumé de l'activité du jour, entièrement dérivé du journal de révisions et des ouvertures de documents. */
 export function computeDailySummary(todayLogs: readonly ReviewLog[], documentsOpenedToday: number): DailySummary {
   const cardsReviewed = todayLogs.filter((log) => log.itemKind === 'card').length;
-  const minutesStudied = Math.round(todayLogs.reduce((sum, log) => sum + log.elapsedMs, 0) / 60_000);
-  return { cardsReviewed, minutesStudied, documentsOpened: documentsOpenedToday };
+  const msStudied = todayLogs.reduce((sum, log) => sum + log.elapsedMs, 0);
+  return {
+    cardsReviewed,
+    minutesStudied: Math.round(msStudied / 60_000),
+    msStudied,
+    documentsOpened: documentsOpenedToday,
+  };
 }

@@ -171,6 +171,6 @@ describe('computeDailySummary', () => {
   });
 
   it('vaut zéro sans aucune activité — jamais un chiffre gonflé', () => {
-    expect(computeDailySummary([], 0)).toEqual({ cardsReviewed: 0, minutesStudied: 0, documentsOpened: 0 });
+    expect(computeDailySummary([], 0)).toEqual({ cardsReviewed: 0, minutesStudied: 0, msStudied: 0, documentsOpened: 0 });
   });
 });
