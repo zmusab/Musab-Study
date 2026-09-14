@@ -4,7 +4,7 @@ import type { Citation, Difficulty, Importance } from '@/types';
 
 /**
  * Vérification des flashcards proposées par l'IA — même principe que pour
- * l'assistant et le podcast : une carte n'est acceptée que si sa réponse
+ * l'assistant : une carte n'est acceptée que si sa réponse
  * s'appuie sur au moins un extrait réellement transmis. Une carte plausible
  * mais invérifiable est écartée avant même d'être proposée à l'utilisateur,
  * plutôt que de le laisser accepter par erreur une réponse inventée.

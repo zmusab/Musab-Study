@@ -395,12 +395,11 @@ describe('createOrchestrator — le modèle imposé ne traverse jamais vers un a
   });
 
   /*
-   * Le test jumeau — « le modèle imposé arrive bien au bon fournisseur » —
-   * a été retiré avec le podcast : `podcast-analysis` était la seule tâche à
-   * imposer un modèle. La capacité reste offerte par le routeur
-   * (`TaskRoute.preferredModel`), simplement plus aucune tâche ne s'en sert
-   * aujourd'hui. La garantie qui compte, elle, est toujours vérifiée
-   * ci-dessous : aucun identifiant de modèle ne doit FUITER vers un
+   * Il n'existe plus de test jumeau « le modèle imposé arrive bien au bon
+   * fournisseur » : plus aucune tâche n'impose de modèle aujourd'hui. La
+   * capacité reste offerte par le routeur (`TaskRoute.preferredModel`) et
+   * n'est simplement pas utilisée. La garantie qui compte, elle, est toujours
+   * vérifiée ci-dessous : aucun identifiant de modèle ne doit FUITER vers un
    * fournisseur qui ne le publie pas.
    */
 

@@ -555,8 +555,7 @@ check(
 );
 
 // ---------- Recherche → sélection → panneau ----------
-await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
-await page.waitForTimeout(500);
+await chercher(page, 'masseter');
 const searchResult = page.getByText('Masséter', { exact: false }).first();
 check('La recherche approximative trouve « masséter »', await searchResult.isVisible());
 check(
@@ -681,9 +680,7 @@ await page.waitForTimeout(200);
 check('Le zoom ne provoque aucune erreur', errors.length === 0);
 
 // ---------- Refonte : 4 colonnes, marqueurs à lignes, corps entier ----------
-await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
-await page.waitForTimeout(500);
-await page.locator('ul li button').first().dispatchEvent('click');
+await chercherEtOuvrir(page, 'masseter');
 const panelHere = await closePanelButton(page)
   .waitFor({ state: 'attached', timeout: 20000 })
   .then(() => true)
@@ -709,8 +706,7 @@ const comboActive = await page
 check('Les combinaisons reflètent l’état réel des systèmes (§12)', comboActive === 'true', `aria-pressed=${comboActive}`);
 
 // ---------- Vignettes anatomiques réelles : plus aucun emoji de substitution ----------
-await page.getByPlaceholder(/Rechercher une structure/).fill('masseter');
-await page.waitForTimeout(600);
+await chercher(page, 'masseter');
 const thumbs = await page.locator('img[src^="/anatomy/thumbs/"]').count();
 check('Les résultats de recherche portent la vignette du maillage réel', thumbs > 0, `${thumbs} vignettes`);
 // §6 — aucune icône ni emoji ne tient lieu de représentation : la vignette
@@ -728,8 +724,7 @@ const thumbLoaded = await page
 check('Les vignettes se chargent réellement (image non cassée)', thumbLoaded);
 
 // Une structure sans maillage ne reçoit PAS d'image de substitution.
-await page.getByPlaceholder(/Rechercher une structure/).fill('nerf massétérique');
-await page.waitForTimeout(600);
+await chercher(page, 'nerf massétérique');
 const neutral = await page.locator('[title="Géométrie 3D non disponible"]').count();
 check(
   'Une structure sans maillage affiche une pastille « 3D non disponible », jamais un emoji',
@@ -856,12 +851,42 @@ await page.waitForTimeout(500);
 // Pas une convention d'affichage seulement : la couleur vient de la palette
 // partagée, et le maillage .glb porte le même facteur de couleur. On vérifie
 // donc que deux vaisseaux voisins du cou ne sont pas peints pareil.
-async function systemOfSearchHit(query) {
+/**
+ * CHERCHER, PUIS ATTENDRE QUE LE RÉSULTAT SOIT LÀ.
+ *
+ * La recherche est débouncée : `fill()` suivi d'un `waitForTimeout` fixe
+ * parie sur le fait que la liste aura eu le temps de se peupler. Ce pari
+ * échouait une exécution sur trois, et pas toujours au même endroit — deux
+ * lancements de suite ont produit deux échecs DIFFÉRENTS :
+ *
+ *   « Une veine est présentée comme telle, en bleu — undefined → undefined »
+ *   « Panneau d'information ET recherche visibles — panneau=false »
+ *
+ * Dans les deux cas, le clic partait avant que la liste n'existe. Une suite
+ * qui échoue au hasard est une suite qu'on cesse de lire : on attend donc la
+ * CONDITION — le premier résultat attaché au DOM — et non un délai.
+ *
+ * Rend `false` si la recherche n'a rien donné, ce qui est une information
+ * réelle et non une erreur de test.
+ */
+async function chercher(page, query, timeout = 10000) {
   await page.getByPlaceholder(/Rechercher une structure/).fill(query);
-  await page.waitForTimeout(700);
-  const first = page.locator('[data-anatomy-search-results] li button').first();
-  if (!(await first.count())) return null;
-  await first.dispatchEvent('click');
+  return page
+    .locator('[data-anatomy-search-results] li button')
+    .first()
+    .waitFor({ state: 'attached', timeout })
+    .then(() => true)
+    .catch(() => false);
+}
+
+async function chercherEtOuvrir(page, query, timeout = 10000) {
+  if (!(await chercher(page, query, timeout))) return false;
+  await page.locator('[data-anatomy-search-results] li button').first().dispatchEvent('click');
+  return true;
+}
+
+async function systemOfSearchHit(query) {
+  if (!(await chercherEtOuvrir(page, query))) return null;
   const opened = await closePanelButton(page)
     .waitFor({ state: 'attached', timeout: 20000 })
     .then(() => true)
@@ -897,9 +922,7 @@ check(
 );
 
 // ---------- Dentisterie (§14) : fiche dentaire dérivée du numéro FDI ----------
-await page.getByPlaceholder(/Rechercher une structure/).fill('dent 36');
-await page.waitForTimeout(700);
-await page.locator('ul li button').first().dispatchEvent('click');
+await chercherEtOuvrir(page, 'dent 36');
 const toothPanel = await closePanelButton(page)
   .waitFor({ state: 'attached', timeout: 20000 })
   .then(() => true)

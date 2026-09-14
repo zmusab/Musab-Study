@@ -55,7 +55,7 @@ describe('TASK_ROUTES', () => {
    * Un identifiant de modèle n'a de sens que chez son propre fournisseur :
    * envoyer « claude-haiku-4-5 » au relais Gemini ne pouvait produire qu'un
    * refus. Chaque modèle imposé doit donc être rangé sous le fournisseur qui
-   * le publie — vérifié sur TOUTE la table, pas seulement sur podcast.
+   * le publie — vérifié sur TOUTE la table, pas sur une tâche isolée.
    */
   it('aucun modèle imposé n’est rangé sous un fournisseur qui ne le publie pas', () => {
     const prefixes: Record<string, RegExp> = {

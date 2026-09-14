@@ -68,9 +68,9 @@ export class MusabStudyDatabase extends Dexie {
       anatomyStructures: 'id, category, subjectId, name',
       anatomySheets: 'id, structureId, origin, [structureId+origin]',
       chatMessages: 'id, subjectId, at',
-      // Table conservée telle quelle : la fonctionnalité podcast a été
-      // retirée, mais SUPPRIMER un store demanderait une migration
-      // destructrice. Plus rien ne l'écrit ni ne la lit.
+      // La table `podcastEpisodes` a existé ici, et v5 la supprime : la
+      // déclaration d'origine reste, parce qu'une base créée à la v1 doit
+      // pouvoir rejouer son historique jusqu'à la suppression.
       podcastEpisodes: 'id, subjectId, chapterId, createdAt',
     });
 
@@ -104,6 +104,24 @@ export class MusabStudyDatabase extends Dexie {
       // entrées les plus anciennes sans scanner toute la table.
       aiCache: 'key, lastUsedAt',
       aiUsage: 'day',
+    });
+
+    /*
+      v5 : LA TABLE DU PODCAST EST SUPPRIMÉE.
+
+      La fonctionnalité avait été retirée, mais sa table restait déclarée avec
+      ce commentaire : « supprimer un store demanderait une migration
+      destructrice ». C'était inexact. Dexie supprime un store en le déclarant
+      `null` dans une version suivante — c'est l'idiome documenté, il ne touche
+      qu'à ce store et laisse les autres intacts.
+
+      Ce qu'on perd : les épisodes enregistrés par une version antérieure de
+      l'application. Plus rien ne les lisait ni ne les écrivait depuis le
+      retrait de la fonctionnalité, ils n'apparaissaient dans aucune
+      sauvegarde, et l'utilisateur a demandé la suppression complète.
+    */
+    this.version(5).stores({
+      podcastEpisodes: null,
     });
   }
 }

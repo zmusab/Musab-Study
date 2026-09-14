@@ -6,12 +6,11 @@ import { generateLocalNotions, localNotionsToNotions } from '@/services/local/lo
 import type { DocumentChunk, Notion } from '@/types';
 
 /**
- * Détection des notions d'un chapitre — réutilise EXACTEMENT le mécanisme de
- * vérification du pipeline podcast (`Notion`, `validateConcepts`) :
- * une notion sourcée et vérifiée est la même chose, qu'elle serve à préparer
- * un podcast ou à peupler l'onglet « Notions » d'une matière. Seul le prompt
- * change, parce que le cadrage n'est pas le même (ici on identifie les
- * notions clés d'un cours, pas le contenu d'un podcast).
+ * Détection des notions d'un chapitre.
+ *
+ * Une notion n'est retenue que si elle CITE un extrait réellement transmis au
+ * modèle (`validateConcepts`) : c'est la même garantie structurelle que pour
+ * les flashcards — ce qui ne peut pas se rattacher au cours n'est pas affiché.
  *
  * SOURCE PAR DÉFAUT : le moteur local (`services/local/localNotions.ts`),
  * sans le moindre appel réseau — Musab Study doit rester utilisable sans API

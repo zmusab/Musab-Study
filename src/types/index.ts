@@ -540,10 +540,8 @@ export interface ChatMessage {
 /**
  * Notion identifiée dans un cours comme méritant d'être retenue.
  *
- * Ce type s'appelait `Notion` : les notions étaient nées avec la
- * fonctionnalité podcast, et en avaient gardé le nom bien après être devenues
- * la matière de l'onglet « Notions » et du quiz « Examen probable ». Le
- * podcast retiré, le vocabulaire du domaine redevient juste.
+ * C'est la matière de l'onglet « Notions » d'une matière et du quiz
+ * « Examen probable ».
  */
 export interface Notion {
   id: string;

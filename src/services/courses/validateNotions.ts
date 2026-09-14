@@ -11,10 +11,8 @@ import type { Citation, Importance, Notion } from '@/types';
  * RÉELLEMENT transmis au modèle. Ce qu'il ne peut pas prouver, il ne l'obtient
  * pas.
  *
- * Ce module vivait dans `services/podcast/`, alors que les notions n'ont
- * jamais rien eu à voir avec le podcast : elles alimentent l'onglet
- * « Notions » d'une matière et le quiz « Examen probable ». Le podcast retiré,
- * elles retrouvent leur place.
+ * Les notions alimentent l'onglet « Notions » d'une matière et le quiz
+ * « Examen probable ».
  */
 
 /** Forme brute attendue du modèle pour une notion — non typée avant validation. */
@@ -32,8 +30,9 @@ function clampImportance(value: unknown): Importance {
 
 /**
  * Valide les notions proposées par l'étape d'analyse.
- * Une notion sans la moindre citation vérifiable est écartée : on ne construit
- * pas un podcast sur une affirmation qu'on ne peut pas rattacher au cours.
+ * Une notion sans la moindre citation vérifiable est écartée : on ne fait pas
+ * réviser un étudiant sur une affirmation qu'on ne peut pas rattacher à son
+ * cours.
  */
 export function validateConcepts(
   raw: RawConcept[],

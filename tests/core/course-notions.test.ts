@@ -4,7 +4,7 @@ import type { Chapter, DocumentChunk, StudyDocument, Subject } from '@/types';
 
 /**
  * `analyzeChapter` (services/courses/notions.ts) réutilise EXACTEMENT le
- * mécanisme de vérification du pipeline podcast (`validateConcepts`) : ces
+ * mécanisme de vérification des citations (`validateConcepts`) : ces
  * tests vérifient l'orchestration (tâche déclarée, contexte transmis,
  * refus honnête sans notion validée) sans appel réseau réel.
  */
@@ -73,7 +73,7 @@ describe('analyzeChapter', () => {
     expect(askMock.mock.calls[0]![0].task).toBe('course-notions');
   });
 
-  it('valide les notions via le même mécanisme que le podcast — une notion sans citation valide est écartée (source: ai)', async () => {
+  it('écarte une notion sans citation valide (source: ai)', async () => {
     askMock.mockResolvedValueOnce(
       JSON.stringify([
         { label: 'Notion sourcée', importance: 3, pitfall: false, refs: ['S1'] },

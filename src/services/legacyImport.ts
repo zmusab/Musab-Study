@@ -366,6 +366,5 @@ export function convertLegacyDump(dump: LegacyDump): BackupBundle {
     anatomyStructures,
     anatomySheets,
     chatMessages,
-    // Le prototype d'origine n'avait pas de podcasts.
   };
 }
