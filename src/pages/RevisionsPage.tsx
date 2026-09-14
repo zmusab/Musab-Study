@@ -22,7 +22,7 @@ import { useProgress } from '@/hooks/useProgress';
 import { computeStreak } from '@/core/progress';
 import { evaluateAnswer, type AnswerVerdict } from '@/core/revisions/evaluateAnswer';
 import { deriveRating, type AutoRating } from '@/core/revisions/autoRating';
-import { previewDelays } from '@/core/srs';
+import { formatDelay, previewDelays } from '@/core/srs';
 import type { Confidence, Flashcard, ID, Rating } from '@/types';
 import { agree, plural } from '@/lib/plural';
 
@@ -93,6 +93,17 @@ const VERDICT_MESSAGE: Record<AnswerVerdict, string | null> = {
 interface SessionSummary {
   reviewed: number;
   correct: number;
+  /**
+   * QUAND CHAQUE CARTE NOTÉE REVIENDRA — l'échéance SM-2 telle qu'elle vient
+   * d'être écrite en base.
+   *
+   * La fin de séance annonçait « 2/3 cartes réussies · 67 % » et s'arrêtait
+   * là. C'est pourtant le moment qui décide si on rouvre l'application demain,
+   * et il ne disait rien de ce que le travail venait de produire. Lire « 2
+   * cartes reviennent dans 3 jours, 1 demain », c'est voir la répétition
+   * espacée fonctionner — et ce sont les dates réelles, pas une promesse.
+   */
+  returns: string[];
 }
 
 /**
@@ -147,6 +158,12 @@ function ReviewSession({
    * instantané COMPLET de la séance (file, compteurs), donc dépiler restaure
    * un état absolu — l'ordre des annulations ne peut pas dériver.
    */
+  /**
+   * Échéance de chaque carte notée, par carte : une carte revue deux fois dans
+   * la séance (« Encore » la renvoie plus loin dans la file) ne compte qu'une
+   * fois, avec sa dernière échéance.
+   */
+  const [returns, setReturns] = useState<Record<ID, string>>({});
   const [undoStack, setUndoStack] = useState<LastAction[]>([]);
   const lastAction = undoStack[undoStack.length - 1] ?? null;
   const pushUndo = (action: LastAction) => setUndoStack((stack) => [...stack, action]);
@@ -224,13 +241,16 @@ function ReviewSession({
 
     const nextReviewed = reviewed + 1;
     const nextCorrect = correct + (rating >= 2 ? 1 : 0);
+    const nextReturns = { ...returns, [current.id]: review.card.due };
     setReviewed(nextReviewed);
     setCorrect(nextCorrect);
+    setReturns(nextReturns);
     setQueue(nextQueue);
     resetCardView();
     setBusy(false);
 
-    if (nextQueue.length === 0) onFinish({ reviewed: nextReviewed, correct: nextCorrect });
+    if (nextQueue.length === 0)
+      onFinish({ reviewed: nextReviewed, correct: nextCorrect, returns: Object.values(nextReturns) });
   };
 
   /**
@@ -261,7 +281,7 @@ function ReviewSession({
     resetCardView();
     setBusy(false);
 
-    if (nextQueue.length === 0) onFinish({ reviewed, correct });
+    if (nextQueue.length === 0) onFinish({ reviewed, correct, returns: Object.values(returns) });
   };
 
   /**
@@ -286,6 +306,11 @@ function ReviewSession({
       );
       setReviewed(lastAction.reviewed);
       setCorrect(lastAction.correct);
+      // L'échéance annulée ne doit pas rester dans le bilan de fin de séance.
+      setReturns((current) => {
+        const { [lastAction.review.card.id]: _annulee, ...reste } = current;
+        return reste;
+      });
     } else {
       await updateCard(lastAction.card.id, {
         suspended: lastAction.card.suspended ?? false,
@@ -602,6 +627,35 @@ export function RevisionsPage() {
     );
   }
 
+  /*
+    « 2 demain · 1 dans 3 jours » — les échéances regroupées par délai.
+
+    `formatDelay` est celui des boutons de note : l'aperçu promis pendant la
+    séance et le bilan de fin ne peuvent donc pas diverger, c'est la même
+    fonction sur la même donnée.
+  */
+  const returnLines = useMemo(() => {
+    if (!summary || summary.returns.length === 0) return [];
+    const from = Date.now();
+    const groupes = new Map<string, { combien: number; quand: number }>();
+    for (const due of summary.returns) {
+      const delai = formatDelay(from, due);
+      const existant = groupes.get(delai);
+      if (existant) existant.combien += 1;
+      else groupes.set(delai, { combien: 1, quand: new Date(due).getTime() });
+    }
+    return (
+      [...groupes.entries()]
+        // Du plus proche au plus lointain : « 2 demain · 1 dans 7 j » se lit
+        // dans l'ordre où les cartes reviendront, pas dans celui du hasard.
+        .sort((a, b) => a[1].quand - b[1].quand)
+        .map(([delai, { combien }]) =>
+          // « 1 dans 1 j » ne se dit pas en français.
+          delai === '1 j' ? `${combien} demain` : `${combien} dans ${delai}`,
+        )
+    );
+  }, [summary]);
+
   if (queue && queue.length > 0) {
     return (
       <PageTransition>
@@ -648,6 +702,32 @@ export function RevisionsPage() {
                   summary.correct > 1 ? 's' : ''
                 } · ${Math.round((summary.correct / summary.reviewed) * 100)}%`}
           </p>
+
+          {/*
+            CE QUE LA SÉANCE VIENT DE PRODUIRE.
+
+            L'écran s'arrêtait au score. Or le score n'est pas ce qu'on gagne
+            en révisant — ce qu'on gagne, c'est que les cartes sues reviennent
+            PLUS TARD. Le dire avec les échéances réelles, c'est montrer la
+            répétition espacée en train de fonctionner ; sans cela, l'étudiant
+            n'a aucun moyen de voir que son travail a servi à quelque chose.
+
+            Et la SÉRIE, qui est le seul chiffre qui donne envie de revenir
+            demain : elle était affichée plus bas sur la page, jamais au
+            moment où elle vient d'être prolongée.
+          */}
+          {returnLines.length > 0 && (
+            <p className="mt-2 text-[0.82rem] text-[var(--ink-soft)]" data-review-returns>
+              Tu les revois : {returnLines.join(' · ')}.
+            </p>
+          )}
+          {streak && streak.current > 0 && summary.reviewed > 0 && (
+            <p className="mt-1 text-[0.82rem] font-medium" style={{ color: 'var(--accent-ink)' }} data-review-streak>
+              {streak.current === 1
+                ? 'Première journée de ta série. Reviens demain pour la tenir.'
+                : `${streak.current} jours d’affilée. Continue.`}
+            </p>
+          )}
           {totalDue === 0 ? (
             <p className="mt-1 text-[0.8rem] text-[var(--ink-faint)]">Plus aucune carte due pour l’instant.</p>
           ) : (

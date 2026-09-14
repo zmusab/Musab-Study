@@ -89,6 +89,32 @@ check('Une réponse ratée n’est jamais notée comme une réussite', Number(au
 await page.locator('[data-review-next]').click();
 await page.waitForTimeout(500);
 check('La séance se termine après la dernière carte', await page.getByText('Révision terminée').isVisible());
+
+/*
+  CE QUE LA SÉANCE VIENT DE PRODUIRE.
+
+  L'écran de fin s'arrêtait au score. Or le score n'est pas ce qu'on gagne en
+  révisant — ce qu'on gagne, c'est que les cartes reviennent plus tard, et
+  c'est le seul moment où la répétition espacée se voit fonctionner. La série
+  en cours, elle, n'était affichée qu'en haut de page, jamais à l'instant où
+  elle vient d'être prolongée.
+*/
+const returns = await page.locator('[data-review-returns]').innerText();
+check(
+  'La fin de séance dit quand les cartes reviennent',
+  /Tu les revois/.test(returns) && /\d/.test(returns),
+  returns,
+);
+check(
+  'Le délai annoncé est une vraie échéance, pas « dans 1 j »',
+  !/dans 1 j\b/.test(returns),
+  returns,
+);
+check(
+  'La série en cours est rappelée au moment où elle se prolonge',
+  await page.locator('[data-review-streak]').isVisible(),
+  await page.locator('[data-review-streak]').innerText(),
+);
 // « Environ 20 mm, je crois » face à « Environ 22 mm. » est faux : la séance
 // se termine donc sur 0 réussite, ce qui est la bonne réponse pédagogique.
 check('Le résumé reflète la note réellement déduite', await page.getByText(/0\/1 carte/).isVisible());
