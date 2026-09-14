@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCardFile, plainText } from '@/services/flashcards/importFile';
+import { parseCardFile, plainText, toCardFile } from '@/services/flashcards/importFile';
 
 /**
  * IMPORT DE CARTES — les fichiers que produisent réellement Anki et Quizlet.
@@ -169,5 +169,40 @@ describe('plainText', () => {
 
   it('laisse un texte sans HTML intact', () => {
     expect(plainText('Le nerf V3 passe par le foramen ovale.')).toBe('Le nerf V3 passe par le foramen ovale.');
+  });
+});
+
+describe('toCardFile — l’export, et l’aller-retour complet', () => {
+  it('écrit un fichier que parseCardFile relit à l’identique', () => {
+    const cards = [
+      { question: 'Qu’est-ce que le parodonte ?', answer: 'L’ensemble des tissus de soutien de la dent.' },
+      // Une réponse multi-lignes : le cas qui casse un export naïf.
+      { question: 'Quels sont les quatre tissus parodontaux ?', answer: 'Gencive\nOs alvéolaire\nCément\nLigament' },
+      // Un guillemet ET une tabulation dans le même champ.
+      { question: 'Qu’appelle-t-on la « ligne de plus grand contour » ?', answer: 'Le "périmètre"\tle plus large' },
+      { question: 'Combien de racines a la 46 ?', answer: 'Deux, la mésiale et la distale' },
+    ];
+
+    const file = toCardFile(cards);
+    const reread = parseCardFile(file);
+
+    expect(reread.cards).toHaveLength(cards.length);
+    expect(reread.cards.map((row) => ({ question: row.question, answer: row.answer }))).toEqual(cards);
+  });
+
+  it('déclare son séparateur, pour être relu sans devinette', () => {
+    expect(toCardFile([{ question: 'Q', answer: 'R' }]).startsWith('#separator:tab\n')).toBe(true);
+  });
+
+  it('n’entoure de guillemets que les champs qui en ont besoin', () => {
+    const file = toCardFile([{ question: 'Simple', answer: 'Sans piège' }]);
+    expect(file).toContain('Simple\tSans piège');
+    expect(file).not.toContain('"');
+  });
+
+  it('une bibliothèque vide produit un fichier valide, pas une erreur', () => {
+    const file = toCardFile([]);
+    expect(parseCardFile(file).cards).toHaveLength(0);
+    expect(parseCardFile(file).rejected).toHaveLength(0);
   });
 });

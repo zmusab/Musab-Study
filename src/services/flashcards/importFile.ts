@@ -244,3 +244,29 @@ export function parseCardFile(text: string): ImportPreview {
 
   return { cards, rejected, delimiter: DELIMITERS[delimiter], headerSkipped };
 }
+
+/**
+ * L'EXPORT — le retour de l'import, et la garantie qu'il n'y a pas
+ * d'enfermement : ce qui est entré peut ressortir, dans un format que Anki et
+ * Quizlet relisent tous les deux.
+ *
+ * Le séparateur est la TABULATION, comme Anki : c'est le seul caractère qui
+ * n'apparaît pratiquement jamais dans une réponse de cours, donc celui qui
+ * demande le moins d'échappement. Les champs qui en contiennent quand même,
+ * ou qui contiennent un guillemet ou un saut de ligne, sont mis entre
+ * guillemets selon la règle CSV — celle-là même que `parseCardFile` relit.
+ */
+const needsQuoting = (value: string): boolean => /[\t"\n\r]/.test(value);
+
+const csvField = (value: string): string =>
+  needsQuoting(value) ? `"${value.split('"').join('""')}"` : value;
+
+export function toCardFile(cards: readonly { question: string; answer: string }[]): string {
+  // La directive en tête rend le fichier relisible sans deviner, par Anki
+  // comme par `parseCardFile`.
+  const lines = ['#separator:tab', '#html:false'];
+  for (const card of cards) {
+    lines.push(`${csvField(card.question)}\t${csvField(card.answer)}`);
+  }
+  return `${lines.join('\n')}\n`;
+}

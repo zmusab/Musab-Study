@@ -24,15 +24,17 @@ import {
   createFlashcard,
   createFlashcards,
   deleteCard,
+  resetCardScheduling,
   setCardSuspended,
   updateCard,
 } from '@/data/repositories/cards';
 import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
-import { parseCardFile, type ImportPreview } from '@/services/flashcards/importFile';
+import { parseCardFile, toCardFile, type ImportPreview } from '@/services/flashcards/importFile';
 import { isDuplicateQuestion } from '@/services/flashcards/dedupe';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { masteryStatus, MASTERY_COLOR_VARS } from '@/core/mastery';
+import { downloadText } from '@/lib/download';
 import { springSoft } from '@/components/motion/transitions';
 import type { ContextLookup } from '@/services/rag/retrieval';
 import type { CardDraft } from '@/services/flashcards/validate';
@@ -385,6 +387,45 @@ export function FlashcardsPage() {
           }.`,
       kept.length === 0 ? 'info' : 'success',
     );
+  };
+
+  /**
+   * EXPORTER — ce qui est entré peut ressortir.
+   *
+   * Le fichier produit est relu tel quel par l'import de cette page, par Anki
+   * et par Quizlet : c'est la garantie qu'un an de cartes n'est pas prisonnier
+   * de cette application. On exporte ce qui est AFFICHÉ (filtres et recherche
+   * compris), parce que c'est ce que l'utilisateur a sous les yeux.
+   */
+  const handleExport = () => {
+    if (filteredCards.length === 0) {
+      notify('Aucune carte à exporter.', 'error');
+      return;
+    }
+    const subject = (subjects ?? []).find((s) => s.id === subjectId);
+    const slug = (subject?.name ?? 'cartes').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    downloadText(
+      toCardFile(filteredCards.map((card) => ({ question: card.question, answer: card.answer }))),
+      `${slug || 'cartes'}-${new Date().toISOString().slice(0, 10)}.txt`,
+    );
+    notify(`${plural(filteredCards.length, 'carte')} ${agree(filteredCards.length, 'exportée')}.`, 'success');
+  };
+
+  /**
+   * RÉINITIALISER — pour la carte notée « Facile » trop vite, qui ne revient
+   * que dans deux mois alors qu'on sait déjà ne pas la maîtriser. L'historique
+   * de révision est conservé : ces réponses ont bien eu lieu.
+   */
+  const handleReset = async (card: Flashcard) => {
+    const ok = await confirm({
+      title: 'Remettre cette carte à zéro ?',
+      description:
+        'Elle repassera en révision dès maintenant, comme une carte neuve. Ses réponses passées restent comptées dans ta progression.',
+      confirmLabel: 'Réinitialiser',
+    });
+    if (!ok) return;
+    await resetCardScheduling(card.id);
+    notify('Carte remise à zéro : elle revient dès ta prochaine session.', 'success');
   };
 
   const handleDelete = async (card: Flashcard) => {
@@ -811,6 +852,26 @@ export function FlashcardsPage() {
           </Select>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[0.78rem] text-[var(--ink-faint)]">
+            {plural(filteredCards.length, 'carte')} {agree(filteredCards.length, 'affichée')}
+          </p>
+          {/*
+            EXPORTER — le retour de l'import. Un jeu de cartes construit sur
+            un semestre ne doit pas être prisonnier de cette application :
+            le fichier produit se relit ici, dans Anki et dans Quizlet.
+          */}
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={filteredCards.length === 0}
+            className="text-[0.78rem] text-[var(--ink-soft)] underline underline-offset-2 transition-colors hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
+            data-cards-export
+          >
+            Exporter ces cartes
+          </button>
+        </div>
+
         {filteredCards.length === 0 ? (
           <EmptyState
             icon={<Icon name="cards" size={26} />}
@@ -864,7 +925,19 @@ export function FlashcardsPage() {
                           </Chip>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Ne s'affiche que sur une carte DÉJÀ révisée : il
+                            n'y a rien à remettre à zéro sur une carte neuve. */}
+                        {card.reps > 0 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void handleReset(card)}
+                            data-card-reset
+                          >
+                            Réinitialiser
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant={card.suspended ? 'secondary' : 'ghost'}

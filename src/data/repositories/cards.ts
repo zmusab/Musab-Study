@@ -240,6 +240,23 @@ export async function unburyCard(id: ID): Promise<void> {
   await db.flashcards.update(id, { buriedUntil: null });
 }
 
+/**
+ * RÉINITIALISER UNE CARTE — la remettre à l'état neuf sans la supprimer.
+ *
+ * Le cas réel : une carte notée « Facile » trop vite revient dans deux mois,
+ * alors qu'on sait déjà qu'on ne la maîtrise pas. Repousser n'avance à rien,
+ * supprimer perd la carte. La réinitialiser la remet dans la file dès
+ * maintenant, avec l'ease et l'intervalle d'une carte neuve.
+ *
+ * L'HISTORIQUE DE RÉVISION EST CONSERVÉ, délibérément : ces réponses ont
+ * réellement eu lieu, et la progression les compte à juste titre. C'est la
+ * différence avec `undoReview`, qui efface une réponse parce qu'elle n'aurait
+ * pas dû être enregistrée.
+ */
+export async function resetCardScheduling(id: ID, now: Date = new Date()): Promise<void> {
+  await db.flashcards.update(id, { ...initialSchedulingState(now), buriedUntil: null });
+}
+
 export async function logReview(log: Omit<ReviewLog, 'id'>): Promise<void> {
   await db.reviewLogs.add({ ...log, id: uid('rev') });
 }

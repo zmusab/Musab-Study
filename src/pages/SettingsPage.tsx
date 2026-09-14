@@ -22,6 +22,7 @@ import { clearAllData } from '@/data/db';
 import type { ThemePreference } from '@/types';
 import { agree, plural } from '@/lib/plural';
 import { reindexAllDocuments } from '@/data/repositories/documents';
+import { downloadBlob } from '@/lib/download';
 import {
   exportBackupArchive,
   importBackupArchive,
@@ -33,16 +34,6 @@ const THEME_SEGMENTS = [
   { value: 'dark' as const, label: 'Sombre', icon: '🌙' },
   { value: 'system' as const, label: 'Système', icon: '🖥️' },
 ];
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  // Sans révocation, le blob resterait en mémoire pour toute la session.
-  URL.revokeObjectURL(url);
-}
 
 function downloadJson(data: unknown, filename: string): void {
   downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename);

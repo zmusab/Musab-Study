@@ -207,10 +207,87 @@ await page.waitForTimeout(900);
 check('La carte réactivée ne porte plus l’étiquette « Suspendue »', (await page.locator('[data-card-suspended]').count()) === 0);
 check('Elle redevient due, avec son historique intact', (await dueCount()) === 2);
 
-// ────────────────── 7. Persistance ──────────────────
+// ────────────────── 7. Exporter : l’aller-retour complet ──────────────────
+// Ce qui est entré doit pouvoir ressortir : c'est la garantie qu'un semestre
+// de cartes n'est pas prisonnier de l'application.
+await goFlashcards();
+const [download] = await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('[data-cards-export]').click(),
+]);
+const exported = await download.createReadStream();
+let exportedText = '';
+for await (const chunk of exported) exportedText += chunk;
+check(
+  'Le fichier exporté déclare son séparateur, comme un export d’Anki',
+  exportedText.startsWith('#separator:tab'),
+  exportedText.split('\n')[0] ?? '',
+);
+check(
+  'Il contient les trois cartes, la réponse multi-lignes entre guillemets',
+  exportedText.includes('Qu’est-ce que le parodonte ?') &&
+    /"Gencive\nOs alvéolaire\nCément\nLigament alvéolo-dentaire"/.test(exportedText),
+  exportedText.replace(/\n/g, '⏎').slice(0, 180),
+);
+check(
+  'Le nom du fichier porte la matière et la date',
+  /^parodontologie-\d{4}-\d{2}-\d{2}\.txt$/.test(download.suggestedFilename()),
+  download.suggestedFilename(),
+);
+
+// ────────────────── 8. Réinitialiser une carte révisée ──────────────────
+// Une carte notée « Facile » trop vite ne revient que dans des semaines :
+// la remettre à zéro la rend à la révision sans perdre son historique.
+await goFlashcards();
+check(
+  'Aucune carte neuve ne propose « Réinitialiser » : il n’y a rien à remettre à zéro',
+  (await page.locator('[data-card-reset]').count()) === 0,
+  `${await page.locator('[data-card-reset]').count()} bouton(s)`,
+);
+
+// On note une carte pour de bon, sans l'annuler cette fois.
+await nav.getByRole('link', { name: 'Révisions', exact: true }).first().click();
+await page.waitForTimeout(900);
+await page.getByText(/Commencer ma révision —/).click();
+await page.waitForTimeout(700);
+await page.locator('[data-review-see-answer]').click();
+await page.waitForTimeout(500);
+await page.getByRole('button', { name: /^Facile/ }).click();
+await page.waitForTimeout(900);
+
+await goFlashcards();
+check(
+  'Une carte déjà révisée propose « Réinitialiser »',
+  (await page.locator('[data-card-reset]').count()) === 1,
+  `${await page.locator('[data-card-reset]').count()} bouton(s)`,
+);
+const dueAfterEasy = await dueCount();
+await goFlashcards();
+await page.locator('[data-card-reset]').first().click();
+await page.waitForTimeout(400);
+await page.getByRole('button', { name: 'Réinitialiser', exact: true }).last().click();
+await page.waitForTimeout(1100);
+const dueAfterReset = await dueCount();
+check(
+  'La carte réinitialisée revient immédiatement en révision',
+  dueAfterReset === dueAfterEasy + 1,
+  `${dueAfterEasy} → ${dueAfterReset}`,
+);
+await goFlashcards();
+check(
+  'Elle redevient une carte neuve : plus rien à réinitialiser',
+  (await page.locator('[data-card-reset]').count()) === 0,
+);
+
+// ────────────────── 9. Persistance ──────────────────
+const dueBeforeReload = dueAfterReset;
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
-check('L’enterrement et la réactivation survivent à un rechargement', (await dueCount()) === 2);
+check(
+  'L’enterrement, la réactivation et la remise à zéro survivent à un rechargement',
+  (await dueCount()) === dueBeforeReload,
+  `${dueBeforeReload} attendu(es)`,
+);
 await goFlashcards();
 check(
   'Les cartes importées sont toujours là après rechargement',

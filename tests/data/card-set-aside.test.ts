@@ -8,12 +8,13 @@ import {
   createFlashcard,
   listAllDueCards,
   listDueCards,
+  resetCardScheduling,
   reviewCardUndoable,
   setCardSuspended,
   unburyCard,
   undoReview,
 } from '@/data/repositories/cards';
-import { buryUntil, isBuried, isReviewable, isSuspended } from '@/core/srs';
+import { DEFAULT_EASE, buryUntil, isBuried, isReviewable, isSuspended } from '@/core/srs';
 import type { QuizScope } from '@/core/quiz';
 import type { Flashcard, ID } from '@/types';
 
@@ -286,5 +287,43 @@ describe('une carte suspendue ne revient par aucune porte', () => {
 
     expect(scopeCards({ kind: 'subject', subjectId }, tables).map((c) => c.id)).toContain(card.id);
     expect(scopeCards({ kind: 'due' }, tables).map((c) => c.id)).not.toContain(card.id);
+  });
+});
+
+describe('réinitialiser une carte', () => {
+  it('la remet dans la file immédiatement, à l’état neuf', async () => {
+    const card = await newCard('Quelle est la fonction des fibres de Sharpey ?');
+    // Deux réussites « Facile » : la carte part loin.
+    await reviewCardUndoable(card.id, 3, 'high', 2000);
+    const pushed = await db.flashcards.get(card.id);
+    expect(pushed!.reps).toBe(1);
+    expect(await listDueCards(subjectId)).toHaveLength(0);
+
+    await resetCardScheduling(card.id);
+    const reset = await db.flashcards.get(card.id);
+    expect(reset!.reps).toBe(0);
+    expect(reset!.interval).toBe(0);
+    expect(reset!.ease).toBe(DEFAULT_EASE);
+    expect(reset!.lastReview).toBeNull();
+    expect(await listDueCards(subjectId)).toHaveLength(1);
+  });
+
+  it('garde l’historique de révision : ces réponses ont bien eu lieu', async () => {
+    const card = await newCard('Quelle est la largeur biologique ?');
+    await reviewCardUndoable(card.id, 2, 'medium', 3000);
+    await reviewCardUndoable(card.id, 3, 'high', 1500);
+
+    await resetCardScheduling(card.id);
+    expect(await db.reviewLogs.where('itemId').equals(card.id).count()).toBe(2);
+    // …et la question et la réponse ne sont pas touchées.
+    const reset = await db.flashcards.get(card.id);
+    expect(reset!.question).toBe('Quelle est la largeur biologique ?');
+  });
+
+  it('lève un enterrement en cours : réinitialiser veut dire « tout de suite »', async () => {
+    const card = await newCard('Qu’est-ce qu’une poche parodontale ?');
+    await buryCard(card.id);
+    await resetCardScheduling(card.id);
+    expect(await listDueCards(subjectId)).toHaveLength(1);
   });
 });
