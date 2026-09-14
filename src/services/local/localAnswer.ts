@@ -1,6 +1,6 @@
 import { extractFacts, type FactPredicate, type RawFact } from './relationExtraction';
 import { citationFromChunk } from './citation';
-import { stripBulletPrefix, topLevelColonIndex } from './textStructure';
+import { bulletDepth, stripBulletPrefix, topLevelColonIndex } from './textStructure';
 import { courseSections } from './courseLayout';
 import { readQuestion, type ReadQuestion } from './questionIntent';
 import { significantWords } from '@/core/text';
@@ -427,6 +427,8 @@ const MAX_SECTIONS = 3;
  */
 const MIN_TITLED_LINES = 3;
 const MAX_LINES_PER_SECTION = 8;
+/** Au-delà, ce n'est plus une réponse ciblée mais un survol de la section. */
+const MAX_ANCHORS = 3;
 
 /**
  * Sections du cours qui portent sur la question, titre compris, les plus
@@ -471,6 +473,75 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
     inHeading: number;
     /** La section porte-t-elle tous les termes exigés, titre et corps confondus ? */
     onTopic: boolean;
+    /** Une section sans titre est la SUITE de la précédente, pas un sujet nouveau. */
+    hasHeading: boolean;
+  }
+
+    /*
+    LES LIGNES QUI RÉPONDENT, PAS LES PREMIÈRES DE LA SECTION.
+
+    ── Le défaut, mesuré sur le vrai cours ─────────────────────────────────
+    « Qu'est-ce que le nerf infra-orbitaire ? » renvoyait :
+
+        - Le nerf alvéolaire supérieur moyen peut exister.
+        - PS : dans la partie interne de la fosse orbitaire…
+        - 4 muscles droits :
+        - Droit supérieur …
+
+    La bonne ligne — « Il donne le nerf infra-orbitaire qui innerve la
+    paupière inférieure… » — était pourtant dans le cours, et dans LA MÊME
+    section. Une section était retenue parce que les termes s'y trouvaient
+    QUELQUE PART, puis rendue par ses PREMIÈRES lignes. Les deux ne sont pas
+    le même ensemble, et un polycopié met rarement la réponse en tête de
+    section : un titre annonce une liste, et la réponse est la sixième puce.
+
+    Renvoyer des lignes sans rapport est pire que s'abstenir : l'étudiant
+    croit avoir la réponse de son cours, et il a autre chose.
+
+    ── Ce qui est rendu maintenant ─────────────────────────────────────────
+    La ligne qui porte les termes, avec ce qui la rend lisible :
+     - sa LIGNE MÈRE quand elle est une puce d'une énumération annoncée
+       (« se divise en 3 branches : » au-dessus de « Nerf frontal ») ;
+     - ses ENFANTS, c'est-à-dire les puces plus profondes qui la suivent —
+       c'est la liste qu'elle annonce.
+
+    La profondeur vient du MARQUEUR de puce (voir `bulletDepth`), le seul
+    indice de hiérarchie qui survive à l'extraction PDF.
+  */
+  function anchoredLines(lines: readonly string[], want: ReadonlySet<string>): string[] | null {
+    const words = lines.map((line) => significantWords(stripBulletPrefix(line)));
+    const hits = lines.map((_, i) => [...want].filter((term) => words[i]!.has(term)).length);
+    const best = Math.max(0, ...hits);
+    if (best === 0) return null;
+
+    const depths = lines.map((line) => bulletDepth(line) ?? 0);
+    const keep = new Set<number>();
+    let anchors = 0;
+
+    for (let i = 0; i < lines.length && anchors < MAX_ANCHORS; i += 1) {
+      if (hits[i]! < best) continue;
+      anchors += 1;
+      keep.add(i);
+
+      // La mère : la ligne précédente la plus proche, moins profonde.
+      for (let up = i - 1; up >= 0; up -= 1) {
+        if (depths[up]! < depths[i]!) {
+          keep.add(up);
+          break;
+        }
+      }
+      // Les enfants : les puces plus profondes qui suivent sans interruption.
+      for (let down = i + 1; down < lines.length && depths[down]! > depths[i]!; down += 1) {
+        keep.add(down);
+        if (keep.size >= MAX_LINES_PER_SECTION) break;
+      }
+    }
+
+    return [...keep]
+      .sort((a, b) => a - b)
+      .slice(0, MAX_LINES_PER_SECTION)
+      .map((i) => stripBulletPrefix(lines[i]!).trim())
+      .filter(Boolean);
   }
 
   const sections: Section[] = [];
@@ -487,19 +558,53 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const rendered = section.heading
-        ? [`**${section.heading}**`, ...body.slice(0, MAX_LINES_PER_SECTION).map((line) => `  - ${line}`)]
-        : body.slice(0, MAX_LINES_PER_SECTION).map((line) => `- ${line}`);
-      if (rendered.length === 0) continue;
-
       const words = significantWords(whole);
       const headingTerms = section.heading ? significantWords(section.heading) : new Set<string>();
+      const inHeading = [...required].filter((term) => headingTerms.has(term)).length;
+
+      /*
+        Quand le TITRE porte déjà tout le sujet, la section entière lui est
+        consacrée et se lit depuis le début — c'est le cas « Le nerf
+        ophtalmique de Willis ». Sinon, on va chercher les lignes qui
+        répondent, où qu'elles soient dans la section.
+      */
+      const shownBody =
+        inHeading === required.size && required.size > 0
+          ? body.slice(0, MAX_LINES_PER_SECTION)
+          : (anchoredLines(section.lines, required) ?? body.slice(0, MAX_LINES_PER_SECTION));
+
+      /*
+        LE TITRE N'EST AFFICHÉ QUE S'IL PARLE DU SUJET.
+
+        « Quel ganglion est sur le trajet du nerf maxillaire ? » rendait les
+        trois bonnes lignes… sous le titre « Le nerf ophtalmique de Willis »,
+        parce que c'est la section où elles se trouvent. Le titre disait donc
+        le contraire de la réponse. Quand la section est retenue par SES
+        LIGNES et non par son titre, la ligne mère incluse ci-dessus fait
+        déjà office d'introduction — elle, au moins, est la bonne.
+      */
+      const rendered =
+        section.heading && inHeading > 0
+          ? [`**${section.heading}**`, ...shownBody.map((line) => `  - ${line}`)]
+          : shownBody.map((line) => `- ${line}`);
+      if (rendered.length === 0) continue;
+
       sections.push({
         rendered: rendered.join('\n'),
         chunkId: chunk.id,
         order,
-        inHeading: [...required].filter((term) => headingTerms.has(term)).length,
-        onTopic: [...required].every((term) => words.has(term)),
+        inHeading,
+        hasHeading: section.heading !== null && section.heading !== undefined,
+        /*
+          « SUR LE SUJET » VEUT DIRE QU'UNE LIGNE LE DIT, pas que les mots
+          traînent dans la section. Une section qui contient « infra » dans sa
+          trentième puce et « nerf » dans sa première ne parle pas du nerf
+          infra-orbitaire : elle passait pourtant le test, et c'est elle qu'on
+          affichait.
+        */
+        onTopic:
+          [...required].every((term) => words.has(term)) &&
+          (inHeading === required.size || anchoredLines(section.lines, required) !== null),
       });
     }
   }
@@ -521,6 +626,19 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
   */
   const leads = sections.filter((section) => section.onTopic && section.inHeading === required.size);
 
+  /*
+    LA LECTURE S'ARRÊTE AU TITRE SUIVANT QUI PARLE D'AUTRE CHOSE.
+
+    Prendre la section titrée « et ce qui la suit » rattrapait bien les
+    suites sans titre — mais collait aussi la section d'à côté quand elle en
+    avait un. Mesuré : « Explique-moi le nerf ophtalmique de Willis »
+    répondait juste, puis enchaînait sur « Les nerfs palatins », qui n'a rien
+    à y faire. Une section SANS titre est une suite ; une section AVEC un
+    titre qui ne partage aucun terme avec le sujet est un autre chapitre.
+  */
+  const continues = (section: Section, lead: Section): boolean =>
+    section.order === lead.order || section.inHeading > 0 || !section.hasHeading;
+
   const kept =
     leads.length > 0
       ? sections
@@ -529,7 +647,13 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
               (lead) =>
                 section.chunkId === lead.chunkId &&
                 section.order >= lead.order &&
-                section.order < lead.order + MAX_SECTIONS,
+                section.order < lead.order + MAX_SECTIONS &&
+                continues(section, lead) &&
+                // …et pas au-delà d'une rupture : dès qu'un titre étranger
+                // s'intercale, la suite ne se rattache plus au sujet.
+                sections
+                  .filter((between) => between.chunkId === lead.chunkId && between.order > lead.order && between.order < section.order)
+                  .every((between) => continues(between, lead)),
             ),
           )
           .sort((a, b) => a.order - b.order)
@@ -547,9 +671,30 @@ function relevantPassages(required: Set<string>, scoredChunks: readonly ScoredCh
   */
   const bodyLines = kept.reduce((total, section) => total + section.rendered.split('\n').length, 0);
 
+  /*
+    JAMAIS DEUX FOIS LA MÊME LIGNE.
+
+    « Où se situe la fossette trochléaire ? » la donnait deux fois : une fois
+    seule, une fois sous le titre de la section qui la contient. Une réponse
+    qui se répète se lit comme une réponse qui bafouille.
+  */
+  const shown = new Set<string>();
+  const deduped = kept.map((section) => ({
+    ...section,
+    rendered: section.rendered
+      .split('\n')
+      .filter((line) => {
+        const key = line.replace(/^[\s*-]+/, '').trim().toLowerCase();
+        if (key.length === 0 || shown.has(key)) return false;
+        shown.add(key);
+        return true;
+      })
+      .join('\n'),
+  })).filter((section) => section.rendered.trim().length > 0);
+
   return {
-    passages: kept.map((section) => section.rendered),
-    chunkIds: kept.map((section) => section.chunkId),
+    passages: deduped.map((section) => section.rendered),
+    chunkIds: deduped.map((section) => section.chunkId),
     titled: leads.length > 0 && bodyLines >= MIN_TITLED_LINES,
   };
 }
@@ -645,18 +790,49 @@ export function findLocalAnswer(
       a.order - b.order,
   );
 
-  const seenExcerpts = new Set<string>();
+  /*
+    LA MÊME PHRASE NE PARAÎT PAS DEUX FOIS SOUS DEUX INTERTITRES.
+
+    « Le nerf mandibulaire est-il sensitif ou moteur ? » donnait :
+
+        ### Définition
+        - Le nerf mandibulaire est un nerf mixte, sensitif et moteur.
+        ### De quoi c'est constitué
+        - Le nerf mandibulaire est un nerf mixte, sensitif et moteur.
+          - Il sort du crâne par le foramen ovale. …
+
+    Deux faits, deux prédicats — mais la MÊME phrase d'ouverture, l'un nu et
+    l'autre portant sa liste. Le dédoublonnage ne comparait que les extraits
+    entiers, qui diffèrent justement par cette liste. On compare donc la
+    PREMIÈRE LIGNE, et on garde la version la plus complète : celle qui dit
+    tout ce que dit l'autre, et davantage.
+  */
+  const firstLine = (fact: RawFact): string =>
+    stripBulletPrefix(fact.sourceExcerpt.trim().split('\n')[0] ?? '')
+      .trim()
+      .toLowerCase();
+
+  const richest = new Map<string, { fact: RawFact; chunkId: string }>();
+  const ordered: string[] = [];
+  for (const { fact, chunkId } of matches) {
+    const key = firstLine(fact);
+    if (key.length === 0) continue;
+    const previous = richest.get(key);
+    if (!previous) {
+      richest.set(key, { fact, chunkId });
+      ordered.push(key);
+    } else if (fact.sourceExcerpt.length > previous.fact.sourceExcerpt.length) {
+      // Même ouverture, extrait plus long : c'est la version qui porte la liste.
+      richest.set(key, { fact, chunkId });
+    }
+  }
+
   const kept: RawFact[] = [];
   const citations: Citation[] = [];
-
-  for (const { fact, chunkId } of matches) {
-    const key = fact.sourceExcerpt.trim().toLowerCase();
-    if (seenExcerpts.has(key)) continue;
-    seenExcerpts.add(key);
-
+  for (const key of ordered) {
+    const { fact, chunkId } = richest.get(key)!;
     const chunk = chunkById.get(chunkId);
     if (!chunk) continue;
-
     kept.push(fact);
     citations.push(citationFromChunk(chunk, lookup, fact.sourceExcerpt));
     if (kept.length >= MAX_FACTS_IN_ANSWER) break;
