@@ -22,6 +22,7 @@ import {
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
 import { answerWithStudyTutor, resolveStudyQuestion, studyTopic } from '@/services/local/studyTutor';
+import { correctCourseQuery } from '@/services/local/querySpelling';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
 
@@ -42,8 +43,8 @@ const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
 ];
 
 const INSUFFICIENT_LOCAL_TEXT =
-  'Je ne peux pas répondre de manière fiable à cette question uniquement à partir de tes cours. ' +
-  'Tu peux activer un assistant IA pour obtenir une explication approfondie.';
+  'Je n’ai pas identifié une explication suffisamment précise dans les passages retrouvés. ' +
+  'Quel aspect veux-tu comprendre : le rôle, le trajet ou les branches ? Tu peux aussi préciser le nom du chapitre pour cibler la recherche.';
 
 export function ChatPage() {
   const subjects = useSubjects();
@@ -135,12 +136,13 @@ export function ChatPage() {
   const respond = async (trimmed: string, options: { forceAi: boolean }) => {
     try {
       const previous = topicRef.current;
-      const resolvedQuestion = resolveStudyQuestion(trimmed,
+      const conversationQuestion = resolveStudyQuestion(trimmed,
         previous?.subject === subjectId && previous.chapter === chapterId ? previous.topic : undefined);
       const chunks = await listChunks({
         subjectId,
         chapterId: chapterId === 'all' ? null : chapterId,
       });
+      const resolvedQuestion = correctCourseQuery(conversationQuestion, chunks.map(chunk => chunk.text));
       const scored = bm25Retriever.retrieve(resolvedQuestion, chunks, RETRIEVAL_LIMIT);
 
       const [subjectRows, chapterRows, documentRows] = await Promise.all([
@@ -499,7 +501,7 @@ export function ChatPage() {
                       : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
                   )}
                 >
-                  {value === 'cours' ? 'Tuteur local · mes cours' : 'Cours + Internet (IA externe)'}
+                  {value === 'cours' ? 'Mes cours' : 'Internet · IA externe'}
                 </button>
               ))}
             </div>
@@ -537,7 +539,7 @@ export function ChatPage() {
               ))}
             </select>
 
-            <select
+            {mode === 'internet' && <select
               value={assistant}
               onChange={(event) => {
                 const value = event.target.value as PreferredProvider;
@@ -553,7 +555,7 @@ export function ChatPage() {
                   Assistant : {option.label}
                 </option>
               ))}
-            </select>
+            </select>}
           </div>
 
           {internetBlocked && (

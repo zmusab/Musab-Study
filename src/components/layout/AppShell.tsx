@@ -211,7 +211,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       {/* Planches de fond — jamais sur les routes « cockpit » (Anatomie 3D,
           lecteur PDF), où le contenu occupe tout l'écran. */}
-      {!fullBleed && <StudyPlates />}
+      {!fullBleed && location.pathname === '/' && <StudyPlates />}
       <Sidebar compact={fullBleed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main

@@ -50,7 +50,7 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   const { pathname } = useLocation();
-  const notation = notationFor(pathname);
+  const notation = pathname === '/' ? notationFor(pathname) : null;
 
   return (
     <header className="mb-6 border-b border-[var(--line)] pb-5">
