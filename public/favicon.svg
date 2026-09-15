@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5A66E0"/>
+      <stop offset="100%" stop-color="#3E49B8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14.08" fill="url(#g)"/>
+  
+  <text x="50%" y="50%" dy="0.34em" text-anchor="middle"
+        font-family="Newsreader, Georgia, serif" font-weight="600"
+        font-size="34.56" fill="#F6F5F2">M</text>
+</svg>

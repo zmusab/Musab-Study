@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "SOURCE UNIQUE des couleurs par système anatomique.",
+    "`linear` est le facteur de couleur de base écrit dans les fichiers .glb par",
+    "scripts/anatomy/convert-meshes.mjs (l'espace glTF est LINÉAIRE) ; `hex` est",
+    "l'encodage sRGB de ce même triplet, donc exactement la teinte que le modèle",
+    "3D affiche. L'interface (points, recherche, exploration, cartes, panneaux)",
+    "lit `hex` : la couleur d'une pastille et celle du maillage ne peuvent donc",
+    "pas diverger. Modifier `linear` impose de régénérer les .glb concernés",
+    "(node scripts/anatomy/convert-meshes.mjs --only=<catégorie>).",
+    "Palette d'atlas conventionnelle : os ivoire, muscle rouge, nerf jaune,",
+    "artère rouge, veine bleue, organes rose tissu, dents ivoire."
+  ],
+  "systems": {
+    "os": { "label": "Os", "linear": [0.86, 0.82, 0.72], "hex": "#EFEADD" },
+    "dents": { "label": "Dents", "linear": [0.86, 0.82, 0.72], "hex": "#EFEADD" },
+    "muscles": { "label": "Muscles", "linear": [0.66, 0.24, 0.27], "hex": "#D4868E" },
+    "nerfs": { "label": "Système nerveux", "linear": [0.95, 0.85, 0.45], "hex": "#F9EDB3" },
+    "arteres": { "label": "Artères", "linear": [0.75, 0.15, 0.15], "hex": "#E16C6C" },
+    "veines": { "label": "Veines", "linear": [0.16, 0.35, 0.62], "hex": "#6FA0CE" },
+    "vaisseaux": { "label": "Vaisseaux", "linear": [0.75, 0.15, 0.15], "hex": "#E16C6C" },
+    "organes": { "label": "Organes", "linear": [0.82, 0.56, 0.62], "hex": "#EAC5CE" }
+  },
+  "_vesselComment": [
+    "Artère ou veine : déduit du NOM FRANÇAIS RÉEL de la structure, jamais d'un",
+    "champ saisi à la main. `vein` est testé avant `artery` — « sinus coronaire »",
+    "est un collecteur veineux et doit rester bleu malgré le mot « coronaire ».",
+    "Une structure qu'aucun des deux motifs ne décrit reste un « Vaisseau »",
+    "générique plutôt que d'être rangée au hasard."
+  ],
+  "vesselPatterns": {
+    "vein": "veine|jugulaire|sinus coronaire|sinus veineux",
+    "artery": "art[èe]re|carotide|aorte|aortique|tronc c(œ|oe)liaque|tronc brachio-c[ée]phalique|coronaire|branche[s]? (marginale|septale|post[ée]ro|ant[ée]ro|circonflexe|interventriculaire|diagonale)"
+  }
+}

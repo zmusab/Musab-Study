@@ -1,0 +1,118 @@
+import { useEffect, useRef, useState } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { Spinner } from '@/components/ui';
+import { renderPageToCanvas } from '@/services/pdf/render';
+
+/**
+ * Une page du lecteur, rendue à la demande.
+ *
+ * Rendre les 300 canevas d'un cours entier au chargement saturerait la
+ * mémoire de Safari iPad en quelques secondes. `IntersectionObserver`
+ * ne déclenche le rendu réel que pour les pages qui entrent dans une large
+ * marge autour de l'écran (`rootMargin`), et le relâche (canevas vidé) une
+ * fois la page repassée loin hors champ — le placeholder garde la hauteur
+ * exacte, donc le défilement ne saute jamais.
+ */
+export function PdfPageCanvas({
+  doc,
+  pageNumber,
+  boxWidth,
+  renderWidth,
+  registerRef,
+}: {
+  doc: PDFDocumentProxy;
+  pageNumber: number;
+  /** Largeur CSS de la carte — suit le zoom en direct, coût nul (pas de nouveau rendu). */
+  boxWidth: number;
+  /** Largeur utilisée pour le rendu réel du canevas — voir PdfViewerPage : volontairement amortie pendant un pincement continu. */
+  renderWidth: number;
+  registerRef?: (pageNumber: number, el: HTMLDivElement | null) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+  const [rendered, setRendered] = useState(false);
+  const [aspect, setAspect] = useState<number | null>(null);
+  // Évite de redessiner un canevas déjà correct à cette largeur : sans ce
+  // garde-fou, ressortir puis rerentrer dans la marge de préchargement en
+  // faisant défiler (sans changement de zoom) relançait `page.render()` pour
+  // rien à chaque passage.
+  const renderedAtWidthRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    registerRef?.(pageNumber, el);
+
+    // Marge large et déclencheur binaire : cet observer sert UNIQUEMENT à
+    // décider quand rendre le canevas à l'avance, pas à savoir quelle page
+    // est réellement affichée (voir le suivi par défilement dans
+    // PdfViewerPage — un ratio d'intersection sur une marge aussi généreuse
+    // rapporterait presque 100 % pour toutes les pages d'un document court).
+    const observer = new IntersectionObserver(
+      (entries) => setNearViewport(entries[0]!.isIntersecting),
+      { rootMargin: '800px 0px', threshold: 0 },
+    );
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      registerRef?.(pageNumber, null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageNumber]);
+
+  /*
+   * Quand la page s'éloigne, `nearViewport` repasse à false et le `<canvas>`
+   * est DÉMONTÉ. Le souvenir « déjà rendu à cette largeur » porte alors sur un
+   * élément qui n'existe plus : au retour sur la page, React monte un canevas
+   * NEUF et VIDE, l'effet de rendu sortait aussitôt en le croyant à jour, et
+   * `rendered` restant à true, pas même un indicateur de chargement ne
+   * s'affichait. La page restait blanche — exactement ce qui se produisait en
+   * remontant vers les pages déjà lues.
+   */
+  useEffect(() => {
+    if (nearViewport) return;
+    renderedAtWidthRef.current = null;
+    setRendered(false);
+  }, [nearViewport]);
+
+  useEffect(() => {
+    if (!nearViewport || !canvasRef.current) return undefined;
+    if (renderedAtWidthRef.current === renderWidth) return undefined;
+    let cancelled = false;
+    setRendered(false);
+
+    void renderPageToCanvas(doc, pageNumber, canvasRef.current, renderWidth).then(() => {
+      if (cancelled || !canvasRef.current) return;
+      renderedAtWidthRef.current = renderWidth;
+      setAspect(canvasRef.current.height / canvasRef.current.width);
+      setRendered(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nearViewport, doc, pageNumber, renderWidth]);
+
+  const height = aspect ? boxWidth * aspect : boxWidth * 1.414; // ratio A4 par défaut, avant le premier rendu
+
+  return (
+    <div
+      ref={containerRef}
+      data-page={pageNumber}
+      className="relative mx-auto flex items-center justify-center overflow-hidden rounded-[var(--radius-card)] bg-white shadow-[var(--shadow-soft)]"
+      style={{ width: boxWidth, height }}
+    >
+      {nearViewport ? (
+        <canvas ref={canvasRef} className="block max-w-full" />
+      ) : (
+        <span className="text-[0.78rem] text-[var(--ink-faint)]">Page {pageNumber}</span>
+      )}
+      {nearViewport && !rendered && (
+        <span className="absolute inset-0 flex items-center justify-center bg-white/60">
+          <Spinner size={20} />
+        </span>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      `viewport-fit=cover` permet à l'interface d'utiliser toute la dalle des
+      iPhone à encoche ; les zones sûres sont ensuite gérées en CSS.
+      Le zoom N'EST PAS bloqué (`user-scalable` absent) : le désactiver casserait
+      l'accessibilité pour qui a besoin d'agrandir. Le zoom involontaire au focus
+      est déjà évité par des champs à 16px.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f5f2" />
+    <meta name="description" content="Environnement d'étude personnel — Dentisterie, UMF Iași" />
+
+    <!-- Application installée sur l'écran d'accueil iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Musab Study" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <title>Musab Study</title>
+
+
+    <script>
+      /*
+       * Applique le thème AVANT le premier rendu.
+       * Sans ce bloc, l'application s'afficherait en clair pendant quelques
+       * images avant de basculer en sombre : un flash blanc très agressif quand
+       * on ouvre l'app la nuit.
+       */
+      (function () {
+        try {
+          var stored = localStorage.getItem('musab-study:theme');
+          var dark =
+            stored === 'dark' ||
+            ((stored === 'system' || stored === null) &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          if (dark) {
+            document
+              .querySelector('meta[name="theme-color"]')
+              .setAttribute('content', '#121417');
+          }
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

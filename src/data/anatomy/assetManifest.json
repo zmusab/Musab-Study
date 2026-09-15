@@ -1,0 +1,331 @@
+[
+  {
+    "key": "abdomen-muscles",
+    "subregion": "abdomen",
+    "category": "muscles",
+    "structures": 25,
+    "triangles": 2977084
+  },
+  {
+    "key": "abdomen-organes",
+    "subregion": "abdomen",
+    "category": "organes",
+    "structures": 27,
+    "triangles": 411358
+  },
+  {
+    "key": "abdomen-squelette",
+    "subregion": "abdomen",
+    "category": "squelette",
+    "structures": 12,
+    "triangles": 163814
+  },
+  {
+    "key": "abdomen-vaisseaux",
+    "subregion": "abdomen",
+    "category": "vaisseaux",
+    "structures": 12,
+    "triangles": 12500
+  },
+  {
+    "key": "avant-bras-muscles",
+    "subregion": "avant-bras",
+    "category": "muscles",
+    "structures": 32,
+    "triangles": 1167506
+  },
+  {
+    "key": "avant-bras-squelette",
+    "subregion": "avant-bras",
+    "category": "squelette",
+    "structures": 6,
+    "triangles": 40870
+  },
+  {
+    "key": "bassin-organes",
+    "subregion": "bassin",
+    "category": "organes",
+    "structures": 8,
+    "triangles": 14662
+  },
+  {
+    "key": "bassin-vaisseaux",
+    "subregion": "bassin",
+    "category": "vaisseaux",
+    "structures": 12,
+    "triangles": 10952
+  },
+  {
+    "key": "bras-muscles",
+    "subregion": "bras",
+    "category": "muscles",
+    "structures": 12,
+    "triangles": 347514
+  },
+  {
+    "key": "bras-squelette",
+    "subregion": "bras",
+    "category": "squelette",
+    "structures": 2,
+    "triangles": 32760
+  },
+  {
+    "key": "cou-muscles",
+    "subregion": "cou",
+    "category": "muscles",
+    "structures": 50,
+    "triangles": 714866
+  },
+  {
+    "key": "cou-organes",
+    "subregion": "cou",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 39658
+  },
+  {
+    "key": "cou-squelette",
+    "subregion": "cou",
+    "category": "squelette",
+    "structures": 13,
+    "triangles": 59026
+  },
+  {
+    "key": "cou-vaisseaux",
+    "subregion": "cou",
+    "category": "vaisseaux",
+    "structures": 2,
+    "triangles": 1300
+  },
+  {
+    "key": "coude-muscles",
+    "subregion": "coude",
+    "category": "muscles",
+    "structures": 18,
+    "triangles": 467328
+  },
+  {
+    "key": "crane-muscles",
+    "subregion": "crane",
+    "category": "muscles",
+    "structures": 5,
+    "triangles": 703004
+  },
+  {
+    "key": "crane-organes",
+    "subregion": "crane",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 45096
+  },
+  {
+    "key": "crane-squelette",
+    "subregion": "crane",
+    "category": "squelette",
+    "structures": 19,
+    "triangles": 192778
+  },
+  {
+    "key": "cuisse-muscles",
+    "subregion": "cuisse",
+    "category": "muscles",
+    "structures": 32,
+    "triangles": 2072654
+  },
+  {
+    "key": "cuisse-squelette",
+    "subregion": "cuisse",
+    "category": "squelette",
+    "structures": 2,
+    "triangles": 26192
+  },
+  {
+    "key": "dents-organes",
+    "subregion": "dents",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 25228
+  },
+  {
+    "key": "dents-squelette",
+    "subregion": "dents",
+    "category": "squelette",
+    "structures": 28,
+    "triangles": 198846
+  },
+  {
+    "key": "dos-muscles",
+    "subregion": "dos",
+    "category": "muscles",
+    "structures": 44,
+    "triangles": 1860940
+  },
+  {
+    "key": "dos-squelette",
+    "subregion": "dos",
+    "category": "squelette",
+    "structures": 12,
+    "triangles": 103106
+  },
+  {
+    "key": "encephale-nerfs",
+    "subregion": "encephale",
+    "category": "nerfs",
+    "structures": 94,
+    "triangles": 1994044
+  },
+  {
+    "key": "epaule-muscles",
+    "subregion": "epaule",
+    "category": "muscles",
+    "structures": 42,
+    "triangles": 2066116
+  },
+  {
+    "key": "epaule-squelette",
+    "subregion": "epaule",
+    "category": "squelette",
+    "structures": 4,
+    "triangles": 245324
+  },
+  {
+    "key": "face-muscles",
+    "subregion": "face",
+    "category": "muscles",
+    "structures": 35,
+    "triangles": 372132
+  },
+  {
+    "key": "face-organes",
+    "subregion": "face",
+    "category": "organes",
+    "structures": 1,
+    "triangles": 6826
+  },
+  {
+    "key": "genou-squelette",
+    "subregion": "genou",
+    "category": "squelette",
+    "structures": 2,
+    "triangles": 2672
+  },
+  {
+    "key": "hanche-muscles",
+    "subregion": "hanche",
+    "category": "muscles",
+    "structures": 22,
+    "triangles": 608802
+  },
+  {
+    "key": "hanche-squelette",
+    "subregion": "hanche",
+    "category": "squelette",
+    "structures": 3,
+    "triangles": 63602
+  },
+  {
+    "key": "jambe-muscles",
+    "subregion": "jambe",
+    "category": "muscles",
+    "structures": 28,
+    "triangles": 1303014
+  },
+  {
+    "key": "jambe-squelette",
+    "subregion": "jambe",
+    "category": "squelette",
+    "structures": 6,
+    "triangles": 150740
+  },
+  {
+    "key": "machoire-muscles",
+    "subregion": "machoire",
+    "category": "muscles",
+    "structures": 12,
+    "triangles": 285254
+  },
+  {
+    "key": "machoire-squelette",
+    "subregion": "machoire",
+    "category": "squelette",
+    "structures": 4,
+    "triangles": 55846
+  },
+  {
+    "key": "main-muscles",
+    "subregion": "main",
+    "category": "muscles",
+    "structures": 26,
+    "triangles": 198310
+  },
+  {
+    "key": "main-squelette",
+    "subregion": "main",
+    "category": "squelette",
+    "structures": 54,
+    "triangles": 72326
+  },
+  {
+    "key": "orbite-nerfs",
+    "subregion": "orbite",
+    "category": "nerfs",
+    "structures": 5,
+    "triangles": 48596
+  },
+  {
+    "key": "orbite-organes",
+    "subregion": "orbite",
+    "category": "organes",
+    "structures": 1,
+    "triangles": 2818
+  },
+  {
+    "key": "pied-muscles",
+    "subregion": "pied",
+    "category": "muscles",
+    "structures": 42,
+    "triangles": 500334
+  },
+  {
+    "key": "pied-squelette",
+    "subregion": "pied",
+    "category": "squelette",
+    "structures": 56,
+    "triangles": 186766
+  },
+  {
+    "key": "tegument-organes",
+    "subregion": "tegument",
+    "category": "organes",
+    "structures": 3,
+    "triangles": 1705188
+  },
+  {
+    "key": "thorax-muscles",
+    "subregion": "thorax",
+    "category": "muscles",
+    "structures": 10,
+    "triangles": 2639426
+  },
+  {
+    "key": "thorax-organes",
+    "subregion": "thorax",
+    "category": "organes",
+    "structures": 17,
+    "triangles": 830888
+  },
+  {
+    "key": "thorax-squelette",
+    "subregion": "thorax",
+    "category": "squelette",
+    "structures": 55,
+    "triangles": 990148
+  },
+  {
+    "key": "thorax-vaisseaux",
+    "subregion": "thorax",
+    "category": "vaisseaux",
+    "structures": 30,
+    "triangles": 299292
+  }
+]

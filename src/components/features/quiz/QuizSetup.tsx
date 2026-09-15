@@ -1,0 +1,535 @@
+import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { Button, Card, Select, Swatch, useToast } from '@/components/ui';
+import { db } from '@/data/db';
+import { listChunks } from '@/data/repositories/documents';
+import { listSubjectAnalyses, saveChapterAnalysis } from '@/data/repositories/notions';
+import { analyzeChapter, InsufficientChapterContentError } from '@/services/courses/notions';
+import { aiOrchestrator } from '@/services/ai/orchestrator';
+import type { ContextLookup } from '@/services/rag/retrieval';
+import type { QuizDifficulty, QuizFormat, QuizScope } from '@/core/quiz';
+import type { Evaluation } from '@/core/progress/exam';
+import type { Chapter, ID, Subject } from '@/types';
+import { agree, plural } from '@/lib/plural';
+
+/**
+ * CHOISIR CE QUE JE VEUX TESTER — l'écran d'entrée du Quiz.
+ *
+ * Chaque option affiche un compte RÉEL (cartes, points faibles mesurés,
+ * évaluations enregistrées) pour qu'on sache, avant de lancer quoi que ce
+ * soit, si le choix a une chance de produire un quiz. Une option sans
+ * donnée n'est pas cachée — elle est visible mais annoncée vide, comme
+ * partout ailleurs dans l'application.
+ */
+
+type ScopeId = 'subject' | 'chapter' | 'subjects' | 'weak' | 'due' | 'exam' | 'exam-likely';
+
+const SCOPE_META: { id: ScopeId; label: string; hint: string }[] = [
+  { id: 'subject', label: 'Une matière', hint: 'Toutes les cartes d’une matière.' },
+  { id: 'chapter', label: 'Un chapitre', hint: 'Un seul chapitre, en détail.' },
+  { id: 'subjects', label: 'Plusieurs matières', hint: 'Mélange plusieurs matières dans le même quiz.' },
+  { id: 'weak', label: 'Mes points faibles', hint: 'Les chapitres où ton taux de réussite mesuré est le plus bas.' },
+  { id: 'due', label: 'Mes cartes à revoir', hint: 'Ce que la répétition espacée programme aujourd’hui.' },
+  { id: 'exam', label: 'Avant un examen', hint: 'La matière d’une évaluation à venir, chapitres faibles en tête.' },
+  { id: 'exam-likely', label: 'Préparation examen', hint: 'Questions classées selon les notions importantes et tes difficultés. La difficulté réelle de ton examen nécessite des annales de référence.' },
+];
+
+const COUNT_OPTIONS = [5, 10, 15, 20];
+const DIFFICULTY_OPTIONS: { value: QuizDifficulty; label: string }[] = [
+  { value: 'mixed', label: 'Tous niveaux' },
+  { value: 'easy', label: 'Facile' },
+  { value: 'medium', label: 'Moyen' },
+  { value: 'hard', label: 'Difficile' },
+];
+const FORMAT_OPTIONS: { value: QuizFormat; label: string }[] = [
+  { value: 'qcm', label: 'QCM' },
+  { value: 'vf', label: 'Vrai ou faux' },
+  { value: 'recall', label: 'Rappel libre' },
+  { value: 'mixed', label: 'Entraînement varié' },
+];
+
+/**
+ * Renfort optionnel : lance l'analyse de chapitre déjà existante
+ * (`analyzeChapter`, la même que l'onglet « Notions » d'une matière — moteur
+ * local par défaut, aucune clé requise) sur les chapitres du périmètre qui
+ * n'en ont pas encore. N'invente rien de neuf — l'estimation fonctionne déjà
+ * sans elle (importance des flashcards, historique de réponses, examen
+ * enregistré) ; ceci ne fait qu'ajouter le signal du cours.
+ */
+function ExamLikelyAiBoost({
+  subjectId,
+  subjects,
+  subjectChapters,
+  targetChapters,
+}: {
+  subjectId: ID;
+  subjects: Subject[];
+  subjectChapters: Chapter[];
+  targetChapters: Chapter[];
+}) {
+  const { notify } = useToast();
+  const [analyzing, setAnalyzing] = useState(false);
+  const analyses = useLiveQuery(() => listSubjectAnalyses(subjectId), [subjectId]) ?? [];
+  const analyzedChapterIds = useMemo(() => new Set(analyses.map((a) => a.chapterId)), [analyses]);
+  const unanalyzed = targetChapters.filter((chapter) => !analyzedChapterIds.has(chapter.id));
+
+  if (targetChapters.length === 0) return null;
+
+  const run = async () => {
+    // `analyzeChapter` utilise par défaut le moteur local (aucune clé
+    // requise) — voir services/courses/notions.ts.
+    setAnalyzing(true);
+    let done = 0;
+    try {
+      const documentRows = await db.documents.where('subjectId').equals(subjectId).toArray();
+      const lookup: ContextLookup = {
+        subjects: new Map(subjects.map((subject) => [subject.id, subject])),
+        chapters: new Map(subjectChapters.map((chapter) => [chapter.id, chapter])),
+        documents: new Map(documentRows.map((document) => [document.id, { id: document.id, name: document.name }])),
+      };
+      for (const chapter of unanalyzed) {
+        const chunks = await listChunks({ subjectId, chapterId: chapter.id });
+        // Pas de contenu de cours indexé pour ce chapitre : on passe au
+        // suivant plutôt que d'échouer tout le lot pour un seul chapitre.
+        if (chunks.length === 0) continue;
+        try {
+          const notions = await analyzeChapter({ chunks, lookup });
+          await saveChapterAnalysis(subjectId, chapter.id, notions);
+          done += 1;
+        } catch (error) {
+          if (!(error instanceof InsufficientChapterContentError)) throw error;
+        }
+      }
+      notify(
+        done > 0
+          ? `${plural(done, 'chapitre')} ${agree(done, 'analysé')} — l’estimation en tient maintenant compte.`
+          : 'Aucun chapitre de ce périmètre n’a assez de contenu de cours indexé à analyser.',
+        done > 0 ? 'success' : 'error',
+      );
+    } catch (error) {
+      notify(aiOrchestrator.describeAiError(error), 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-[var(--surface-2)] px-3 py-2.5 text-[0.8rem]"
+      data-quiz-exam-likely-ai-boost
+    >
+      <p className="text-[var(--ink-soft)]">
+        {unanalyzed.length === 0
+          ? 'Cours déjà analysé pour ce périmètre — l’estimation en tient compte.'
+          : `${targetChapters.length - unanalyzed.length}/${targetChapters.length} ${agree(targetChapters.length, 'chapitre')} ${agree(targetChapters.length, 'analysé')}.`}
+      </p>
+      {unanalyzed.length > 0 && (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={analyzing}
+          onClick={() => void run()}
+          data-quiz-exam-likely-analyze
+        >
+          {analyzing ? 'Analyse en cours…' : 'Renforcer avec l’analyse du cours'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export function QuizSetup({
+  subjects,
+  chapters,
+  cardCountBySubject,
+  weakCardCount,
+  dueCardCount,
+  examEvaluations,
+  onStart,
+}: {
+  subjects: Subject[];
+  chapters: Chapter[];
+  cardCountBySubject: Map<ID, number>;
+  weakCardCount: number;
+  dueCardCount: number;
+  /** Une entrée par matière ayant au moins une évaluation à venir. */
+  examEvaluations: { subjectId: ID; subjectName: string; evaluation: Evaluation }[];
+  onStart: (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => void;
+}) {
+  const [scopeId, setScopeId] = useState<ScopeId>('subject');
+  const [subjectId, setSubjectId] = useState<ID | null>(subjects[0]?.id ?? null);
+  const [chapterId, setChapterId] = useState<ID | null>(null);
+  const [subjectIds, setSubjectIds] = useState<ID[]>([]);
+  const [examSubjectId, setExamSubjectId] = useState<ID | null>(examEvaluations[0]?.subjectId ?? null);
+  const [examLikelySubjectId, setExamLikelySubjectId] = useState<ID | null>(subjects[0]?.id ?? null);
+  const [examLikelyChapterIds, setExamLikelyChapterIds] = useState<ID[]>([]);
+  const [count, setCount] = useState(10);
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>('mixed');
+  const [format, setFormat] = useState<QuizFormat>('mixed');
+
+  const subjectChapters = useMemo(
+    () => chapters.filter((chapter) => chapter.subjectId === subjectId),
+    [chapters, subjectId],
+  );
+  const examLikelySubjectChapters = useMemo(
+    () => chapters.filter((chapter) => chapter.subjectId === examLikelySubjectId),
+    [chapters, examLikelySubjectId],
+  );
+  const examLikelyEvaluation = useMemo(
+    () => examEvaluations.find((entry) => entry.subjectId === examLikelySubjectId) ?? null,
+    [examEvaluations, examLikelySubjectId],
+  );
+  const examLikelyTargetChapters = useMemo(
+    () =>
+      examLikelyChapterIds.length > 0
+        ? examLikelySubjectChapters.filter((chapter) => examLikelyChapterIds.includes(chapter.id))
+        : examLikelySubjectChapters,
+    [examLikelySubjectChapters, examLikelyChapterIds],
+  );
+
+  const scope = useMemo<QuizScope | null>(() => {
+    switch (scopeId) {
+      case 'subject':
+        return subjectId ? { kind: 'subject', subjectId } : null;
+      case 'chapter':
+        return subjectId ? { kind: 'chapter', subjectId, chapterId } : null;
+      case 'subjects':
+        return subjectIds.length > 0 ? { kind: 'subjects', subjectIds } : null;
+      case 'weak':
+        return { kind: 'weak' };
+      case 'due':
+        return { kind: 'due' };
+      case 'exam':
+        return examSubjectId ? { kind: 'exam', subjectId: examSubjectId } : null;
+      case 'exam-likely':
+        return examLikelySubjectId
+          ? {
+              kind: 'exam-likely',
+              subjectId: examLikelySubjectId,
+              chapterIds: examLikelyChapterIds,
+              evaluationEventId: examLikelyEvaluation?.evaluation.event.id ?? null,
+            }
+          : null;
+      default:
+        return null;
+    }
+  }, [scopeId, subjectId, chapterId, subjectIds, examSubjectId, examLikelySubjectId, examLikelyChapterIds, examLikelyEvaluation]);
+
+  const toggleSubject = (id: ID) =>
+    setSubjectIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+
+  /**
+   * Une portée est « prête » quand elle a réellement de quoi lancer un quiz.
+   * Les portées libres (matière, chapitre, plusieurs matières) le sont
+   * toujours ; les portées dérivées d'un état (points faibles, cartes dues,
+   * examens) ne le sont que si cet état existe.
+   */
+  const availabilityOf = (id: ScopeId): number | null =>
+    id === 'weak'
+      ? weakCardCount
+      : id === 'due'
+        ? dueCardCount
+        : id === 'exam'
+          ? examEvaluations.length
+          : id === 'exam-likely'
+            ? (examLikelySubjectId ? (cardCountBySubject.get(examLikelySubjectId) ?? 0) : 0)
+            : null;
+
+  const readyScopes = SCOPE_META.filter((meta) => (availabilityOf(meta.id) ?? 1) > 0);
+  const emptyScopes = SCOPE_META.filter((meta) => (availabilityOf(meta.id) ?? 1) === 0);
+
+  const renderScope = (meta: (typeof SCOPE_META)[number]) => {
+    const available = availabilityOf(meta.id);
+    const active = scopeId === meta.id;
+    return (
+      <button
+        key={meta.id}
+        type="button"
+        onClick={() => setScopeId(meta.id)}
+        aria-pressed={active}
+        data-quiz-scope={meta.id}
+        data-touch-target
+        className={
+          'rounded-[var(--radius-card)] border p-3.5 text-left transition-colors ' +
+          (active
+            ? 'border-[var(--accent)] bg-[var(--accent-tint)]'
+            : 'border-[var(--line)] hover:bg-[var(--surface-2)]')
+        }
+      >
+        <p className="text-[0.95rem] font-medium">{meta.label}</p>
+        <p className="mt-0.5 text-[0.78rem] leading-snug text-[var(--ink-faint)]">{meta.hint}</p>
+        {/*
+          Un mode sans contenu le DIT toujours — il est simplement rangé dans
+          le repli plutôt qu'affiché au même rang que les modes utilisables.
+          Regrouper n'est pas cacher : le résumé du repli annonce combien il y
+          en a, et chaque carte garde sa mention.
+        */}
+        {available !== null && (
+          <p
+            className="mt-1.5 text-[0.78rem] font-medium"
+            style={{ color: available > 0 ? 'var(--accent)' : 'var(--ink-faint)' }}
+          >
+            {available > 0
+              ? meta.id === 'exam'
+                ? `${available} évaluation${available > 1 ? 's' : ''} à venir`
+                : `${plural(available, 'carte')} ${agree(available, 'disponible')}`
+              : 'Rien pour l’instant'}
+          </p>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-6" data-quiz-setup>
+      <section>
+        <h2 className="mb-3 text-[1.05rem]">Que veux-tu tester ?</h2>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{readyScopes.map(renderScope)}</div>
+        {/*
+          Les portées SANS contenu (« Rien pour l'instant ») restent
+          accessibles mais ne s'affichent plus au même rang que les autres :
+          sur un compte qui débute, quatre des sept cartes annonçaient un vide,
+          et le choix réellement possible se perdait au milieu.
+        */}
+        {emptyScopes.length > 0 && (
+          <details className="mt-2">
+            <summary className="cursor-pointer list-none py-2 text-[0.85rem] text-[var(--ink-soft)] underline underline-offset-2">
+              {emptyScopes.length} autre{emptyScopes.length > 1 ? 's' : ''} type
+              {emptyScopes.length > 1 ? 's' : ''} de quiz, sans contenu pour l’instant
+            </summary>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">{emptyScopes.map(renderScope)}</div>
+          </details>
+        )}
+      </section>
+
+      {/* ── Précisions propres à chaque type ── */}
+      {(scopeId === 'subject' || scopeId === 'chapter') && (
+        <section className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Matière"
+            value={subjectId ?? ''}
+            onChange={(event) => {
+              setSubjectId(event.target.value || null);
+              setChapterId(null);
+            }}
+          >
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
+              </option>
+            ))}
+          </Select>
+          {scopeId === 'chapter' && (
+            <Select
+              label="Chapitre"
+              value={chapterId ?? ''}
+              onChange={(event) => setChapterId(event.target.value || null)}
+            >
+              <option value="">Toute la matière</option>
+              {subjectChapters.map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>
+                  {chapter.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </section>
+      )}
+
+      {scopeId === 'subjects' && (
+        <section>
+          <p className="mb-2 text-[0.82rem] font-medium text-[var(--ink-soft)]">Matières incluses</p>
+          <div className="flex flex-wrap gap-2" data-quiz-subjects-picker>
+            {subjects.map((subject) => {
+              const active = subjectIds.includes(subject.id);
+              return (
+                <button
+                  key={subject.id}
+                  type="button"
+                  onClick={() => toggleSubject(subject.id)}
+                  aria-pressed={active}
+                  data-touch-target
+                  className={
+                    'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[0.84rem] transition-colors ' +
+                    (active
+                      ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
+                      : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
+                  }
+                >
+                  <Swatch color={subject.color} size={9} />
+                  {subject.name}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {scopeId === 'exam' && (
+        <section>
+          {examEvaluations.length === 0 ? (
+            <p className="text-[0.85rem] text-[var(--ink-faint)]">
+              Aucune évaluation enregistrée au calendrier — ajoutes-en une pour utiliser ce mode.
+            </p>
+          ) : (
+            <Select
+              label="Évaluation"
+              value={examSubjectId ?? ''}
+              onChange={(event) => setExamSubjectId(event.target.value || null)}
+            >
+              {examEvaluations.map((entry) => (
+                <option key={entry.subjectId} value={entry.subjectId}>
+                  {entry.subjectName} — {entry.evaluation.label} dans {entry.evaluation.daysUntil} j
+                </option>
+              ))}
+            </Select>
+          )}
+        </section>
+      )}
+
+      {scopeId === 'exam-likely' && (
+        <section className="flex flex-col gap-3" data-quiz-exam-likely-panel>
+          <div>
+            <p className="text-[0.92rem] font-semibold">Questions prioritaires</p>
+            <p className="mt-0.5 text-[0.8rem] leading-relaxed text-[var(--ink-faint)]">
+              Estimation basée sur le contenu disponible.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Matière"
+              value={examLikelySubjectId ?? ''}
+              onChange={(event) => {
+                setExamLikelySubjectId(event.target.value || null);
+                setExamLikelyChapterIds([]);
+              }}
+            >
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name} — {plural(cardCountBySubject.get(subject.id) ?? 0, 'carte')}
+                </option>
+              ))}
+            </Select>
+            <div>
+              <p className="text-[0.78rem] font-semibold tracking-wide text-[var(--ink-soft)]">
+                {examLikelyEvaluation
+                  ? `Examen détecté : ${examLikelyEvaluation.evaluation.label} dans ${examLikelyEvaluation.evaluation.daysUntil} j`
+                  : 'Aucun examen enregistré pour cette matière'}
+              </p>
+              <p className="mt-1 text-[0.78rem] leading-relaxed text-[var(--ink-faint)]">
+                {examLikelyEvaluation
+                  ? 'Sa date contextualise l’estimation, sans jamais la rendre certaine.'
+                  : 'L’estimation fonctionne quand même, sans contexte de proximité d’examen.'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[0.82rem] font-medium text-[var(--ink-soft)]">
+              Chapitres — laisse tout décoché pour couvrir toute la matière
+            </p>
+            <div className="flex flex-wrap gap-2" data-quiz-exam-likely-chapters-picker>
+              {examLikelySubjectChapters.length === 0 ? (
+                <p className="text-[0.82rem] text-[var(--ink-faint)]">Cette matière n’a pas encore de chapitre.</p>
+              ) : (
+                examLikelySubjectChapters.map((chapterRow) => {
+                  const active = examLikelyChapterIds.includes(chapterRow.id);
+                  return (
+                    <button
+                      key={chapterRow.id}
+                      type="button"
+                      onClick={() =>
+                        setExamLikelyChapterIds((current) =>
+                          current.includes(chapterRow.id)
+                            ? current.filter((id) => id !== chapterRow.id)
+                            : [...current, chapterRow.id],
+                        )
+                      }
+                      aria-pressed={active}
+                      data-touch-target
+                      className={
+                        'rounded-full border px-3 py-1.5 text-[0.84rem] transition-colors ' +
+                        (active
+                          ? 'border-[var(--accent)] bg-[var(--accent-tint)] text-[var(--accent)]'
+                          : 'border-[var(--line)] text-[var(--ink-soft)] hover:bg-[var(--surface-2)]')
+                      }
+                    >
+                      {chapterRow.name}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {examLikelySubjectId && (
+            <ExamLikelyAiBoost
+              subjectId={examLikelySubjectId}
+              subjects={subjects}
+              subjectChapters={examLikelySubjectChapters}
+              targetChapters={examLikelyTargetChapters}
+            />
+          )}
+
+          <p className="text-[0.76rem] leading-relaxed text-[var(--ink-faint)]" data-quiz-exam-likely-disclaimer>
+            L’estimation est basée sur les contenus disponibles et les données d’apprentissage. Elle ne garantit pas
+            les questions de l’examen.
+          </p>
+        </section>
+      )}
+
+      {/* ── Nombre de questions, difficulté et format ── */}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <Select label="Nombre de questions" value={String(count)} onChange={(event) => setCount(Number(event.target.value))}>
+          {COUNT_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} questions
+            </option>
+          ))}
+        </Select>
+        <Select
+          label="Difficulté"
+          value={difficulty}
+          onChange={(event) => setDifficulty(event.target.value as QuizDifficulty)}
+        >
+          {DIFFICULTY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+        <Select
+          label="Format"
+          value={format}
+          onChange={(event) => setFormat(event.target.value as QuizFormat)}
+          data-quiz-format
+        >
+          {FORMAT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+      </section>
+
+      <Card className="flex flex-wrap items-center justify-between gap-3 border-[var(--accent)]/30">
+        <p className="text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
+          {format === 'vf'
+            ? 'Affirmations tirées de tes cartes. Si aucun choix comparable n’existe, la question passe en rappel libre.'
+            : format === 'qcm' ? 'Quatre réponses comparables tirées de tes cartes. Les questions sans choix cohérents sont écartées.'
+            : format === 'recall' ? 'Réponds avec tes mots, compare au cours puis autoévalue ton rappel.'
+            : 'QCM et vrai/faux lorsque les choix sont comparables, rappel libre sinon. Les rappels libres sont autoévalués.'}
+        </p>
+        <Button
+          size="lg"
+          disabled={scope === null}
+          onClick={() => scope && onStart(scope, count, difficulty, format)}
+          data-quiz-start
+        >
+          Commencer
+        </Button>
+      </Card>
+    </div>
+  );
+}

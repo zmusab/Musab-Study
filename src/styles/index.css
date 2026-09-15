@@ -1,0 +1,665 @@
+@import 'tailwindcss';
+@import './fonts.css';
+
+/*
+ * Musab Study — système de design.
+ *
+ * Direction : papier chaud et calme en clair, encre profonde en sombre.
+ * Bordures en cheveu, profondeur discrète, aucune ombre lourde. L'application
+ * doit rester reposante après quatre heures de révision, pas « démontrer »
+ * qu'elle est jolie.
+ */
+
+/* Mode sombre piloté par l'attribut, pas par la préférence système seule :
+   le choix explicite de l'utilisateur doit gagner dans les deux sens. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* Espace de travail : surfaces nettes et accent turquoise. */
+html:root {
+  --bg: #f0f4f8;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #e7eef5;
+  --surface-hover: #dce8f0;
+  --ink: #172b40;
+  --ink-soft: #465e74;
+  --ink-faint: #597086;
+  --line: #d5e0eb;
+  --line-strong: #a6bacb;
+  --accent: #086b73;
+  --accent-hover: #06555d;
+  --accent-tint: #e0f2f1;
+  --accent-ink: #075c64;
+  --on-accent: #ffffff;
+  --grid-minor: transparent;
+  --grid-major: transparent;
+  --paper-wash: radial-gradient(ellipse at top right, #d9eef0, transparent 65%);
+}
+html[data-theme='dark'] {
+  --bg: #0b1522;
+  --bg-elevated: #111f30;
+  --surface: #15263a;
+  --surface-2: #1e334a;
+  --surface-hover: #28425b;
+  --ink: #edf5fc;
+  --ink-soft: #b6c8d9;
+  --ink-faint: #9eb5c9;
+  --line: #2b4258;
+  --line-strong: #48627a;
+  --accent: #72ddd2;
+  --accent-hover: #9fece4;
+  --accent-tint: #123c43;
+  --accent-ink: #a0ece3;
+  --on-accent: #0b2930;
+  --paper-wash: radial-gradient(ellipse at top right, #123340, transparent 65%);
+}
+
+@theme {
+  --font-sans: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Courbes d'animation : décélération naturelle, jamais de rebond gadget. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /*
+   * Rayons légèrement augmentés. À 0,875 rem, les cartes lisaient comme des
+   * champs de formulaire ; le geste plus ample les rapproche d'une feuille
+   * posée sur un bureau — c'est l'impression recherchée pour un outil où l'on
+   * passe des heures.
+   */
+  --radius-card: 1.1rem;
+  --radius-control: 0.7rem;
+}
+
+:root {
+  color-scheme: light;
+
+  /*
+   * PAPIER CHAUD, ENCRE CHAUDE.
+   *
+   * L'ancienne palette annonçait « papier chaud et calme » mais tenait
+   * l'inverse : une encre bleu-noir (#17191c) et un accent indigo saturé
+   * (#4f5bd5) — des couleurs de tableau de bord SaaS, froides, qui donnaient à
+   * un outil de révision un air d'application de gestion. Tout est ici décalé
+   * vers le chaud : le fond tire sur le papier, l'encre sur le brun profond,
+   * et l'accent unique est une terre de Sienne — chaude et sérieuse, sans être
+   * enfantine.
+   */
+  --bg: #f1eee4;
+  --bg-elevated: #f7f4ec;
+  --surface: #fbf9f2;
+  --surface-2: #e9e4d7;
+  --surface-hover: #e1dbcb;
+
+  --ink: #15140f;
+  --ink-soft: #5d594e;
+  --ink-faint: #8b8577;
+
+  --line: #ddd7c7;
+  --line-strong: #c4bca7;
+
+  /*
+   * OR — et pourquoi deux ors, pas un seul.
+   *
+   * L'or vif (#d4af37) est splendide sur du noir et illisible sur de l'ivoire :
+   * son contraste avec le fond clair tombe sous 2:1, très loin des 4,5:1 exigés
+   * pour du texte. Le thème clair utilise donc un or PROFOND, le thème sombre
+   * l'or vif. C'est la même couleur perçue — la lumière change, pas l'identité.
+   */
+  --accent: #8a6a12;
+  --accent-hover: #6e540c;
+  --accent-tint: #f4ead0;
+  --accent-ink: #7a5d10;
+  /* Texte posé SUR un aplat d'accent. Sur l'or profond du thème clair, le
+     blanc passe ; sur l'or vif du thème sombre, il ne passe pas (voir plus
+     bas) — d'où une variable plutôt qu'un `text-white` codé en dur. */
+  --on-accent: #fffdf6;
+
+  --success: #4a7c52;
+  --success-tint: #e4ecdf;
+  --warning: #9a7212;
+  --warning-tint: #f4ecd4;
+  --danger: #a33f31;
+  --danger-tint: #f6e3de;
+
+  /*
+   * Maîtrise : une seule rampe continue, de la terre brûlée à la sauge, en
+   * passant par l'or de l'accent. Elle remplace un arc-en-ciel dont la
+   * dernière marche changeait carrément de famille de couleur — on ne lisait
+   * pas une progression, on lisait cinq étiquettes sans rapport.
+   */
+  --mastery-0: #a33f31;
+  --mastery-1: #b06a1e;
+  --mastery-2: #a08415;
+  --mastery-3: #7a8c3c;
+  --mastery-4: #4a7c52;
+
+  /*
+   * Couleurs de section. Elles ne colorent PLUS la navigation — un rail dont
+   * chaque entrée portait sa propre teinte vive donnait un menu arc-en-ciel,
+   * fatigant et sans hiérarchie. Ces teintes servent encore à distinguer les
+   * TYPES de résultat dans la recherche et quelques barres de progression ;
+   * elles sont donc désaturées pour cohabiter avec l'or sans lui disputer
+   * l'attention.
+   */
+  --nav-blue: #4a6b8a;
+  --nav-turquoise: #3f7a72;
+  --nav-purple: #6b5b8a;
+  --nav-rose: #9c4f68;
+  --nav-green: #4a7c52;
+  --nav-red: #a33f31;
+  --nav-orange: #8a6a12;
+
+  --shadow-soft: 0 1px 2px rgb(60 46 30 / 0.05), 0 6px 20px rgb(60 46 30 / 0.06);
+  --shadow-lift: 0 2px 6px rgb(60 46 30 / 0.07), 0 14px 36px rgb(60 46 30 / 0.11);
+
+  /*
+   * LE FOND — une page de cahier, pas un aplat.
+   *
+   * La version précédente posait six étiquettes scientifiques flottantes dans
+   * le vide du viewport : elles ne se rattachaient à rien, chevauchaient le
+   * bord des cartes, et sur un écran peu rempli elles ressemblaient à des
+   * débris. Le fond est maintenant DESSINÉ, en trois couches empilées :
+   *
+   *  1. `--paper-grid` — un quadrillage de cahier, 32 px de maille fine et un
+   *     trait plus marqué tous les 128 px. C'est ce qui donne immédiatement
+   *     l'impression d'écrire sur du papier millimétré plutôt que dans une
+   *     application de gestion.
+   *  2. `--paper-wash` — de larges dégradés radiaux très doux qui empêchent
+   *     l'aplat : sans eux, le thème sombre était un champ brun parfaitement
+   *     uniforme, exactement ce que l'utilisateur a rejeté.
+   *  3. `--bg` — la couleur de base.
+   *
+   * Tout est en `background-attachment: fixed` : le quadrillage ne défile pas
+   * avec le contenu, il reste la surface SUR laquelle le contenu est posé.
+   */
+  --grid-minor: rgb(150 122 40 / 0.055);
+  --grid-major: rgb(150 122 40 / 0.09);
+
+  --paper-wash:
+    radial-gradient(1200px 640px at 8% -10%, rgb(255 252 240 / 0.95) 0%, transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgb(240 231 205 / 0.8) 0%, transparent 58%),
+    radial-gradient(1400px 900px at 50% 118%, rgb(224 214 188 / 0.7) 0%, transparent 62%);
+}
+
+/*
+ * Le quadrillage lui-même, identique dans les deux thèmes — seules ses deux
+ * couleurs changent. Déclaré une fois, hors des blocs de thème.
+ */
+:root,
+[data-theme='dark'] {
+  --paper-grid:
+    repeating-linear-gradient(to right, var(--grid-major) 0 1px, transparent 1px 128px),
+    repeating-linear-gradient(to bottom, var(--grid-major) 0 1px, transparent 1px 128px),
+    repeating-linear-gradient(to right, var(--grid-minor) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(to bottom, var(--grid-minor) 0 1px, transparent 1px 32px);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /*
+   * NOIR ET OR.
+   *
+   * Le thème sombre était brun. Deux problèmes tenaient à ce choix : le brun
+   * salit tout ce qu'on pose dessus (une carte brune sur un fond brun ne se
+   * détache pas), et il rend impossible le seul accent qui fasse vraiment
+   * « travail sérieux » sur du sombre — l'or. Le fond descend donc au
+   * quasi-noir, et l'accent devient franchement doré.
+   *
+   * L'écart fond/surface reste large (#0d0d0c contre #1a1917) : la version
+   * brune n'avait que treize points d'écart, invisibles à l'œil, et l'écran
+   * entier se lisait comme un aplat.
+   */
+  --bg: #0d0d0c;
+  --bg-elevated: #131312;
+  --surface: #1a1917;
+  --surface-2: #242220;
+  --surface-hover: #2f2c29;
+
+  --ink: #f3f0e6;
+  --ink-soft: #a9a394;
+  --ink-faint: #7c7669;
+
+  --line: #2b2825;
+  --line-strong: #423d35;
+
+  /* L'or vif, celui qui ne fonctionne QUE sur du noir. */
+  --accent: #d9b44a;
+  --accent-hover: #e9c766;
+  --accent-tint: #2a2210;
+  --accent-ink: #e9c766;
+  /*
+   * Le texte posé sur cet or est NOIR, jamais blanc. Blanc sur #d9b44a donne
+   * un contraste de 1,9:1 — un bouton principal qu'on devine plutôt qu'on ne
+   * lit. Noir sur le même or donne 10:1.
+   */
+  --on-accent: #14120a;
+
+  --success: #7fb083;
+  --success-tint: #17231a;
+  --warning: #d9b44a;
+  --warning-tint: #2a2210;
+  --danger: #d9776a;
+  --danger-tint: #2b1a16;
+
+  --mastery-0: #d9776a;
+  --mastery-1: #d9a05e;
+  --mastery-2: #d9b44a;
+  --mastery-3: #a8bb6a;
+  --mastery-4: #86b184;
+
+  /* Mêmes teintes de section, éclaircies pour rester lisibles sur fond noir. */
+  --nav-blue: #7d9cba;
+  --nav-turquoise: #6fb0a6;
+  --nav-purple: #a08fc0;
+  --nav-rose: #cc8199;
+  --nav-green: #86b184;
+  --nav-red: #d9776a;
+  --nav-orange: #d9b44a;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.34);
+  --shadow-lift: 0 2px 8px rgb(0 0 0 / 0.45), 0 18px 44px rgb(0 0 0 / 0.5);
+
+  --grid-minor: rgb(217 180 74 / 0.045);
+  --grid-major: rgb(217 180 74 / 0.08);
+
+  /*
+   * Une lueur chaude en haut, une ombre plus dense en bas : le fond a une
+   * direction de lumière, il n'est plus un aplat. Le dégradé du bas est
+   * volontairement CONTENU — poussé plus loin, il ramenait le pied de page au
+   * noir pur, et le quadrillage y disparaissait complètement : on retrouvait
+   * exactement le grand champ vide et muet qu'il s'agit d'éviter.
+   */
+  --paper-wash:
+    radial-gradient(1100px 620px at 6% -12%, rgb(60 50 22 / 0.75) 0%, transparent 64%),
+    radial-gradient(900px 680px at 100% -4%, rgb(38 36 30 / 0.8) 0%, transparent 58%),
+    radial-gradient(1500px 900px at 50% 122%, rgb(6 6 5 / 0.8) 0%, transparent 60%);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    /* Empêche iOS de gonfler le texte au passage en paysage. */
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    color: var(--ink);
+    /*
+     * Trois couches : le quadrillage du cahier par-dessus les dégradés doux,
+     * eux-mêmes par-dessus la couleur de base. `fixed` fige le papier : le
+     * contenu glisse dessus au défilement au lieu de l'emporter avec lui.
+     */
+    background-color: var(--bg);
+    background-image: var(--paper-grid), var(--paper-wash);
+    background-attachment: fixed;
+    font-family: var(--font-sans);
+    /*
+     * CONFORT DE LECTURE. Un étudiant lit ici pendant des heures : le corps de
+     * texte est légèrement agrandi et surtout aéré (1,6 d'interligne contre le
+     * 1,5 par défaut). C'est le réglage qui change le plus la fatigue ressentie,
+     * bien avant n'importe quelle couleur.
+     */
+    font-size: 1.02rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Évite le rebond de défilement du document en PWA plein écran. */
+    overscroll-behavior-y: none;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    /* Un titre serré respire mal ; celui-ci reste compact sans être écrasé. */
+    line-height: 1.25;
+    color: var(--ink);
+  }
+
+  /*
+   * Anneau de focus commun, visible mais calme — et surtout UNIFORME. Chaque
+   * contrôle dessinait le sien, ce qui donnait autant de styles de focus que
+   * de composants.
+   */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-control);
+  }
+
+  /*
+   * 16px minimum sur tous les champs : en dessous, Safari iOS zoome
+   * automatiquement au focus. C'était l'un des défauts les plus pénibles du
+   * prototype sur iPad.
+   */
+  input, textarea, select, button {
+    font-family: inherit;
+    font-size: 1rem;
+  }
+
+  /*
+   * Champs DATE et HEURE — même gabarit que tous les autres.
+   *
+   * Safari (iOS comme macOS) traite `input[type=date]` et `[type=time]` comme
+   * des contrôles natifs : ils se dimensionnent sur leur contenu, ignorent la
+   * largeur demandée, et centrent leur valeur. Résultat, la barre de l'heure
+   * était plus étroite et décalée par rapport aux champs du dessus, alors
+   * qu'elle partage la même classe. Neutraliser l'apparence native rend la
+   * largeur et l'alignement identiques partout, sans perdre le sélecteur.
+   */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value,
+  input[type='month']::-webkit-date-and-time-value {
+    text-align: left;
+    /* Sans hauteur explicite, Safari recentre verticalement la valeur et la
+       fait flotter au-dessus de la ligne de base des autres champs. */
+    min-height: 1.5em;
+  }
+  /* L'icône du sélecteur reste cliquable, mais ne pousse plus le champ. */
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator {
+    margin-inline-start: auto;
+    opacity: 0.55;
+    cursor: pointer;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator:hover,
+  input[type='time']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+  /* Sélection au clavier visible, mais jamais au clic à la souris. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Cible tactile confortable : Apple recommande 44 pt. */
+  @media (pointer: coarse) {
+    button, a[role='button'], [data-touch-target] {
+      min-height: 44px;
+    }
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /*
+   * LA CARTE — une feuille posée, plus une boîte dessinée.
+   *
+   * Chaque carte portait un trait de 1 px sur tout son pourtour. Empilées par
+   * dizaines sur une page comme « Progression », ces bordures produisaient une
+   * grille de cadres qui écrasait la hiérarchie : tout avait exactement le même
+   * poids visuel. Une ombre très douce suffit à décoller la carte du fond, sans
+   * rien cerner. La bordure ne subsiste qu'en thème sombre, où l'ombre ne
+   * sépare plus rien.
+   */
+  .surface-card {
+    background-color: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  a.surface-card {
+    transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    a.surface-card:hover { transform: translateY(-3px); }
+  }
+  a.surface-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  /*
+   * En sombre, l'ombre ne suffit plus à séparer : la bordure revient, et
+   * surtout un LISERÉ CLAIR en haut de la carte. C'est ce liseré qui fait
+   * qu'une carte sombre se lit comme une feuille éclairée par le haut plutôt
+   * que comme un rectangle découpé dans le fond — une version antérieure
+   * posait `box-shadow: none` et une simple bordure, et l'écran entier
+   * devenait un aplat brun où plus rien ne se détachait.
+   */
+  [data-theme='dark'] .surface-card {
+    border-color: var(--line);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.045),
+      var(--shadow-soft);
+  }
+
+  /*
+   * NOTE DE MARGE — « il n'y a pas encore de quoi mesurer ça ».
+   *
+   * Ces blocs étaient dessinés en pointillés. Un rectangle tireté, en
+   * interface, veut dire « dépose un fichier ici » ou « ceci n'a pas fini de
+   * charger » : sur la page Progression, où quatre d'entre eux se suivent
+   * avant la première révision, la page entière avait l'air cassée. Un filet
+   * plein sur le bord gauche, comme un trait tiré dans la marge d'un cahier,
+   * dit la même chose sans alarmer.
+   */
+  .note-block {
+    border-left: 2px solid var(--line-strong);
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  }
+
+  /*
+   * POURQUOI `components` ET NON `utilities` : ces deux classes posent un
+   * `background-color`. Déclarées dans la couche des utilitaires, elles se
+   * retrouvaient ÉMISES APRÈS `bg-[...]` de Tailwind, à spécificité égale —
+   * donc gagnantes. Résultat silencieux : `<Card className="bg-[var(--accent-tint)]">`
+   * (la session recommandée de l'accueil) restait blanche, et rien dans le
+   * code ne laissait deviner pourquoi. Dans `components`, l'ordre des couches
+   * garantit qu'un utilitaire posé sur l'élément l'emporte toujours.
+   */
+}
+
+@layer utilities {
+  /*
+   * Chrome commun des cartes de la section Anatomie.
+   *
+   * Défini UNE fois plutôt que répété dans chaque carte : c'est ce qui
+   * garantit que les cinq outils (exploration, isolation, apprentissage,
+   * combinaisons, cours) partagent exactement le même rayon, la même
+   * bordure, la même ombre, le même rembourrage et le même titre. Sans
+   * cela, chaque carte dérivait et l'ensemble donnait une impression de
+   * bricolage.
+   */
+  .anatomy-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1.125rem;
+    /* Plancher confortable sans creuser de vide : les cartes courtes
+       poussent leur action en bas (`mt-auto`), les cartes hautes (le schéma
+       anatomique) fixent leur propre plancher. */
+    min-height: 15rem;
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .anatomy-card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--ink);
+    letter-spacing: -0.006em;
+  }
+
+  /* Texte explicatif d'une carte — même ton partout. */
+  .anatomy-card-hint {
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
+  /* Zones sûres iPhone/iPad en mode application installée. */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
+
+  /*
+   * RÉVÉLATION PROGRESSIVE — utilisée par « Voir plus » dans l'exploration
+   * anatomique et par le dépliement des chapitres dans « Progression ».
+   *
+   * Uniquement `opacity` et `transform` : ce sont les deux seules propriétés
+   * que le compositeur anime sans recalculer la mise en page, donc sans
+   * disputer le fil principal au rendu 3D voisin. Aucune animation de
+   * hauteur, de marge ou de `filter` — c'est ce qui ferait saccader le
+   * modèle pendant que la carte s'agrandit.
+   *
+   * Le décalage (`--reveal-index`) crée la cascade : chaque élément entre
+   * légèrement après le précédent, plafonné pour que le dernier d'une longue
+   * liste n'attende pas une seconde.
+   */
+  @keyframes reveal-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 7px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @keyframes reveal-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      opacity: 0;
+      transform: translate3d(0, -5px, 0);
+    }
+  }
+
+  .reveal {
+    animation: reveal-in 200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    animation-delay: calc(var(--reveal-index, 0) * 26ms);
+  }
+
+  /*
+   * CASCADE AU DÉFILEMENT — la même image-clé que `.reveal`, mais tenue plus
+   * longtemps et espacée davantage. `.reveal` sert à un changement d'état
+   * (une liste qu'on déplie sous le doigt) : il doit être quasi instantané.
+   * Ici la liste entre dans la fenêtre pendant qu'on fait défiler, et un
+   * effet de 200 ms est terminé avant même d'avoir été perçu.
+   *
+   * Le plafond de l'index évite qu'une longue liste fasse attendre sa
+   * dernière ligne : au-delà de la douzième, plus aucun retard ne s'ajoute.
+   */
+  .cascade {
+    animation: reveal-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(min(var(--reveal-index, 0), 12) * 55ms);
+  }
+
+  /* Repli : la cascade s'inverse, plus courte — sortir doit être plus vif
+     qu'entrer, sinon l'interface paraît lente. */
+  .reveal-out {
+    animation: reveal-out 130ms ease-in both;
+    animation-delay: calc(var(--reveal-index, 0) * 14ms);
+    pointer-events: none;
+  }
+
+  /*
+   * MOT À MOT — l'apparition d'une réponse de l'assistant.
+   *
+   * `both` est indispensable : sans lui, le mot serait pleinement visible
+   * AVANT le début de son délai, et toute la réponse s'afficherait d'un coup
+   * puis clignoterait. Avec `both`, il tient son état initial (invisible)
+   * pendant toute l'attente.
+   *
+   * Le texte reste dans le DOM du premier au dernier instant — seule
+   * l'opacité bouge. Une réponse à moitié révélée est déjà entièrement
+   * sélectionnable, copiable et lisible par un lecteur d'écran.
+   */
+  @keyframes word-in {
+    from {
+      opacity: 0;
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+    }
+  }
+
+  .reveal-word {
+    display: inline;
+    animation: word-in 260ms ease-out both;
+  }
+
+  /* Le libellé du bouton change de texte : un fondu court évite le saut. */
+  .label-swap {
+    animation: reveal-in 160ms ease-out both;
+  }
+
+  /* Le défilement tactile ne doit pas entraîner la page derrière. */
+  .scroll-contain {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/*
+ * Accessibilité : quand l'utilisateur demande moins d'animation, on ne
+ * SUPPRIME pas les transitions — on les réduit à un temps quasi nul. Les
+ * animations d'apparition restent ainsi fonctionnelles (l'élément finit
+ * visible) sans jamais bouger à l'écran.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    /* Le DÉCALAGE compte autant que la durée : sans cette ligne, une cascade
+       à 26 ms par élément ferait encore apparaître le dernier item une demi-
+       seconde plus tard, ce qui est exactement le mouvement dont on ne veut
+       pas ici. */
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
