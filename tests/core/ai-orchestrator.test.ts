@@ -184,12 +184,12 @@ describe('createOrchestrator — sélection du fournisseur (HUB)', () => {
    * fautif.
    */
   it('un fournisseur choisi mais NON CONFIGURÉ échoue franchement, sans jamais basculer sur un autre', async () => {
-    setPreferredProvider('gemini');
+    setPreferredProvider('openai');
     const anthropic = makeProvider('anthropic');
-    const orchestrator = createOrchestrator([anthropic, makeProvider('gemini', { available: false })]);
+    const orchestrator = createOrchestrator([anthropic, makeProvider('openai', { available: false })]);
 
     await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(MissingApiKeyError);
-    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(/gemini/i);
+    await expect(orchestrator.ask(BASE_OPTIONS)).rejects.toThrow(/openai/i);
   });
 
   it('un fournisseur choisi qui échoue propage SON erreur, sans jamais tenter un autre fournisseur', async () => {
@@ -241,11 +241,11 @@ describe('createOrchestrator — la sélection de l’utilisateur est strictemen
     expect(calls).toEqual(['openai']);
   });
 
-  it('sélection Gemini → Gemini appelé, et personne d’autre', async () => {
+  it('une ancienne sélection Gemini revient au routage des fournisseurs disponibles', async () => {
     setPreferredProvider('gemini');
     const { calls, providers } = makeTrio();
-    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de gemini');
-    expect(calls).toEqual(['gemini']);
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de anthropic');
+    expect(calls).toEqual(['anthropic']);
   });
 
   it('sélection Claude → Claude appelé, et personne d’autre', async () => {
@@ -293,16 +293,13 @@ describe('createOrchestrator — la sélection de l’utilisateur est strictemen
     expect(gemini).not.toHaveBeenCalled();
   });
 
-  it('une préférence PAR TÂCHE périmée reste strictement appliquée, jamais mélangée au choix général', async () => {
-    // Cas réel possible : « Gemini » réglé autrefois sur une tâche, puis
-    // « ChatGPT » choisi en général. La tâche réglée garde son fournisseur —
-    // et ne peut pas non plus retomber ailleurs en silence.
+  it('une ancienne préférence Gemini par tâche est retirée et suit le choix général', async () => {
     setPreferredProvider('openai');
     setTaskProviderPreference('chat-course', 'gemini');
     const { calls, providers } = makeTrio();
 
-    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de gemini');
-    expect(calls).toEqual(['gemini']);
+    expect(await createOrchestrator(providers).ask(BASE_OPTIONS)).toBe('réponse de openai');
+    expect(calls).toEqual(['openai']);
     // Une tâche SANS réglage propre suit bien, elle, le choix général.
     expect(await createOrchestrator(providers).ask({ ...BASE_OPTIONS, task: 'course-notions' })).toBe('réponse de openai');
   });
@@ -313,8 +310,8 @@ describe('createOrchestrator — la sélection de l’utilisateur est strictemen
     setPreferredProvider('openai');
     expect(resolveProviderChoice('chat-course')).toEqual({ providerId: 'openai', source: 'general' });
 
-    setTaskProviderPreference('chat-course', 'gemini');
-    expect(resolveProviderChoice('chat-course')).toEqual({ providerId: 'gemini', source: 'task' });
+    setTaskProviderPreference('chat-course', 'anthropic');
+    expect(resolveProviderChoice('chat-course')).toEqual({ providerId: 'anthropic', source: 'task' });
   });
 
   it('un fournisseur choisi qui ne sait pas faire la tâche le dit clairement, sans substitution', async () => {

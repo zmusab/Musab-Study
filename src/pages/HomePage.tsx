@@ -207,7 +207,7 @@ export function HomePage() {
         )}
         {nextExam && nextExam.masteryPct !== null && (
           <p className="mt-3 text-[0.78rem] text-[var(--ink-faint)]">
-            {nextExam.masteryPct}% des notions associées sont actuellement maîtrisées.
+            Indice de révision des cartes de cette matière : {nextExam.masteryPct} %. Cette estimation ne prédit pas ta note d’examen.
           </p>
         )}
         <Link to="/calendrier" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)] hover:underline">
@@ -267,6 +267,30 @@ export function HomePage() {
               <p className="mt-2 text-sm text-[var(--ink-soft)]">{nextExam ? eventTimingLabel(daysBetweenDayKeys(dayKey(), nextExam.event.day)) : 'Ajouter une échéance pour préparer mes révisions.'}</p>
             </Link>
           </div>
+        </StaggerItem>
+        <StaggerItem>
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Quand travailler cette semaine ?</h2>
+              <Link to="/calendrier?plan=week" className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)]">Préparer mon planning</Link>
+            </div>
+            {data.studyWindows ? (
+              <>
+                <p className="mt-1 text-sm text-[var(--ink-soft)]">Temps libre dans tes plages déclarées, après tes événements et cours récurrents. Aujourd’hui, seules les heures restantes comptent.</p>
+                <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {data.studyWindows.map((slot) => (
+                    <li key={slot.day} className={cn('rounded-xl border p-3', slot.minutes > 0 && slot.minutes === Math.max(...data.studyWindows!.map((day) => day.minutes)) ? 'border-[var(--accent)] bg-[var(--accent-tint)]' : 'border-[var(--line)]')}>
+                      <p className="text-sm text-[var(--ink-soft)]">{new Date(`${slot.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}</p>
+                      <p className="mt-2 text-base font-semibold">{Math.floor(slot.minutes / 60)} h {String(slot.minutes % 60).padStart(2, '0')}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-sm text-[var(--ink-soft)]">Les jours encadrés offrent le plus de temps. Ce sont des disponibilités, pas un objectif de travail continu.</p>
+              </>
+            ) : (
+              <p className="mt-2 text-base text-[var(--ink-soft)]">Renseigne tes disponibilités dans le calendrier pour identifier les jours où tu peux le plus étudier. Aucun horaire n’est supposé à ta place.</p>
+            )}
+          </Card>
         </StaggerItem>
         {/* Session recommandée — l'élément principal de l'accueil. */}
         <StaggerItem>

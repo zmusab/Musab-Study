@@ -152,12 +152,15 @@ describe('suspendre une carte', () => {
 describe('enterrer une carte', () => {
   it('la cache aujourd’hui et la rend demain', async () => {
     const card = await newCard('Quel muscle abaisse la mandibule ?');
-    const now = new Date(2026, 8, 14, 23, 50);
+    const now = new Date();
+    now.setHours(23, 50, 0, 0);
     await buryCard(card.id, now);
 
     expect(await listDueCards(subjectId, now)).toHaveLength(0);
 
-    const tomorrowMorning = new Date(2026, 8, 15, 7, 0);
+    const tomorrowMorning = new Date(now);
+    tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+    tomorrowMorning.setHours(7, 0, 0, 0);
     expect(await listDueCards(subjectId, tomorrowMorning)).toHaveLength(1);
   });
 

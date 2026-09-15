@@ -24,6 +24,7 @@ let inFlight: Promise<void> | null = null;
 
 /** Lecture synchrone — c'est tout ce que `AIProvider.isAvailable()` peut consulter. */
 export function isProxyProviderAvailable(id: ProxyProviderId): boolean {
+  if (id === 'gemini') return false;
   return cache[id] === 'configured';
 }
 
@@ -45,7 +46,7 @@ export async function refreshProviderStatus(): Promise<void> {
       const data: unknown = await response.json();
       const record = data as { openai?: unknown; gemini?: unknown };
       cache.openai = record.openai === true ? 'configured' : 'not-configured';
-      cache.gemini = record.gemini === true ? 'configured' : 'not-configured';
+      cache.gemini = 'not-configured';
     } catch {
       // Pas de fonctions serverless disponibles (statique pur) ou panne
       // réseau : ni l'un ni l'autre n'est une preuve d'indisponibilité

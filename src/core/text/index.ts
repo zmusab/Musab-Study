@@ -57,6 +57,7 @@ export const QUESTION_WORDS: ReadonlySet<string> = new Set([
   'stp', 'svp', 'merci', 'please', 'rapidement', 'simplement', 'vraiment', 'exactement',
   'precisement', 'brievement', 'clairement', 'facilement', 'vite', 'petit', 'peu', 'bien',
   'court', 'courte', 'resume', 'resumer', 'detail', 'details', 'detaille',
+  'encore', 'toujours',
 ]);
 
 /** Minuscules + suppression des diacritiques. « masséter » et « masseter » se correspondent. */

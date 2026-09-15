@@ -40,7 +40,7 @@ const runtime = typeof globalThis !== 'undefined' && 'EdgeRuntime' in globalThis
  */
 export default async function handler(): Promise<Response> {
   const openaiConfigured = hasEnvValue(process.env.OPENAI_API_KEY);
-  const geminiConfigured = hasEnvValue(process.env.GEMINI_API_KEY);
+  const geminiConfigured = false; // Legacy response fields retained for older installed clients.
 
   return jsonResponse({
     // Champs historiques, consommés par `services/ai/providerStatus.ts` — inchangés.

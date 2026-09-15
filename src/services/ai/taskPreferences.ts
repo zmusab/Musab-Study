@@ -29,7 +29,7 @@ export const CONFIGURABLE_TASKS: { task: AITask; label: string }[] = [
 ];
 
 function isProviderId(value: unknown): value is ProviderId {
-  return value === 'anthropic' || value === 'openai' || value === 'gemini';
+  return value === 'anthropic' || value === 'openai';
 }
 
 function readAll(): Partial<Record<AITask, ProviderId>> {

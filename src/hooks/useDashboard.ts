@@ -3,7 +3,9 @@ import { db } from '@/data/db';
 import { listAllDueCards } from '@/data/repositories/cards';
 import { listRecentlyOpenedDocuments, type DocumentSummary } from '@/data/repositories/documents';
 import { DEFAULT_PROFILE } from '@/data/repositories/profile';
-import { dayKey } from '@/lib/date';
+import { addDays, dayKey } from '@/lib/date';
+import { normalizeAvailability, availabilityFor, busyRanges, freeMinutesRemaining } from '@/core/calendar/availability';
+import { expandRecurring } from '@/core/calendar/recurrence';
 import { averageMastery } from '@/core/mastery';
 import {
   averageElapsedMs,
@@ -25,6 +27,7 @@ export interface UpcomingExam {
 }
 
 export interface DashboardData {
+  studyWindows: { day: string; minutes: number }[] | null;
   hasAnySubject: boolean;
   greeting: string;
   dueTriage: DueTriage;
@@ -55,7 +58,7 @@ export function useDashboard(): DashboardData | undefined {
       allCards,
       logs,
       recentDocuments,
-      upcomingEvents,
+      calendarRows,
       profile,
     ] = await Promise.all([
       db.subjects.toArray(),
@@ -63,7 +66,7 @@ export function useDashboard(): DashboardData | undefined {
       db.flashcards.toArray(),
       db.reviewLogs.toArray(),
       listRecentlyOpenedDocuments(RECENT_DOCUMENTS_SCAN),
-      db.calendarEvents.where('day').aboveOrEqual(today).sortBy('day'),
+      db.calendarEvents.toArray(),
       db.profile.get('me'),
     ]);
 
@@ -84,7 +87,13 @@ export function useDashboard(): DashboardData | undefined {
       weakCount: weakConcepts.length,
     });
 
-    const firstExam = upcomingEvents.find((event) => event.kind === 'exam') ?? null;
+    const upcomingEvents = expandRecurring(calendarRows, today, dayKey(addDays(now, 400))).sort((a, b) => a.day.localeCompare(b.day));
+    const availability = profile?.availability ? normalizeAvailability(profile.availability) : null;
+    const studyWindows = availability ? Array.from({ length: 7 }, (_, offset) => {
+      const day = dayKey(addDays(now, offset));
+      return { day, minutes: freeMinutesRemaining(availabilityFor(availability, day), busyRanges(upcomingEvents, day), offset === 0 ? now.getHours() * 60 + now.getMinutes() : 0) };
+    }) : null;
+    const firstExam = upcomingEvents.find((event) => event.kind === 'exam' && !event.done) ?? null;
     let nextExam: UpcomingExam | null = null;
     if (firstExam) {
       const subjectCards = firstExam.subjectId
@@ -92,11 +101,12 @@ export function useDashboard(): DashboardData | undefined {
         : [];
       nextExam = {
         event: firstExam,
-        masteryPct: subjectCards.length > 0 ? averageMastery(subjectCards) : null,
+        masteryPct: subjectCards.some((card) => logs.some((log) => log.itemKind === 'card' && log.itemId === card.id)) ? averageMastery(subjectCards) : null,
       };
     }
 
     return {
+      studyWindows,
       hasAnySubject: subjects.length > 0,
       greeting,
       dueTriage,

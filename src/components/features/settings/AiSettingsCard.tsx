@@ -42,7 +42,6 @@ import type { AiUsageDay } from '@/types';
 const PROVIDERS: { id: ProviderId; label: string }[] = [
   { id: 'anthropic', label: 'Claude' },
   { id: 'openai', label: 'ChatGPT' },
-  { id: 'gemini', label: 'Gemini' },
 ];
 
 const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
@@ -310,8 +309,7 @@ export function AiSettingsCard() {
           <div>
             <p className="mb-2 text-[0.83rem] font-medium">Clé Claude</p>
             <p className="mb-2.5 text-[0.78rem] leading-relaxed text-[var(--ink-soft)]">
-              Enregistrée <strong>uniquement sur cet appareil</strong>, jamais incluse dans tes sauvegardes. ChatGPT et
-              Gemini n’ont rien à saisir ici : leurs clés vivent côté serveur.
+              Enregistrée <strong>uniquement sur cet appareil</strong>, jamais incluse dans tes sauvegardes. La clé ChatGPT est configurée côté serveur.
             </p>
             {storedKey ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--line)] px-3.5 py-2.5">
@@ -428,17 +426,11 @@ export function AiSettingsCard() {
 
           <div className="rounded-[var(--radius-control)] bg-[var(--surface-2)]/60 px-3.5 py-3 text-[0.78rem] leading-relaxed text-[var(--ink-soft)]">
             <p>
-              <strong>ChatGPT et Gemini</strong> n’autorisent pas l’appel direct depuis un navigateur : Musab Study les
-              relaie par de petites fonctions serveur, dont les clés vivent dans les variables d’environnement du
-              déploiement. Sans ce relais, ils restent indisponibles et Claude fonctionne seul.
+              <strong>Le tuteur local fonctionne sans clé et sans appel à un modèle externe.</strong> ChatGPT et Claude sont des options supplémentaires à déclencher explicitement. La clé ChatGPT reste côté serveur.
             </p>
             <p className="mt-2">
               <strong>Recherche web</strong> : seul Claude la pratique réellement aujourd’hui. Le mode Internet le
               signale plutôt que de faire croire à une recherche qui n’a pas eu lieu.
-            </p>
-            <p className="mt-2">
-              <strong>Gemini Education</strong> est une offre de licence, pas une API distincte — le fournisseur
-              Gemini ci-dessus la couvre.
             </p>
             <p className="mt-2">
               <strong>Abonnement ChatGPT (Plus/Pro) et API OpenAI sont deux facturations séparées.</strong> Payer

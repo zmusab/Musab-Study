@@ -26,8 +26,8 @@ describe('taskPreferences — par tâche, jamais une supposition par défaut', (
   });
 
   it('enregistre et relit une préférence précise', () => {
-    setTaskProviderPreference('flashcards-generate', 'gemini');
-    expect(getTaskProviderPreference('flashcards-generate')).toBe('gemini');
+    setTaskProviderPreference('flashcards-generate', 'openai');
+    expect(getTaskProviderPreference('flashcards-generate')).toBe('openai');
     // Les autres tâches restent inchangées.
     expect(getTaskProviderPreference('chat-course')).toBe('auto');
   });
@@ -63,8 +63,8 @@ describe('settings — préférence générale de fournisseur', () => {
   });
 
   it('enregistre et relit un choix explicite', () => {
-    setPreferredProvider('gemini');
-    expect(getPreferredProvider()).toBe('gemini');
+    setPreferredProvider('openai');
+    expect(getPreferredProvider()).toBe('openai');
   });
 
   it('revenir à "auto" efface le choix', () => {

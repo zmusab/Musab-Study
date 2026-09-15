@@ -21,24 +21,12 @@ import {
 } from '@/services/ai/tutor';
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
-import { findLocalAnswer } from '@/services/local/localAnswer';
+import { answerWithStudyTutor, resolveStudyQuestion, studyTopic } from '@/services/local/studyTutor';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
 
-/**
- * IA — une page, une conversation.
- *
- * Tout ce qui n'est pas « poser une question » est SECONDAIRE et le reste
- * visuellement : quatre intentions ouvrent le reste des actions à la
- * demande (`AssistantSheet`), la source et l'assistant tiennent sur une
- * ligne discrète. Aucune capacité n'a disparu — elles sont regroupées.
- */
-
 type Mode = 'cours' | 'internet';
-
-/** Nombre de fragments transmis au modèle. */
 const RETRIEVAL_LIMIT = 8;
-
 const INTENTS: { category: AssistantCategory; label: string }[] = [
   { category: 'comprendre', label: 'Comprendre' },
   { category: 'etudier', label: 'Étudier' },
@@ -46,21 +34,11 @@ const INTENTS: { category: AssistantCategory; label: string }[] = [
   { category: 'examen', label: "Préparer l'examen" },
 ];
 
-/**
- * « Automatique » ne veut plus dire « choisir une API automatiquement » —
- * ambigu, c'est exactement ce qui provoquait un appel réseau (et son échec
- * possible, ex. Gemini indisponible) sans que l'étudiant l'ait demandé. En
- * mode « Mes cours », l'IA n'est JAMAIS appelée automatiquement, quel que
- * soit ce réglage : voir `respond()`, qui tente toujours le moteur local
- * d'abord et n'appelle un fournisseur que via l'action explicite
- * « Répondre avec l'IA ». Ce réglage ne fait que choisir QUEL fournisseur
- * répond une fois cette action déclenchée.
- */
+/** External provider selection applies only after an explicit external-AI request. */
 const ASSISTANT_OPTIONS: { value: PreferredProvider; label: string }[] = [
   { value: 'auto', label: 'Automatique' },
   { value: 'anthropic', label: 'Claude' },
   { value: 'openai', label: 'ChatGPT' },
-  { value: 'gemini', label: 'Gemini' },
 ];
 
 const INSUFFICIENT_LOCAL_TEXT =
@@ -85,6 +63,7 @@ export function ChatPage() {
   /** Question en attente d'un choix explicite « Répondre avec l'IA » — jamais déclenché automatiquement. */
   const [awaitingAiChoice, setAwaitingAiChoice] = useState<string | null>(null);
   const [aiRequested, setAiRequested] = useState(false);
+  const topicRef = useRef<{ subject: string; chapter: string; topic: string } | null>(null);
 
   const chapters = useChapters(subjectId || undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -155,11 +134,14 @@ export function ChatPage() {
    */
   const respond = async (trimmed: string, options: { forceAi: boolean }) => {
     try {
+      const previous = topicRef.current;
+      const resolvedQuestion = resolveStudyQuestion(trimmed,
+        previous?.subject === subjectId && previous.chapter === chapterId ? previous.topic : undefined);
       const chunks = await listChunks({
         subjectId,
         chapterId: chapterId === 'all' ? null : chapterId,
       });
-      const scored = bm25Retriever.retrieve(trimmed, chunks, RETRIEVAL_LIMIT);
+      const scored = bm25Retriever.retrieve(resolvedQuestion, chunks, RETRIEVAL_LIMIT);
 
       const [subjectRows, chapterRows, documentRows] = await Promise.all([
         db.subjects.toArray(),
@@ -197,33 +179,22 @@ export function ChatPage() {
       // ── Mode « Mes cours », sans demande explicite d'IA : moteur local
       //    d'abord (même moteur que les flashcards/notions locales), jamais
       //    d'appel réseau tant que l'étudiant ne l'a pas demandé lui-même. ──
-      if (mode === 'cours' && !options.forceAi && !aiOrchestrator.hasAvailableProvider()) {
-        const local = findLocalAnswer(trimmed, scored, lookup);
+      if (mode === 'cours' && !options.forceAi) {
+        const local = answerWithStudyTutor(resolvedQuestion, scored, lookup);
         if (local) {
+          if (local.citations.length > 0) topicRef.current = { subject: subjectId, chapter: chapterId, topic: studyTopic(resolvedQuestion) };
           await appendChatMessage({
             subjectId,
             role: 'assistant',
             text: local.text,
-            provenance: 'course-local',
+            provenance: local.citations.length > 0 ? 'course-local' : 'insufficient',
             citations: local.citations,
           });
           setAwaitingAiChoice(null);
           return;
         }
 
-        /*
-          AVANT L'IMPASSE : LA NOMENCLATURE.
-
-          « Ce n'est pas dans tes cours » est honnête, et c'est un cul-de-sac.
-          L'application connaît pourtant 961 structures anatomiques — 305 pour
-          la seule tête et le cou, dont 109 nerfs et les 28 dents permanentes
-          avec leur numérotation FDI — déjà présentes hors ligne pour la vue
-          3D. Ne rien en dire alors qu'on les a sous la main n'aide personne.
-
-          Ce n'est PAS du cours, et l'interface le dit : nom latin, famille,
-          région, et de quoi aller voir la structure en 3D. Le trajet et les
-          rapports restent dans le document, qui reste à importer.
-        */
+        // No catalog fallback: nomenclature is not an explanation from the course.
 
         await appendChatMessage({
           subjectId,
@@ -528,7 +499,7 @@ export function ChatPage() {
                       : 'text-[var(--ink-soft)] hover:bg-[var(--surface-2)]',
                   )}
                 >
-                  {value === 'cours' ? 'Mes cours' : 'Cours + Internet'}
+                  {value === 'cours' ? 'Tuteur local · mes cours' : 'Cours + Internet (IA externe)'}
                 </button>
               ))}
             </div>

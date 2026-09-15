@@ -18,6 +18,18 @@ const originalFetch = global.fetch;
 const originalOpenAiKey = process.env.OPENAI_API_KEY;
 const originalGeminiKey = process.env.GEMINI_API_KEY;
 
+it('retires Gemini even for an old client with a configured server key', async () => {
+  process.env.GEMINI_API_KEY = 'obsolete-test-key';
+  const network = vi.fn();
+  global.fetch = network as unknown as typeof fetch;
+  const response = await geminiHandler(askRequest({ system: 's', prompt: 'p' }));
+  expect(response.status).toBe(410);
+  expect(network).not.toHaveBeenCalled();
+  expect((await statusHandler()).status).toBe(200);
+  const status = await (await statusHandler()).json();
+  expect(status.gemini).toBe(false);
+});
+
 beforeEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.GEMINI_API_KEY;
@@ -42,7 +54,6 @@ function askRequest(body: unknown): Request {
 
 describe.each([
   { name: 'OpenAI', handler: openaiHandler, envVar: 'OPENAI_API_KEY', upstreamHost: 'api.openai.com' },
-  { name: 'Gemini', handler: geminiHandler, envVar: 'GEMINI_API_KEY', upstreamHost: 'generativelanguage.googleapis.com' },
 ])('api/ai/$name — relais serveur', ({ handler, envVar, upstreamHost }) => {
   it('refuse une méthode autre que POST', async () => {
     const response = await handler(new Request('http://localhost/api/ai/x', { method: 'GET' }));
@@ -222,25 +233,6 @@ describe.each([
  * part RÉELLEMENT sur le réseau, pas une constante recopiée.
  */
 describe('api/ai/* — le modèle par défaut appartient bien au fournisseur appelé', () => {
-  it('Gemini appelle un modèle de la famille gemini-*', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    let calledUrl = '';
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      calledUrl = url;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
-      } as Response);
-    }) as unknown as typeof fetch;
-
-    await geminiHandler(askRequest({ system: 's', prompt: 'p' }));
-
-    const model = decodeURIComponent(calledUrl.split('/models/')[1]?.split(':')[0] ?? '');
-    expect(model).toMatch(/^gemini-/);
-    // La gamme « transcribe » ne répond pas à generateContent.
-    expect(model).not.toContain('transcribe');
-  });
 
   it('OpenAI appelle un modèle de la famille gpt-*', async () => {
     process.env.OPENAI_API_KEY = 'test-key-never-real';
@@ -256,114 +248,6 @@ describe('api/ai/* — le modèle par défaut appartient bien au fournisseur app
 
     await openaiHandler(askRequest({ system: 's', prompt: 'p' }));
     expect(sentModel).toMatch(/^(gpt|o\d)/);
-  });
-});
-
-/**
- * Google répond 400 (et non 401) quand la clé est invalide — d'où le
- * message « Gemini a refusé la requête (400) » observé en production, qui ne
- * disait rien d'exploitable. Le relais lit désormais le CODE de raison
- * structuré pour le classer correctement, sans jamais renvoyer ni le corps
- * brut de Google ni la moindre valeur de clé.
- */
-describe('api/ai/gemini — un 400 « clé invalide » est nommé, jamais laissé cryptique', () => {
-  const googleInvalidKeyBody = {
-    error: {
-      code: 400,
-      message: 'API key not valid. Please pass a valid API key.',
-      status: 'INVALID_ARGUMENT',
-      details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }],
-    },
-  };
-
-  it('400 + reason API_KEY_INVALID devient une erreur d’authentification explicite', async () => {
-    process.env.GEMINI_API_KEY = 'cle-invalide-jamais-reelle';
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 400, json: async () => googleInvalidKeyBody }) as unknown as typeof fetch;
-
-    const response = await geminiHandler(askRequest({ system: 's', prompt: 'p' }));
-    const body = await response.json();
-
-    expect(body.error).toBe('upstream_auth');
-    expect(body.message).toMatch(/GEMINI_API_KEY/);
-    expect(JSON.stringify(body)).not.toContain('cle-invalide-jamais-reelle');
-  });
-
-  it('un 400 sans raison connue reste signalé tel quel, jamais requalifié à tort', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { code: 400 } }) }) as unknown as typeof fetch;
-
-    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
-    expect(body.error).toBe('upstream_error');
-    expect(body.message).toContain('400');
-  });
-
-  it('un 404 (modèle inconnu) le dit, au lieu d’un refus générique', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }) as unknown as typeof fetch;
-
-    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
-    expect(body.error).toBe('upstream_error');
-    expect(body.message).toMatch(/modèle/i);
-  });
-});
-
-/**
- * LA cause des réponses vides et des blocages Gemini observés en production :
- * les modèles Gemini 3.x réfléchissent par défaut, et ces jetons sont
- * décomptés de `maxOutputTokens`. Un budget serré part donc entièrement en
- * réflexion, sans qu'une seule ligne de réponse soit rédigée.
- */
-describe('api/ai/gemini — le budget de réponse laisse toujours de quoi répondre', () => {
-  function captureBody(): { read: () => Record<string, unknown> } {
-    let sent: Record<string, unknown> = {};
-    global.fetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
-      sent = JSON.parse(String(init.body));
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
-      } as Response);
-    }) as unknown as typeof fetch;
-    return { read: () => sent };
-  }
-
-  it('un budget minuscule est relevé — sinon la réflexion consomme tout', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    const captured = captureBody();
-
-    await geminiHandler(askRequest({ system: 's', prompt: 'p', maxTokens: 16 }));
-
-    const config = captured.read().generationConfig as { maxOutputTokens: number };
-    expect(config.maxOutputTokens).toBeGreaterThanOrEqual(2048);
-  });
-
-  it('un budget déjà confortable n’est jamais réduit', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    const captured = captureBody();
-
-    await geminiHandler(askRequest({ system: 's', prompt: 'p', maxTokens: 8192 }));
-
-    const config = captured.read().generationConfig as { maxOutputTokens: number };
-    expect(config.maxOutputTokens).toBe(8192);
-  });
-
-  it('une réponse sans texte pour cause de budget épuisé le dit, au lieu d’un « format inattendu »', async () => {
-    process.env.GEMINI_API_KEY = 'test-key-never-real';
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] }),
-    }) as unknown as typeof fetch;
-
-    const body = await (await geminiHandler(askRequest({ system: 's', prompt: 'p' }))).json();
-    expect(body.error).toBe('invalid_response');
-    expect(body.message).toMatch(/réflexion/i);
   });
 });
 
