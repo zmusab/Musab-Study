@@ -4,6 +4,7 @@ import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 
 /** Local conversation policy. No network, generated medical facts or model dependency. */
 export function resolveStudyQuestion(question: string, previousTopic?: string): string {
+  question = question.replace(/\b(nerfs?)d\s+e\b/gi, '$1 de');
   const normalized = normalizeText(question).trim();
   const followUp = /^(?:et\s+)?(?:son role|son trajet|ses branches|a quoi ca sert|ou passe.t.il|explique(?:.moi)? (?:encore|plus simplement)|plus simplement|je (?:ne )?comprends (?:toujours )?pas)[\s?.!]*$/;
   return previousTopic && followUp.test(normalized)
@@ -29,7 +30,7 @@ export function answerWithStudyTutor(
       citations: [],
     };
   }
-  const answer = findLocalAnswer(question, chunks, lookup);
+  const answer = findLocalAnswer(resolveStudyQuestion(question), chunks, lookup);
   if (!answer) return null;
   const explanatory = /comprend|comprendre|expliqu|simplement/.test(normalized);
   if (!explanatory) return answer;
@@ -37,10 +38,9 @@ export function answerWithStudyTutor(
   // A teaching scaffold surrounds extracted content; facts remain attributable to the course.
   return {
     ...answer,
-    text: 'On reprend étape par étape, à partir des passages de ton cours.\n\n' + answer.text +
+    text: answer.text +
       '\n\n### Pour comprendre et retenir\n' +
       'Lis un bloc à la fois, puis cache-le et reformule son idée principale avec tes mots. Pour un trajet, note les lieux dans leur ordre ; pour une division, dessine les branches à partir du même point.\n\n' +
-      '**À toi : quel point de cette explication peux-tu déjà reformuler, et lequel reste flou ?**\n\n' +
-      '_Réponse locale : les passages sont sélectionnés et organisés, sans vérification Internet. Ouvre les sources pour garder le contexte._',
+      '**À toi : quel point reste flou : le rôle, le trajet ou les branches ?**',
   };
 }

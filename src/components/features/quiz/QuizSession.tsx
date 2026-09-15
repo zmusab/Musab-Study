@@ -11,9 +11,9 @@ const DIFFICULTY_LABEL: Record<1 | 2 | 3, string> = { 1: 'Facile', 2: 'Moyen', 3
  * dit explicitement « estimée », jamais « tombera à l'examen ».
  */
 const EXAM_LIKELIHOOD_META: Record<'high' | 'medium' | 'low', { label: string; color: string }> = {
-  high: { label: 'Probabilité élevée', color: 'var(--mastery-3)' },
-  medium: { label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
-  low: { label: 'Probabilité faible', color: 'var(--mastery-1)' },
+  high: { label: 'Priorité élevée', color: 'var(--mastery-3)' },
+  medium: { label: 'Priorité moyenne', color: 'var(--mastery-2)' },
+  low: { label: 'Priorité faible', color: 'var(--mastery-1)' },
 };
 
 /**

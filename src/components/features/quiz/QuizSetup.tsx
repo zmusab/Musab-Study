@@ -31,7 +31,7 @@ const SCOPE_META: { id: ScopeId; label: string; hint: string }[] = [
   { id: 'weak', label: 'Mes points faibles', hint: 'Les chapitres où ton taux de réussite mesuré est le plus bas.' },
   { id: 'due', label: 'Mes cartes à revoir', hint: 'Ce que la répétition espacée programme aujourd’hui.' },
   { id: 'exam', label: 'Avant un examen', hint: 'La matière d’une évaluation à venir, chapitres faibles en tête.' },
-  { id: 'exam-likely', label: 'Examen probable', hint: 'Estimation des notions les plus susceptibles d’être évaluées — jamais une certitude.' },
+  { id: 'exam-likely', label: 'Préparation examen', hint: 'Questions classées selon les notions importantes et tes difficultés. La difficulté réelle de ton examen nécessite des annales de référence.' },
 ];
 
 const COUNT_OPTIONS = [5, 10, 15, 20];
@@ -389,7 +389,7 @@ export function QuizSetup({
       {scopeId === 'exam-likely' && (
         <section className="flex flex-col gap-3" data-quiz-exam-likely-panel>
           <div>
-            <p className="text-[0.92rem] font-semibold">Questions probables</p>
+            <p className="text-[0.92rem] font-semibold">Questions prioritaires</p>
             <p className="mt-0.5 text-[0.8rem] leading-relaxed text-[var(--ink-faint)]">
               Estimation basée sur le contenu disponible.
             </p>

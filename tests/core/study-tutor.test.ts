@@ -9,6 +9,17 @@ function chunks(text: string): ScoredChunk[] {
 }
 
 describe('tuteur local', () => {
+  it('corrige la séparation fautive et ne réaffiche pas les mots déformés en titre', () => {
+    const question = 'Je ne comprends pas les nerfsd e willis';
+    expect(resolveStudyQuestion(question)).toBe('Je ne comprends pas les nerfs de willis');
+    const answer = answerWithStudyTutor(question, chunks('Le nerf ophtalmique de Willis\n• Il chemine par le canal interne.\n• Il entre dans le sinus caverneux.\n• Il se divise en trois branches :\n§ Nerf naso-ciliaire\n§ Nerf frontal\n§ Nerf lacrymal'), lookup);
+    expect(answer).not.toBeNull();
+    expect(answer!.text).toContain('lacrymal');
+    expect(answer!.text).not.toContain('nerfsd');
+    expect(answer!.text).not.toContain('Réponse locale');
+    expect(answer!.text).not.toContain('Le moteur local');
+    expect(answer!.citations.length).toBeGreaterThan(0);
+  });
   it('demande de clarifier optique/ophtalmique au lieu de changer de nerf', () => {
     const answer = answerWithStudyTutor('je comprends pas les nerfs optique', chunks('Le nerf ophtalmique de Willis se divise en trois branches : nerf naso-ciliaire, nerf frontal et nerf lacrymal.'), lookup);
     expect(answer?.text).toContain('Les deux noms ne sont pas interchangeables');

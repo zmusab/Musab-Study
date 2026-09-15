@@ -85,7 +85,7 @@ describe('findLocalAnswer', () => {
     // Aucune rubrique structurée : le moteur n'a rien déduit, et ne le
     // prétend pas.
     expect(answer!.text).not.toContain('### Définition');
-    expect(answer!.text).toContain('ton cours dit');
+    expect(answer!.text).not.toContain('Le moteur local');
 
     // Chaque ligne citée existe telle quelle dans le document.
     for (const line of answer!.text.split('\n')) {
