@@ -1,0 +1,134 @@
+import { AnimatePresence } from 'motion/react';
+import { lazy, Suspense, useEffect } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { AppShell } from '@/components/layout/AppShell';
+import { ConfirmProvider, ToastProvider, Spinner } from '@/components/ui';
+import { ThemeProvider } from '@/hooks/useTheme';
+import { refreshProviderStatus } from '@/services/ai/providerStatus';
+import { runPendingReindex } from '@/services/local/autoReindex';
+import { MorePage } from '@/pages/MorePage';
+
+/**
+ * Routage en HashRouter.
+ *
+ * GitHub Pages et Vercel n'ont pas de réécriture d'URL identique côté serveur :
+ * avec des chemins classiques, ouvrir directement /revisions pourrait renvoyer
+ * une 404 selon l'hébergeur. Le hash garde les liens profonds fonctionnels
+ * partout, y compris depuis l'écran d'accueil iOS une fois l'application
+ * installée.
+ *
+ * Les écrans qui embarquent une dépendance lourde (pdf.js pour les Cours, le
+ * SDK Anthropic pour l'IA) sont chargés à la demande : ouvrir
+ * l'application pour réviser des flashcards ne doit pas télécharger
+ * l'extracteur PDF. `Suspense` affiche un indicateur cohérent avec le reste de
+ * l'interface pendant le chargement du code de la page.
+ */
+
+const CoursesPage = lazy(() => import('@/pages/CoursesPage').then((m) => ({ default: m.CoursesPage })));
+const SubjectDetailPage = lazy(() =>
+  import('@/pages/SubjectDetailPage').then((m) => ({ default: m.SubjectDetailPage })),
+);
+const ChatPage = lazy(() => import('@/pages/ChatPage').then((m) => ({ default: m.ChatPage })));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const FlashcardsPage = lazy(() =>
+  import('@/pages/FlashcardsPage').then((m) => ({ default: m.FlashcardsPage })),
+);
+const RecherchePage = lazy(() =>
+  import('@/pages/RecherchePage').then((m) => ({ default: m.RecherchePage })),
+);
+const RevisionsPage = lazy(() =>
+  import('@/pages/RevisionsPage').then((m) => ({ default: m.RevisionsPage })),
+);
+const PdfViewerPage = lazy(() =>
+  import('@/pages/PdfViewerPage').then((m) => ({ default: m.PdfViewerPage })),
+);
+const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
+const AnatomyPage = lazy(() => import('@/pages/AnatomyPage').then((m) => ({ default: m.AnatomyPage })));
+const ProgressionPage = lazy(() =>
+  import('@/pages/ProgressionPage').then((m) => ({ default: m.ProgressionPage })),
+);
+const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+const QuizPage = lazy(() => import('@/pages/QuizPage').then((m) => ({ default: m.QuizPage })));
+const NotesPage = lazy(() => import('@/pages/NotesPage').then((m) => ({ default: m.NotesPage })));
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center py-24 text-[var(--ink-faint)]">
+      <Spinner size={22} />
+    </div>
+  );
+}
+
+function AnimatedRoutes() {
+  const location = useLocation();
+
+  return (
+    // `mode="wait"` : la page sortante disparaît avant l'entrée de la suivante,
+    // sinon la hauteur du document sauterait pendant la transition.
+    <AnimatePresence mode="wait" initial={false}>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/cours" element={<CoursesPage />} />
+          <Route path="/cours/:subjectId" element={<SubjectDetailPage />} />
+          <Route path="/document/:documentId" element={<PdfViewerPage />} />
+          <Route path="/ia" element={<ChatPage />} />
+          <Route path="/revisions" element={<RevisionsPage />} />
+          <Route path="/flashcards" element={<FlashcardsPage />} />
+          <Route path="/quiz" element={<QuizPage />} />
+          <Route path="/progression" element={<ProgressionPage />} />
+          <Route path="/anatomie" element={<AnatomyPage />} />
+          <Route path="/calendrier" element={<CalendarPage />} />
+          <Route path="/notes" element={<NotesPage />} />
+          <Route path="/recherche" element={<RecherchePage />} />
+          <Route path="/plus" element={<MorePage />} />
+          <Route path="/parametres" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </AnimatePresence>
+  );
+}
+
+export function App() {
+  // Vérifie une fois, au démarrage, si un relais serveur IA (OpenAI/Gemini)
+  // est configuré — voir `services/ai/providerStatus.ts`. Sur un
+  // hébergement statique pur (GitHub Pages, aperçu local), l'appel échoue
+  // silencieusement et les deux restent indisponibles, sans rien casser.
+  useEffect(() => {
+    void refreshProviderStatus();
+  }, []);
+
+  /*
+    Les cours importés AVANT la correction de l'extraction PDF gardent en base
+    un texte aplati — et l'assistant répond alors « absent de tes cours » sur
+    un sujet pourtant traité. La remise à niveau se fait ici, SEULE, une fois.
+
+    Un bouton existait dans les Paramètres : il fallait le trouver et savoir
+    qu'on en avait besoin, ce que rien n'indiquait à quelqu'un qui constate
+    juste que « l'IA n'arrive pas à répondre ». Il reste disponible pour un
+    retraitement manuel, mais il n'est plus la condition du bon
+    fonctionnement.
+
+    L'appel n'est pas attendu : l'interface s'affiche pendant ce temps, et
+    toute erreur est absorbée par `runPendingReindex` sans avancer la version
+    — un prochain lancement réessaiera.
+  */
+  useEffect(() => {
+    void runPendingReindex();
+  }, []);
+
+  return (
+    <ThemeProvider>
+      <ToastProvider>
+        <ConfirmProvider>
+          <HashRouter>
+            <AppShell>
+              <AnimatedRoutes />
+            </AppShell>
+          </HashRouter>
+        </ConfirmProvider>
+      </ToastProvider>
+    </ThemeProvider>
+  );
+}

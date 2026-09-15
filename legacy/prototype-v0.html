@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Musab Study OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#F7F6F3; --surface:#FFFFFF; --surface-2:#F0EFEA; --ink:#1B1D1F; --ink-soft:#6C7076;
+  --line:#E4E1D8; --accent:#3F4FD1; --accent-dark:#2E3BA8; --accent-tint:#E9EAFB;
+  --warn:#E8734A; --warn-tint:#FBE7DE; --good:#1F8A5F;
+  --m0:#D6484A; --m1:#E38A3F; --m2:#DDB53C; --m3:#4FA35C; --m4:#3F6FD1;
+  --radius:8px;
+}
+[data-theme="dark"]{
+  --bg:#15171A; --surface:#1D2024; --surface-2:#24282D; --ink:#EDEDEC; --ink-soft:#989DA4;
+  --line:#2C3036; --accent:#8490F5; --accent-dark:#6B78E8; --accent-tint:#262A45;
+  --warn:#EE8C63; --warn-tint:#3A2A22; --good:#3FB37D;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--bg); color:var(--ink); font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased; display:flex; min-height:100vh;}
+h1,h2,h3{font-family:'Newsreader',serif; font-weight:600; margin:0 0 6px 0; letter-spacing:-0.01em;}
+h1{font-size:1.7rem;} h2{font-size:1.2rem;} h3{font-size:1.02rem;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+a{color:var(--accent-dark);}
+button{font-family:'Inter';}
+
+.sidebar{width:224px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--line); padding:18px 12px; position:sticky; top:0; height:100vh; overflow-y:auto; transition:width .18s ease; display:flex; flex-direction:column; gap:18px;}
+.sidebar.collapsed{width:60px;}
+.sidebar.collapsed .label, .sidebar.collapsed .brand-sub{display:none;}
+.brand{padding:4px 8px 8px;}
+.brand h1{font-size:1.15rem; margin-bottom:0;}
+.brand-sub{font-size:0.74rem; color:var(--ink-soft); margin-top:2px;}
+.collapse-btn{background:none; border:1px solid var(--line); border-radius:6px; width:26px; height:26px; cursor:pointer; color:var(--ink-soft); align-self:flex-end;}
+.navlist{display:flex; flex-direction:column; gap:2px;}
+.navitem{display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:6px; cursor:pointer; color:var(--ink-soft); font-size:0.88rem; font-weight:500; border:none; background:none; text-align:left; width:100%;}
+.navitem:hover{background:var(--surface-2);}
+.navitem.active{background:var(--accent-tint); color:var(--accent-dark); font-weight:600;}
+.navitem .ic{font-size:1.05rem; width:20px; text-align:center;}
+.sidebar-foot{margin-top:auto; display:flex; flex-direction:column; gap:8px;}
+.theme-toggle{display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem; color:var(--ink-soft); cursor:pointer;}
+
+.content{flex:1; min-width:0;}
+main{max-width:760px; margin:0 auto; padding:26px 22px 40px;}
+@keyframes fadeIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+.view-anim{animation:fadeIn .22s ease;}
+section[hidden]{display:none;}
+
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:14px;}
+.hairline-list > *{border-bottom:1px solid var(--line); padding:13px 0;}
+.hairline-list > *:first-child{padding-top:0;}
+.hairline-list > *:last-child{border-bottom:none; padding-bottom:0;}
+.muted{color:var(--ink-soft); font-size:0.89rem; line-height:1.5;}
+.empty{text-align:center; padding:30px 16px; color:var(--ink-soft); border:1px dashed var(--line); border-radius:var(--radius); font-size:0.9rem;}
+
+label{display:block; font-size:0.8rem; color:var(--ink-soft); margin-bottom:5px; font-weight:600;}
+input[type=text], input[type=date], textarea, select{width:100%; font-family:'Inter'; font-size:0.94rem; border:1px solid var(--line); border-radius:6px; padding:9px 10px; background:var(--bg); color:var(--ink);}
+textarea{min-height:110px; resize:vertical; line-height:1.5;}
+input:focus, textarea:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px;}
+.field{margin-bottom:13px;}
+.row{display:flex; gap:10px;}
+.row > *{flex:1;}
+
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; font-weight:600; font-size:0.88rem; padding:9px 15px; border-radius:6px; border:1px solid var(--accent-dark); background:var(--accent); color:#fff; cursor:pointer;}
+.btn:disabled{opacity:0.5; cursor:default;}
+.btn.secondary{background:var(--surface); color:var(--accent-dark); border:1px solid var(--line);}
+.btn.warn{background:var(--warn); border-color:var(--warn);}
+.btn.ghost{background:none; border:none; color:var(--warn); padding:3px 0; text-decoration:underline; text-underline-offset:3px; font-size:0.82rem;}
+.btn.block{width:100%;}
+.btn.sm{padding:6px 10px; font-size:0.8rem;}
+.conf-btn.active{background:var(--accent); color:#fff; border-color:var(--accent-dark);}
+
+.pill-toggle{display:flex; border:1px solid var(--line); border-radius:20px; overflow:hidden; width:fit-content; flex-wrap:wrap;}
+.pill-toggle button{border:none; background:var(--surface); padding:7px 14px; font-size:0.82rem; font-weight:600; color:var(--ink-soft); cursor:pointer;}
+.pill-toggle button.active{background:var(--accent); color:#fff;}
+
+.chip{display:inline-flex; align-items:center; gap:4px; font-size:0.72rem; font-family:'IBM Plex Mono'; padding:2px 8px; border-radius:10px; border:1px solid var(--line); color:var(--ink-soft);}
+.swatch{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px;}
+
+.stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px;}
+.stat-box{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:12px; text-align:center;}
+.stat-box .num{font-family:'Newsreader'; font-size:1.5rem; font-weight:600;}
+.stat-box .lbl{font-size:0.7rem; color:var(--ink-soft); margin-top:2px;}
+
+.suggest-card{background:var(--accent-tint); border:1px solid var(--accent); border-radius:var(--radius); padding:16px; margin-bottom:14px;}
+.suggest-line{display:flex; align-items:center; gap:8px; font-size:0.92rem; padding:4px 0;}
+
+.subject-row{display:flex; justify-content:space-between; align-items:center; cursor:pointer;}
+.subject-row .meta{font-size:0.79rem; color:var(--ink-soft); margin-top:2px;}
+.chapter-block{margin:10px 0 4px 14px; padding-left:12px; border-left:2px solid var(--line);}
+.doc-item{display:flex; justify-content:space-between; align-items:center; font-size:0.86rem; padding:6px 0;}
+
+.mastery-bar{display:flex; height:8px; border-radius:4px; overflow:hidden; border:1px solid var(--line);}
+.mastery-bar span{display:block; height:100%;}
+.mastery-legend{display:flex; gap:10px; flex-wrap:wrap; font-size:0.72rem; color:var(--ink-soft); margin-top:6px;}
+
+.flash-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:24px 20px; min-height:150px; display:flex; flex-direction:column; justify-content:center; gap:12px; margin-bottom:14px;}
+.flash-q{font-family:'Newsreader'; font-size:1.12rem; font-weight:600; line-height:1.4;}
+.flash-a{font-size:0.94rem; line-height:1.55; color:var(--accent-dark); border-top:1px solid var(--line); padding-top:13px;}
+.rate-row{display:grid; grid-template-columns:repeat(4,1fr); gap:8px;}
+.rate-row button{font-weight:600; font-size:0.78rem; padding:10px 4px; border-radius:6px; cursor:pointer; border:1px solid var(--line); background:var(--surface); color:var(--ink);}
+.rate-row button[data-r="0"]{border-color:var(--m0); color:var(--m0);}
+.rate-row button[data-r="3"]{border-color:var(--m4); color:var(--m4);}
+
+.qcm-opt{display:block; width:100%; text-align:left; padding:10px 12px; margin-bottom:8px; border:1px solid var(--line); border-radius:6px; background:var(--surface); font-size:0.9rem; cursor:pointer; color:var(--ink);}
+.qcm-opt.correct{border-color:var(--good); background:var(--accent-tint);}
+.qcm-opt.wrong{border-color:var(--m0); background:var(--warn-tint);}
+
+.chart{width:100%; height:130px; display:block;}
+.weak-item{display:flex; justify-content:space-between; align-items:baseline; gap:12px;}
+.weak-item .rate{font-family:'IBM Plex Mono'; font-size:0.83rem;}
+
+.chat-log{display:flex; flex-direction:column; gap:11px; margin-bottom:14px;}
+.msg{padding:11px 13px; border-radius:8px; font-size:0.91rem; line-height:1.55; white-space:pre-wrap;}
+.msg.user{background:var(--accent-tint); align-self:flex-end; max-width:85%; margin-left:auto;}
+.msg.assistant{background:var(--surface); border:1px solid var(--line); max-width:92%;}
+.chat-input-row{display:flex; gap:8px;}
+
+.task-item{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+.task-item .when{font-family:'IBM Plex Mono'; font-size:0.78rem; color:var(--ink-soft);}
+.plan-table{width:100%; border-collapse:collapse; font-size:0.85rem; margin-top:8px;}
+.plan-table td{padding:5px 0; border-bottom:1px solid var(--line);}
+.plan-table td:last-child{text-align:right; font-family:'IBM Plex Mono';}
+
+.search-result{padding:11px 0; border-bottom:1px solid var(--line);}
+.search-result:last-child{border-bottom:none;}
+.search-result .src{font-size:0.72rem; color:var(--ink-soft); margin-bottom:3px;}
+
+.loading{font-size:0.85rem; color:var(--ink-soft); font-style:italic;}
+.fiche-box{background:var(--surface-2); border-radius:6px; padding:11px 12px; font-size:0.87rem; line-height:1.5; margin-top:8px; white-space:pre-wrap;}
+.fiche-box.internet{border-left:3px solid var(--accent);}
+
+nav.bottom{position:sticky; top:0; background:var(--surface); border-bottom:1px solid var(--line); display:none; overflow-x:auto; z-index:20; -webkit-overflow-scrolling:touch;}
+nav.bottom .navitem{flex:0 0 auto; flex-direction:column; gap:3px; padding:9px 12px; border-radius:0; min-width:64px; width:auto;}
+nav.bottom .navitem.active{background:none; border-bottom:2px solid var(--accent); border-radius:0;}
+
+@media (max-width:880px){
+  .sidebar{display:none;}
+  nav.bottom{display:flex;}
+}
+</style>
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div class="brand"><h1>Study OS</h1><div class="brand-sub" id="brandSub">Dentisterie — UMF Iași</div></div>
+    <button class="collapse-btn" id="collapseBtn">‹</button>
+  </div>
+  <div class="navlist" id="navList"></div>
+  <div class="sidebar-foot"><div class="theme-toggle" id="themeToggle"><span class="label">Mode sombre</span><span id="themeState">Off</span></div></div>
+</aside>
+
+<div class="content">
+<nav class="bottom" id="bottomNav"></nav>
+<main id="mainContent">
+
+  <section id="view-dashboard">
+    <h1 id="greeting">Bonjour.</h1>
+    <p class="muted" id="todayDate" style="margin-top:-4px"></p>
+    <div class="stat-grid" id="dashStats"></div>
+    <div class="suggest-card" id="suggestCard"></div>
+    <div class="card">
+      <h2>Aujourd'hui</h2>
+      <div id="todayList" class="hairline-list"></div>
+      <div id="todayEmpty" class="empty" hidden>Rien de prévu aujourd'hui.</div>
+    </div>
+  </section>
+
+  <section id="view-courses" hidden>
+    <h1>Cours</h1>
+    <div id="subjectList" class="card"></div>
+    <div class="card">
+      <h2>Nouvelle matière</h2>
+      <div class="field"><label>Nom</label><input type="text" id="newSubjectName" placeholder="Ex. Anatomie"></div>
+      <div class="field"><label>Couleur</label><div class="row" id="colorPicker"></div></div>
+      <button class="btn block" id="addSubjectBtn">Créer la matière</button>
+    </div>
+  </section>
+
+  <section id="view-chat" hidden>
+    <h1>Assistant IA</h1>
+    <div id="chatEmpty" class="empty" hidden>Crée une matière et ajoute des documents pour discuter avec tes cours.</div>
+    <div id="chatWrap" hidden>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field" style="margin-bottom:0"><label>Matière</label><select id="chatSubjectSelect"></select></div>
+        <div class="field" style="margin-bottom:0"><label>Chapitre</label><select id="chatChapterSelect"></select></div>
+      </div>
+      <div class="pill-toggle" id="chatModeToggle" style="margin-bottom:12px">
+        <button data-mode="cours" class="active">📚 Mode Cours</button>
+        <button data-mode="internet">🌐 Mode Internet</button>
+      </div>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-input-row"><input type="text" id="chatInput" placeholder="Ex. Quelle est l'innervation du masséter ?"><button class="btn" id="chatSendBtn">Envoyer</button></div>
+    </div>
+  </section>
+
+  <section id="view-review" hidden>
+    <h1>Révisions</h1>
+    <div id="reviewEmpty" class="empty" hidden>Crée une matière et génère des flashcards (page Flashcards) pour commencer une session.</div>
+    <div id="reviewWrap" hidden>
+      <div class="card">
+        <div class="field"><label>Matière</label><select id="reviewSubjectSelect"></select></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:8px">Répartition de la maîtrise</h3>
+        <div class="mastery-bar" id="masteryBar"></div>
+        <div class="mastery-legend" id="masteryLegend"></div>
+      </div>
+      <div class="card">
+        <h2>Session personnalisée</h2>
+        <p class="muted" style="margin-top:0" id="dueCardsText"></p>
+        <button class="btn block" id="startReviewBtn">Commencer ma session</button>
+      </div>
+      <div id="reviewArea"></div>
+    </div>
+  </section>
+
+  <section id="view-cards" hidden>
+    <h1>Flashcards</h1>
+    <div id="cardsEmpty" class="empty" hidden>Crée une matière avec au moins un document pour générer des flashcards.</div>
+    <div id="cardsWrap" hidden>
+      <div class="card">
+        <h2>✨ Générer avec l'IA</h2>
+        <div class="field"><label>Matière</label><select id="cardsSubjectSelect"></select></div>
+        <div class="field"><label>Chapitre source</label><select id="cardsChapterSelect"></select></div>
+        <div class="row">
+          <div class="field"><label>Importance</label><select id="cardsImportance"><option value="1">Normale</option><option value="2" selected>Importante</option><option value="3">Examen</option></select></div>
+          <div class="field"><label>Difficulté</label><select id="cardsDifficulty"><option value="1">Facile</option><option value="2" selected>Moyenne</option><option value="3">Difficile</option></select></div>
+        </div>
+        <button class="btn secondary block" id="genCardsBtn">✨ Générer 8 cartes</button>
+        <p class="loading" id="cardsGenStatus" hidden></p>
+        <div id="proposedCards"></div>
+      </div>
+      <div class="card">
+        <h2>Créer une carte manuellement</h2>
+        <div class="field"><label>Question</label><input type="text" id="manualCardQ"></div>
+        <div class="field"><label>Réponse</label><textarea id="manualCardA" style="min-height:60px"></textarea></div>
+        <div class="field"><label>Chapitre</label><select id="manualCardChapter"></select></div>
+        <button class="btn secondary block" id="addManualCardBtn">Ajouter la carte</button>
+      </div>
+      <div class="card">
+        <h2>Bibliothèque de cartes</h2>
+        <div class="field"><label>Filtrer par chapitre</label><select id="libraryFilterChapter"><option value="all">Tous les chapitres</option></select></div>
+        <div id="cardsLibraryList" class="hairline-list"></div>
+        <div id="cardsLibraryEmpty" class="empty" hidden>Aucune carte pour l'instant.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-notes" hidden>
+    <h1>Notes</h1>
+    <div id="notesEmpty" class="empty" hidden>Crée une matière pour commencer à prendre des notes.</div>
+    <div id="notesWrap" hidden>
+      <div class="chat-input-row" style="margin-bottom:14px"><input type="text" id="notesSearchInput" placeholder="Rechercher dans mes notes…"></div>
+      <div class="card">
+        <h2>Nouvelle note</h2>
+        <div class="row">
+          <div class="field"><label>Matière</label><select id="noteSubjectSelect"></select></div>
+          <div class="field"><label>Chapitre</label><select id="noteChapterSelect"></select></div>
+        </div>
+        <textarea id="newNoteText" placeholder="Écris ta note ici…"></textarea>
+        <button class="btn block" id="addNoteBtn">Ajouter la note</button>
+      </div>
+      <div id="notesList"></div>
+      <div id="notesListEmpty" class="empty" hidden>Aucune note ne correspond.</div>
+    </div>
+  </section>
+
+  <section id="view-quiz" hidden>
+    <h1>Quiz</h1>
+    <div id="quizEmpty" class="empty" hidden>Crée une matière avec au moins un document pour générer un quiz.</div>
+    <div id="quizWrap" hidden>
+      <div class="card">
+        <h2>Générer des questions</h2>
+        <div class="field"><label>Matière</label><select id="quizSubjectSelect"></select></div>
+        <div class="field"><label>Chapitre source</label><select id="quizChapterSelect"></select></div>
+        <button class="btn secondary block" id="genQuizBtn">Générer 5 questions (QCM + vrai/faux)</button>
+        <p class="loading" id="quizGenStatus" hidden></p>
+      </div>
+      <div class="row">
+        <button class="btn block" id="startQuizBtn">Quiz adaptatif (5)</button>
+        <button class="btn warn block" id="startExamBtn">Mini-examen (15)</button>
+      </div>
+      <div id="quizArea" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <section id="view-calendar" hidden>
+    <h1>Calendrier</h1>
+    <div class="card">
+      <h2>Ajouter</h2>
+      <div class="field"><label>Titre</label><input type="text" id="taskTitle" placeholder="Ex. Examen d'histologie"></div>
+      <div class="row">
+        <div class="field"><label>Date</label><input type="date" id="taskDate"></div>
+        <div class="field"><label>Type</label><select id="taskType"><option value="exam">Examen</option><option value="task">Tâche</option><option value="course">Cours</option><option value="review">Session de révision</option></select></div>
+      </div>
+      <div class="field"><label>Matière liée (optionnel)</label><select id="taskSubject"><option value="">—</option></select></div>
+      <button class="btn block" id="addTaskBtn">Ajouter</button>
+    </div>
+    <div class="card">
+      <h2>À venir</h2>
+      <div id="taskList" class="hairline-list"></div>
+      <div id="taskEmpty" class="empty" hidden>Aucune échéance pour l'instant.</div>
+    </div>
+    <div class="card" id="examPlanCard" hidden>
+      <h2>Plan de révision suggéré</h2>
+      <div id="examPlans"></div>
+    </div>
+    <button class="btn secondary block" id="exportIcsBtn">Exporter en .ics</button>
+    <p class="muted" style="margin-top:8px">Fichier à importer manuellement dans Apple Calendar (pas de synchronisation en direct possible sans serveur — voir Paramètres pour la note technique).</p>
+  </section>
+
+  <section id="view-search" hidden>
+    <h1>Recherche</h1>
+    <div class="chat-input-row" style="margin-bottom:16px"><input type="text" id="searchInput" placeholder="Ex. nerf trijumeau"><button class="btn" id="searchBtn">Chercher</button></div>
+    <div id="searchResults"></div>
+  </section>
+
+  <section id="view-progress" hidden>
+    <h1>Progression</h1>
+    <div id="progressEmpty" class="empty" hidden>Ajoute une matière pour suivre ta progression.</div>
+    <div id="progressWrap" hidden>
+      <div class="stat-grid" id="progStats"></div>
+      <div class="card"><h2>Maîtrise par matière</h2><div id="subjectMastery" class="hairline-list"></div></div>
+      <div class="card"><h2>Taux de réussite — 14 derniers jours</h2><svg class="chart" id="progressChart" viewBox="0 0 600 130" preserveAspectRatio="none"></svg></div>
+      <div class="card"><h2>Points faibles</h2><div id="weakList" class="hairline-list"></div><div id="weakEmpty" class="empty" hidden>Pas encore assez de révisions.</div></div>
+    </div>
+  </section>
+
+  <section id="view-anatomy" hidden>
+    <h1>Anatomie</h1>
+    <div class="card">
+      <p class="muted" style="margin-top:0">Cette section n'affiche jamais d'informations anatomiques inventées. Chaque fiche est générée uniquement à partir de tes propres documents importés (📚), avec la source indiquée — et, si tu l'actives explicitement, complétée par une recherche internet clairement séparée (🌐). Un vrai modèle 3D sous licence pourra être branché plus tard sur cette même structure de données.</p>
+    </div>
+    <div class="pill-toggle" id="anatCatToggle" style="margin-bottom:12px">
+      <button data-cat="all" class="active">Tout</button>
+      <button data-cat="squelette">Squelette</button>
+      <button data-cat="muscles">Muscles</button>
+      <button data-cat="organes">Organes</button>
+      <button data-cat="nerfs">Nerfs</button>
+    </div>
+    <div id="anatList"></div>
+    <div class="card">
+      <h2>Ajouter une structure</h2>
+      <div class="field"><label>Nom</label><input type="text" id="anatName" placeholder="Ex. Muscle masséter"></div>
+      <div class="row">
+        <div class="field"><label>Catégorie</label><select id="anatCategory"><option value="squelette">Squelette</option><option value="muscles" selected>Muscles</option><option value="organes">Organes</option><option value="nerfs">Nerfs</option></select></div>
+        <div class="field"><label>Matière liée</label><select id="anatSubject"><option value="">Toutes mes matières</option></select></div>
+      </div>
+      <button class="btn block" id="addAnatBtn">Ajouter</button>
+    </div>
+  </section>
+
+  <section id="view-settings" hidden>
+    <h1>Paramètres</h1>
+    <div class="card">
+      <h2>Profil</h2>
+      <div class="field"><label>Nom</label><input type="text" id="pfName"></div>
+      <div class="field"><label>Université</label><input type="text" id="pfUniversity"></div>
+      <div class="field"><label>Section</label><input type="text" id="pfSection"></div>
+      <div class="field"><label>Programme</label><input type="text" id="pfProgram"></div>
+      <div class="field"><label>Objectifs</label><textarea id="pfGoals" placeholder="Ex. Réussir la session de janvier avec mention"></textarea></div>
+      <button class="btn block" id="saveProfileBtn">Enregistrer</button>
+    </div>
+    <div class="card">
+      <h2>Sauvegarde</h2>
+      <p class="muted" style="margin-top:0">Exporte toutes tes données (cours, cartes, quiz, notes, calendrier, anatomie) dans un fichier. Utile comme copie de sécurité, ou pour transférer tes données si tu changes de navigateur.</p>
+      <div class="row">
+        <button class="btn secondary block" id="exportDataBtn">Exporter mes données</button>
+        <label class="btn secondary block" style="text-align:center; cursor:pointer;">Importer<input type="file" id="importDataInput" accept="application/json" style="display:none"></label>
+      </div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<script>
+/*
+ARCHITECTURE — pensée pour une migration future vers un vrai backend (Next.js + Supabase/PostgreSQL).
+Chaque entité stockée ici correspond à une future table :
+  profile                -> table `users` (une ligne par utilisateur avec une vraie auth)
+  subjects-index          -> table `subjects` (id, name, color, owner_id)
+  subject:<id>.chapters   -> table `chapters` (id, subject_id, name)
+  chapters[].documents    -> table `documents` (id, chapter_id, name, raw_text)
+                             + table `document_chunks` (embeddings + vector DB) pour un vrai RAG sémantique
+  subject:<id>.cards      -> table `flashcards` (id, subject_id, chapter_id, q, a, ease, interval, reps,
+                              lapses, importance, difficulty, due, last_review)
+  subject:<id>.quiz       -> table `quiz_questions` (id, subject_id, chapter_id, type, q, options, correct, explanation)
+  subject:<id>.reviews    -> table `reviews` (id, item_id, item_type, date, correct, confidence) — déjà un
+                              vrai historique journalisé, prêt à être copié tel quel
+  subject:<id>.notes      -> table `notes` (id, chapter_id, text, created_at)
+  subject:<id>.chat       -> table `chat_messages` (id, subject_id, role, text)
+  tasks                   -> table `calendar_events` (+ un service backend pour une vraie sync CalDAV)
+  anatomy-structures       -> table `anatomical_structures` (+ liaison à un futur atlas 3D sous licence)
+Les seules fonctions à remplacer lors de la migration sont storeGet/storeSet/storeDelete (elles deviendraient
+des appels API vers le backend) — le reste (rendu, algorithmes, RAG-lite) n'a pas besoin de changer de logique.
+*/
+
+// ==================== Storage (couche à remplacer lors d'une migration backend) ====================
+async function storeGet(key){ try{ const r = await window.storage.get(key,false); return r?JSON.parse(r.value):null; }catch(e){ return null; } }
+async function storeSet(key,val){ try{ await window.storage.set(key, JSON.stringify(val), false); return true; }catch(e){ console.error(e); return false; } }
+async function storeDelete(key){ try{ await window.storage.delete(key,false); }catch(e){} }
+function uid(){ return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9); }
+function todayISO(){ return new Date().toISOString(); }
+function dayKey(iso){ return iso.slice(0,10); }
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function formatRelativeDate(iso){
+  if(!iso) return 'jamais';
+  const days = Math.round((Date.now()-new Date(iso).getTime())/86400000);
+  if(days<=0) return "aujourd'hui";
+  if(days===1) return 'hier';
+  return `il y a ${days} j`;
+}
+function formatDueIn(iso){
+  const days = Math.ceil((new Date(iso).getTime()-Date.now())/86400000);
+  if(days<=0) return "aujourd'hui";
+  if(days===1) return 'demain';
+  return `dans ${days} j`;
+}
+
+// ==================== State ====================
+let profile = { name:'', university:'UMF Iași – Grigore T. Popa', section:'Française', program:'Dentisterie', goals:'', theme:'light' };
+let subjectsIndex = [];
+let currentSubject = null;
+let tasks = [];
+let anatomyStructures = [];
+let reviewQueue = [], quizQueue = [], quizScore = {correct:0,total:0}, quizIsExam=false, quizWrong=[];
+let pendingConfidence = 'medium';
+let sidebarCollapsed = false;
+let coursesOpenSubject = null;
+let anatFilter = 'all';
+const COLORS = ['#3F4FD1','#1F8A5F','#E8734A','#B0532E','#8E5FD1','#2E9CB0'];
+
+const NAV = [
+  {id:'dashboard', label:'Accueil', icon:'🏠'},
+  {id:'courses', label:'Cours', icon:'📚'},
+  {id:'chat', label:'IA', icon:'💬'},
+  {id:'review', label:'Révisions', icon:'🧠'},
+  {id:'cards', label:'Flashcards', icon:'🃏'},
+  {id:'quiz', label:'Quiz', icon:'❓'},
+  {id:'anatomy', label:'Anatomie', icon:'🫀'},
+  {id:'calendar', label:'Calendrier', icon:'📅'},
+  {id:'notes', label:'Notes', icon:'📝'},
+  {id:'search', label:'Recherche', icon:'🔍'},
+  {id:'progress', label:'Progression', icon:'📊'},
+  {id:'settings', label:'Paramètres', icon:'⚙️'},
+];
+
+// ==================== Claude API ====================
+async function callClaude(system, userMsg, useWebSearch){
+  const body = { model:"claude-sonnet-4-6", max_tokens:1000, system, messages:[{role:"user", content:userMsg}] };
+  if(useWebSearch) body.tools = [{type:"web_search_20250305", name:"web_search"}];
+  const resp = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  const data = await resp.json();
+  if(!data || !data.content) throw new Error('Réponse API invalide');
+  return data.content.map(b => b.type==='text' ? b.text : '').join('\n').trim();
+}
+function extractJson(raw){ return JSON.parse(raw.replace(/```json/gi,'').replace(/```/g,'').trim()); }
+
+// ==================== PDF ====================
+if(window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
+async function extractPdfText(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  let text='';
+  for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const content=await page.getTextContent(); text += content.items.map(it=>it.str).join(' ') + '\n\n'; }
+  return text.trim();
+}
+
+// ==================== Persistence ====================
+async function loadProfile(){ profile = (await storeGet('profile')) || profile; applyTheme(); }
+async function saveProfile(){ await storeSet('profile', profile); }
+async function loadSubjectsIndex(){ subjectsIndex = (await storeGet('subjects-index')) || []; }
+async function saveSubjectsIndex(){ await storeSet('subjects-index', subjectsIndex); }
+async function loadSubject(id){ return await storeGet('subject:'+id); }
+async function saveSubject(s){
+  await storeSet('subject:'+s.id, s);
+  const idx = subjectsIndex.find(x=>x.id===s.id);
+  if(idx){ idx.cardCount=s.cards.length; idx.quizCount=s.quiz.length; await saveSubjectsIndex(); }
+}
+async function loadTasks(){ tasks = (await storeGet('tasks')) || []; }
+async function saveTasks(){ await storeSet('tasks', tasks); }
+async function loadAnatomy(){ anatomyStructures = (await storeGet('anatomy-structures')) || []; }
+async function saveAnatomy(){ await storeSet('anatomy-structures', anatomyStructures); }
+
+// ==================== Mastery & SRS ====================
+function masteryPct(item){
+  if((item.reps||0)===0 && (item.interval||0)===0) return 0;
+  const intervalPart = Math.min(1, (item.interval||0)/60) * 70;
+  const easePart = Math.min(1, Math.max(0, ((item.ease||2.3)-1.3)/1.7)) * 30;
+  return Math.round(intervalPart+easePart);
+}
+function masteryLevel(item){ const p=masteryPct(item); if(p<20) return 0; if(p<40) return 1; if(p<60) return 2; if(p<80) return 3; return 4; }
+const MASTERY_COLORS = ['var(--m0)','var(--m1)','var(--m2)','var(--m3)','var(--m4)'];
+const MASTERY_LABELS = ['Très faible','Faible','Moyen','Bon','Maîtrisé'];
+const MASTERY_EMOJI = ['🔴','🟠','🟡','🟢','🔵'];
+
+function scheduleNext(item, rating, confidence){
+  let { ease=2.3, interval=0, reps=0, lapses=0, importance=2, difficulty=2, lastReview } = item;
+  const importanceFactor = 1 - (importance-1)*0.15;
+  const difficultyFactor = 1 - (difficulty-1)*0.1;
+  const steps = [1,3,7,14,30,60];
+  let overdueFactor = 1;
+  if(lastReview && interval>0){
+    const elapsedDays = (Date.now() - new Date(lastReview).getTime())/86400000;
+    if(elapsedDays > interval*1.5) overdueFactor = 0.9;
+  }
+  let confMod = 0;
+  if(confidence==='low' && rating>=2) confMod = -0.03;
+  if(confidence==='high' && rating>=2) confMod = 0.05;
+  if(confidence==='high' && rating<2) confMod = -0.1;
+  if(rating===0){
+    reps=0; lapses+=1; ease=Math.max(1.3, ease-0.25+confMod); interval=0;
+  } else {
+    reps+=1; let base;
+    if(rating===1){ ease=Math.max(1.3, ease-0.15+confMod); base = interval<=0?1:interval*1.3; }
+    else if(rating===2){ ease=Math.max(1.3, ease+confMod); base = reps<=steps.length?steps[reps-1]:interval*ease; }
+    else { ease=ease+0.15+confMod; base = (reps<=steps.length?steps[reps-1]:interval*ease)*1.4; }
+    interval = Math.max(1, Math.round(base*importanceFactor*difficultyFactor*overdueFactor));
+  }
+  const now = new Date();
+  const dueMs = now.getTime() + Math.max(interval,0)*86400000 + (interval===0?10*60000:0);
+  return { ...item, ease, interval, reps, lapses, due:new Date(dueMs).toISOString(), lastReview: now.toISOString() };
+}
+function dueItems(list){ const now=Date.now(); return list.filter(c=> new Date(c.due).getTime() <= now).sort((a,b)=>a.ease-b.ease); }
+function cardHistoryStats(subject, id, type){
+  const logs = subject.reviews.filter(r=>r.type===type && r.id===id);
+  return { count: logs.length, correct: logs.filter(l=>l.correct).length };
+}
+
+// ==================== Stats ====================
+function computeDailyStats(subject, days){
+  const map={};
+  subject.reviews.forEach(r=>{ const d=dayKey(r.date); map[d]=map[d]||{correct:0,total:0}; map[d].total++; if(r.correct) map[d].correct++; });
+  const out=[];
+  for(let i=days-1;i>=0;i--){ const d=dayKey(new Date(Date.now()-i*86400000).toISOString()); const e=map[d]; out.push({date:d, rate:e?Math.round(e.correct/e.total*100):null}); }
+  return out;
+}
+function weakPoints(subject, limit){
+  const items=[];
+  subject.cards.forEach(c=>{ const logs=subject.reviews.filter(r=>r.type==='card'&&r.id===c.id); if(logs.length) items.push({label:c.q, rate:logs.filter(l=>l.correct).length/logs.length, kind:'Carte'}); });
+  subject.quiz.forEach(q=>{ const logs=subject.reviews.filter(r=>r.type==='quiz'&&r.id===q.id); if(logs.length) items.push({label:q.q, rate:logs.filter(l=>l.correct).length/logs.length, kind:'Quiz'}); });
+  return items.sort((a,b)=>a.rate-b.rate).slice(0,limit);
+}
+
+// ==================== Nav ====================
+function renderNav(){
+  const listHtml = NAV.map(n => `<button class="navitem" data-nav="${n.id}"><span class="ic">${n.icon}</span><span class="label">${n.label}</span></button>`).join('');
+  document.getElementById('navList').innerHTML = listHtml;
+  document.getElementById('bottomNav').innerHTML = listHtml;
+  document.querySelectorAll('[data-nav]').forEach(btn=> btn.addEventListener('click', ()=> switchView(btn.dataset.nav)));
+}
+function switchView(id){
+  document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('active', b.dataset.nav===id));
+  ['dashboard','courses','chat','review','cards','quiz','calendar','search','progress','anatomy','settings','notes'].forEach(v=>{
+    document.getElementById('view-'+v).hidden = (v!==id);
+  });
+  const target = document.getElementById('view-'+id);
+  target.classList.remove('view-anim'); void target.offsetWidth; target.classList.add('view-anim');
+  refreshView(id);
+}
+function refreshView(id){
+  if(id==='dashboard') renderDashboard();
+  if(id==='courses') renderCourses();
+  if(id==='chat') renderChat();
+  if(id==='review') renderReviewView();
+  if(id==='cards') renderCardsView();
+  if(id==='quiz') renderQuizView();
+  if(id==='calendar') renderCalendar();
+  if(id==='progress') renderProgress();
+  if(id==='anatomy') renderAnatomy();
+  if(id==='notes') renderNotesView();
+}
+document.getElementById('collapseBtn').addEventListener('click', ()=>{
+  sidebarCollapsed = !sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+  document.getElementById('collapseBtn').textContent = sidebarCollapsed ? '›' : '‹';
+});
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme', profile.theme==='dark' ? 'dark' : 'light');
+  document.getElementById('themeState').textContent = profile.theme==='dark' ? 'On' : 'Off';
+}
+document.getElementById('themeToggle').addEventListener('click', async ()=>{ profile.theme = profile.theme==='dark' ? 'light' : 'dark'; applyTheme(); await saveProfile(); });
+
+// ==================== Dashboard ====================
+async function renderDashboard(){
+  document.getElementById('greeting').textContent = `👋 Bonjour${profile.name ? ', '+profile.name : ''}.`;
+  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'});
+
+  let totalDueCards=0, totalQuiz=0, weakestSubject=null, weakestDue=-1;
+  for(const s of subjectsIndex){
+    const full = await loadSubject(s.id);
+    if(!full) continue;
+    const due = dueItems(full.cards).length;
+    totalDueCards += due; totalQuiz += full.quiz.length;
+    if(due > weakestDue){ weakestDue = due; weakestSubject = full; }
+  }
+  const upcomingExams = tasks.filter(t=>t.type==='exam' && new Date(t.date) >= new Date(new Date().toDateString())).sort((a,b)=> new Date(a.date)-new Date(b.date));
+
+  document.getElementById('dashStats').innerHTML = `
+    <div class="stat-box"><div class="num">${subjectsIndex.length}</div><div class="lbl">Matières</div></div>
+    <div class="stat-box"><div class="num">${totalDueCards}</div><div class="lbl">Cartes dues</div></div>
+    <div class="stat-box"><div class="num">${upcomingExams.length}</div><div class="lbl">Examens à venir</div></div>
+  `;
+
+  const minutes = weakestSubject ? Math.min(45, Math.max(10, weakestDue*2)) : 0;
+  const examLine = upcomingExams.length ? `${escapeHtml(upcomingExams[0].title)} dans ${Math.max(0,Math.ceil((new Date(upcomingExams[0].date)-new Date())/86400000))} jour(s)` : 'Aucun examen programmé';
+  document.getElementById('suggestCard').innerHTML = `
+    <h3 style="margin-bottom:10px">À faire maintenant</h3>
+    <div class="suggest-line">🧠 ${totalDueCards} carte(s) à réviser</div>
+    ${weakestSubject && weakestDue>0 ? `<div class="suggest-line">📚 ${escapeHtml(weakestSubject.name)} — ${minutes} min recommandées</div>` : ''}
+    <div class="suggest-line">❓ ${totalQuiz} question(s) de quiz disponibles</div>
+    <div class="suggest-line">📅 ${examLine}</div>
+    <button class="btn" id="startSessionBtn" style="margin-top:10px">Commencer ma session</button>
+  `;
+  document.getElementById('startSessionBtn').addEventListener('click', async ()=>{
+    if(totalDueCards>0 && weakestSubject){ currentSubject = weakestSubject; switchView('review'); }
+    else if(upcomingExams.length && (new Date(upcomingExams[0].date)-new Date())/86400000 <= 3){ switchView('calendar'); }
+    else if(totalQuiz>0){ switchView('quiz'); }
+    else { switchView('courses'); }
+  });
+
+  const todayStr = new Date().toDateString();
+  const todayItems = tasks.filter(t => new Date(t.date).toDateString()===todayStr || new Date(t.date) < new Date(todayStr));
+  const list = document.getElementById('todayList'), empty = document.getElementById('todayEmpty');
+  if(todayItems.length===0){ list.innerHTML=''; empty.hidden=false; }
+  else{ empty.hidden=true; list.innerHTML = todayItems.map(t=>`<div class="task-item"><span>${t.type==='exam'?'📕':t.type==='course'?'📖':t.type==='review'?'🧠':'📝'} ${escapeHtml(t.title)}</span><span class="when">${new Date(t.date).toLocaleDateString('fr-FR')}</span></div>`).join(''); }
+}
+
+// ==================== Courses ====================
+function renderColorPicker(){
+  document.getElementById('colorPicker').innerHTML = COLORS.map(c=>`<button type="button" class="btn sm" data-color="${c}" style="background:${c}; border-color:${c}; color:#fff; flex:none; width:30px; height:30px; border-radius:50%; padding:0;"></button>`).join('');
+}
+let pickedColor = COLORS[0];
+document.addEventListener('click', (e)=>{ const sw=e.target.closest('[data-color]'); if(sw) pickedColor = sw.dataset.color; });
+
+async function renderCourses(){
+  const wrap = document.getElementById('subjectList');
+  if(subjectsIndex.length===0){ wrap.innerHTML = `<div class="empty">Aucune matière pour l'instant. Crée-en une ci-dessous.</div>`; }
+  else{
+    wrap.innerHTML = subjectsIndex.map(s => `
+      <div class="subject-row" data-sid="${s.id}" style="padding:10px 0; border-bottom:1px solid var(--line)">
+        <div><span class="swatch" style="background:${s.color}"></span>${escapeHtml(s.name)}<div class="meta">${s.cardCount||0} cartes · ${s.quizCount||0} questions</div></div>
+        <button class="btn ghost" data-delsub="${s.id}">Supprimer</button>
+      </div>
+      <div id="chapters-${s.id}" hidden></div>
+    `).join('');
+    wrap.querySelectorAll('.subject-row').forEach(row=>{
+      row.addEventListener('click', async (e)=>{
+        if(e.target.closest('[data-delsub]')) return;
+        coursesOpenSubject = coursesOpenSubject===row.dataset.sid ? null : row.dataset.sid;
+        await renderCourses();
+      });
+    });
+    wrap.querySelectorAll('[data-delsub]').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        if(!confirm('Supprimer cette matière et tout son contenu ?')) return;
+        const id = btn.dataset.delsub;
+        subjectsIndex = subjectsIndex.filter(s=>s.id!==id);
+        await saveSubjectsIndex(); await storeDelete('subject:'+id);
+        if(currentSubject && currentSubject.id===id) currentSubject=null;
+        renderCourses();
+      });
+    });
+    if(coursesOpenSubject){
+      const box = document.getElementById('chapters-'+coursesOpenSubject);
+      if(box){
+        box.hidden=false;
+        const subj = await loadSubject(coursesOpenSubject);
+        if(subj){ box.innerHTML = renderChapterEditor(subj); wireChapterEditor(subj); }
+        else{ box.innerHTML = '<p class="muted">Impossible de charger cette matière pour le moment. Réessaie.</p>'; }
+      }
+    }
+  }
+  renderColorPicker();
+}
+function renderChapterEditor(subj){
+  subj.notes = subj.notes || [];
+  const chaptersHtml = (subj.chapters||[]).map(ch=>`
+    <div class="chapter-block">
+      <strong style="font-size:0.88rem">${escapeHtml(ch.name)}</strong>
+      ${(ch.documents||[]).map(d=>`<div class="doc-item"><span>📄 ${escapeHtml(d.name)} <span class="chip">${d.text.length} car.</span></span></div>`).join('') || '<p class="muted" style="margin:4px 0">Aucun document.</p>'}
+      <div class="row" style="margin-top:8px"><input type="text" placeholder="Nom du document" class="doc-name-input" data-ch="${ch.id}"></div>
+      <input type="file" accept="application/pdf" class="doc-pdf-input" data-ch="${ch.id}" style="margin:6px 0; font-size:0.8rem">
+      <textarea placeholder="Colle le texte du document ici, ou importe un PDF ci-dessus" class="doc-text-input" data-ch="${ch.id}" style="min-height:70px"></textarea>
+      <button class="btn sm secondary" data-adddoc="${ch.id}" style="margin-top:6px">Ajouter le document</button>
+      <div style="margin-top:12px">
+        <strong style="font-size:0.8rem">Notes</strong>
+        ${subj.notes.filter(n=>n.chapterId===ch.id).map(n=>`<div class="doc-item"><span>📝 ${escapeHtml(n.text)}</span><button class="btn ghost" data-delnote="${n.id}">Suppr.</button></div>`).join('') || '<p class="muted" style="margin:4px 0">Aucune note.</p>'}
+        <div class="row" style="margin-top:4px"><input type="text" class="note-input" data-ch="${ch.id}" placeholder="Ajouter une note"><button class="btn sm" data-addnote="${ch.id}">Ajouter</button></div>
+      </div>
+    </div>
+  `).join('');
+  return `${chaptersHtml}<div class="chapter-block"><div class="row"><input type="text" id="newChapterName-${subj.id}" placeholder="Nom du nouveau chapitre"><button class="btn sm" data-addchapter="${subj.id}">Ajouter</button></div></div>`;
+}
+function wireChapterEditor(subj){
+  document.querySelectorAll('[data-addchapter]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const input = document.getElementById('newChapterName-'+subj.id);
+      const name = input.value.trim(); if(!name) return;
+      subj.chapters = subj.chapters||[];
+      subj.chapters.push({ id: uid(), name, documents: [] });
+      await saveSubject(subj); await renderCourses();
+    });
+  });
+  document.querySelectorAll('.doc-pdf-input').forEach(inp=>{
+    inp.addEventListener('change', async (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const ta = document.querySelector(`.doc-text-input[data-ch="${inp.dataset.ch}"]`);
+      ta.value = 'Extraction en cours…';
+      try{ ta.value = await extractPdfText(file); }catch(err){ ta.value=''; alert('Extraction PDF impossible pour ce fichier. Colle le texte manuellement.'); }
+    });
+  });
+  document.querySelectorAll('[data-adddoc]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const chId = btn.dataset.adddoc;
+      const nameInput = document.querySelector(`.doc-name-input[data-ch="${chId}"]`);
+      const textInput = document.querySelector(`.doc-text-input[data-ch="${chId}"]`);
+      const name = nameInput.value.trim() || 'Document sans nom';
+      const text = textInput.value.trim();
+      if(text.length < 50){ alert('Texte trop court.'); return; }
+      const ch = subj.chapters.find(c=>c.id===chId);
+      ch.documents.push({ id: uid(), name, text, createdAt: todayISO() });
+      await saveSubject(subj); await renderCourses();
+    });
+  });
+  document.querySelectorAll('[data-addnote]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const chId = btn.dataset.addnote;
+      const input = document.querySelector(`.note-input[data-ch="${chId}"]`);
+      const text = input.value.trim(); if(!text) return;
+      const ch = subj.chapters.find(c=>c.id===chId);
+      subj.notes = subj.notes || [];
+      subj.notes.push({ id: uid(), chapterId: chId, chapterName: ch.name, text, createdAt: todayISO() });
+      await saveSubject(subj); await renderCourses();
+    });
+  });
+  document.querySelectorAll('[data-delnote]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      subj.notes = (subj.notes||[]).filter(n=>n.id!==btn.dataset.delnote);
+      await saveSubject(subj); await renderCourses();
+    });
+  });
+}
+document.getElementById('addSubjectBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('newSubjectName').value.trim();
+  if(!name){ alert('Donne un nom à cette matière.'); return; }
+  const subj = { id: uid(), name, color: pickedColor, createdAt: todayISO(), chapters:[], cards:[], quiz:[], reviews:[], chat:[], notes:[] };
+  subjectsIndex.push({ id:subj.id, name:subj.name, color:subj.color, cardCount:0, quizCount:0 });
+  await saveSubjectsIndex(); await saveSubject(subj);
+  document.getElementById('newSubjectName').value=''; coursesOpenSubject = subj.id;
+  renderCourses();
+});
+
+// ==================== Shared selectors ====================
+function fillSubjectSelect(sel){ sel.innerHTML = subjectsIndex.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('') || '<option value="">—</option>'; }
+async function fillChapterSelect(sel, subjectId, includeAll){
+  const subj = subjectId ? await loadSubject(subjectId) : null;
+  const chapters = subj ? subj.chapters||[] : [];
+  let html = includeAll ? '<option value="all">Toute la matière</option>' : '';
+  html += chapters.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  sel.innerHTML = html || '<option value="">—</option>';
+  return subj;
+}
+
+// ==================== Chat (RAG-lite par mots-clés) ====================
+async function renderChat(){
+  const empty = document.getElementById('chatEmpty'), wrap = document.getElementById('chatWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  const subSel = document.getElementById('chatSubjectSelect');
+  fillSubjectSelect(subSel);
+  if(currentSubject) subSel.value = currentSubject.id;
+  if(!currentSubject) currentSubject = await loadSubject(subSel.value);
+  await fillChapterSelect(document.getElementById('chatChapterSelect'), subSel.value, true);
+  renderChatLog();
+}
+function renderChatLog(){
+  const log = document.getElementById('chatLog');
+  log.innerHTML = ((currentSubject && currentSubject.chat) || []).map(m=>`<div class="msg ${m.role}">${escapeHtml(m.text)}</div>`).join('');
+  log.scrollTop = log.scrollHeight;
+}
+document.getElementById('chatSubjectSelect').addEventListener('change', async (e)=>{
+  currentSubject = await loadSubject(e.target.value);
+  await fillChapterSelect(document.getElementById('chatChapterSelect'), e.target.value, true);
+  renderChatLog();
+});
+let chatMode = 'cours';
+document.getElementById('chatModeToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  chatMode = btn.dataset.mode;
+  document.querySelectorAll('#chatModeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+});
+function scoreDoc(text, words){ const lower=text.toLowerCase(); return words.reduce((s,w)=> s + (lower.split(w).length-1), 0); }
+function selectRelevantContext(subject, chapterId, question){
+  let docs=[];
+  (subject.chapters||[]).forEach(ch=>{ if(chapterId==='all' || ch.id===chapterId) (ch.documents||[]).forEach(d=> docs.push({chapterName:ch.name, docName:d.name, text:d.text})); });
+  if(docs.length===0) return '';
+  const words = question.toLowerCase().replace(/[^\p{L}\s]/gu,' ').split(/\s+/).filter(w=>w.length>3);
+  const scored = docs.map(d=>({...d, score: words.length? scoreDoc(d.text, words) : 1})).sort((a,b)=>b.score-a.score);
+  let budget=16000, out='';
+  for(const d of scored){ if(budget<=0) break; const chunk=d.text.slice(0, Math.min(d.text.length, budget)); out += `\n\n[Chapitre: ${d.chapterName} — Document: ${d.docName}]\n${chunk}`; budget -= chunk.length; }
+  return out.trim();
+}
+document.getElementById('chatSendBtn').addEventListener('click', sendChat);
+document.getElementById('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+async function sendChat(){
+  const input = document.getElementById('chatInput');
+  const question = input.value.trim();
+  if(!question || !currentSubject) return;
+  currentSubject.chat = currentSubject.chat || [];
+  currentSubject.chat.push({role:'user', text:question});
+  input.value=''; renderChatLog();
+  const log = document.getElementById('chatLog');
+  log.insertAdjacentHTML('beforeend', `<div class="msg assistant loading" id="pending">Réflexion…</div>`);
+  log.scrollTop = log.scrollHeight;
+  const chapterId = document.getElementById('chatChapterSelect').value;
+  const context = selectRelevantContext(currentSubject, chapterId, question);
+  try{
+    const sys = chatMode==='cours'
+      ? `Tu es un tuteur pour un étudiant en dentisterie à l'UMF Iași. Réponds UNIQUEMENT à partir des extraits de cours fournis ci-dessous. Commence ta réponse par "📚 Trouvé dans ton cours" si l'information y est, en citant le chapitre et le document. Si l'information ne s'y trouve pas, réponds uniquement "⚠️ Information insuffisante dans tes cours." plutôt que d'inventer. Réponds en français, de façon claire et concise.\n\nEXTRAITS DE COURS:\n${context || '(aucun document dans cette portée)'}`
+      : `Tu es un tuteur pour un étudiant en dentisterie à l'UMF Iași. Utilise en priorité les extraits de cours fournis ci-dessous et marque ces passages avec 📚. Si besoin, complète avec une recherche internet et marque ces passages avec 🌐. Sépare clairement les deux types de sources. Réponds en français, de façon claire et concise.\n\nEXTRAITS DE COURS:\n${context || '(aucun document dans cette portée)'}`;
+    const answer = await callClaude(sys, question, chatMode==='internet');
+    currentSubject.chat.push({role:'assistant', text:answer});
+  }catch(err){ currentSubject.chat.push({role:'assistant', text:"Erreur de connexion à l'IA. Réessaie."}); }
+  await saveSubject(currentSubject);
+  renderChatLog();
+}
+
+// ==================== Flashcards library (page "Flashcards") ====================
+async function renderCardsView(){
+  const empty = document.getElementById('cardsEmpty'), wrap = document.getElementById('cardsWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  const subSel = document.getElementById('cardsSubjectSelect');
+  fillSubjectSelect(subSel);
+  if(currentSubject) subSel.value = currentSubject.id;
+  if(!currentSubject) currentSubject = await loadSubject(subSel.value);
+  await fillChapterSelect(document.getElementById('cardsChapterSelect'), subSel.value, false);
+  await fillChapterSelect(document.getElementById('manualCardChapter'), subSel.value, false);
+  await fillChapterSelect(document.getElementById('libraryFilterChapter'), subSel.value, true);
+  document.getElementById('proposedCards').innerHTML='';
+  renderCardsLibrary();
+}
+document.getElementById('cardsSubjectSelect').addEventListener('change', async (e)=>{
+  currentSubject = await loadSubject(e.target.value);
+  await fillChapterSelect(document.getElementById('cardsChapterSelect'), e.target.value, false);
+  await fillChapterSelect(document.getElementById('manualCardChapter'), e.target.value, false);
+  await fillChapterSelect(document.getElementById('libraryFilterChapter'), e.target.value, true);
+  renderCardsLibrary();
+});
+document.getElementById('libraryFilterChapter').addEventListener('change', renderCardsLibrary);
+function renderCardsLibrary(){
+  if(!currentSubject) return;
+  const filterId = document.getElementById('libraryFilterChapter').value;
+  const list = currentSubject.cards.filter(c=> filterId==='all' || c.chapterId===filterId);
+  const box = document.getElementById('cardsLibraryList'), empty = document.getElementById('cardsLibraryEmpty');
+  if(list.length===0){ box.innerHTML=''; empty.hidden=false; return; }
+  empty.hidden=true;
+  box.innerHTML = list.map(c=>{
+    const lvl = masteryLevel(c), pct = masteryPct(c);
+    return `<div>
+      <input type="text" class="lib-q" data-id="${c.id}" value="${escapeHtml(c.q)}" style="font-weight:600; margin-bottom:6px">
+      <textarea class="lib-a" data-id="${c.id}" style="min-height:50px">${escapeHtml(c.a)}</textarea>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; flex-wrap:wrap; gap:6px">
+        <span class="chip" style="border-color:${MASTERY_COLORS[lvl]}; color:${MASTERY_COLORS[lvl]}">${MASTERY_EMOJI[lvl]} ${pct}% · ${escapeHtml(c.chapterName||'')}</span>
+        <div class="row" style="flex:none; gap:6px">
+          <button class="btn sm secondary" data-savecard="${c.id}">Enregistrer</button>
+          <button class="btn sm ghost" data-delcard="${c.id}">Supprimer</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-savecard]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const id = btn.dataset.savecard;
+    const q = box.querySelector(`.lib-q[data-id="${id}"]`).value.trim();
+    const a = box.querySelector(`.lib-a[data-id="${id}"]`).value.trim();
+    const idx = currentSubject.cards.findIndex(c=>c.id===id);
+    currentSubject.cards[idx].q = q; currentSubject.cards[idx].a = a;
+    await saveSubject(currentSubject);
+    btn.textContent = 'Enregistré ✓'; setTimeout(()=>{ btn.textContent='Enregistrer'; }, 1500);
+  }));
+  box.querySelectorAll('[data-delcard]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Supprimer cette carte ?')) return;
+    currentSubject.cards = currentSubject.cards.filter(c=>c.id!==btn.dataset.delcard);
+    await saveSubject(currentSubject);
+    renderCardsLibrary();
+  }));
+}
+document.getElementById('addManualCardBtn').addEventListener('click', async ()=>{
+  if(!currentSubject) return;
+  const q = document.getElementById('manualCardQ').value.trim();
+  const a = document.getElementById('manualCardA').value.trim();
+  const chapterId = document.getElementById('manualCardChapter').value;
+  const ch = (currentSubject.chapters||[]).find(c=>c.id===chapterId);
+  if(!q || !a){ alert('Question et réponse requises.'); return; }
+  currentSubject.cards.push({ id:uid(), q, a, chapterId: ch?ch.id:'', chapterName: ch?ch.name:'', importance:2, difficulty:2, ease:2.3, interval:0, reps:0, lapses:0, due:todayISO(), lastReview:null });
+  await saveSubject(currentSubject);
+  document.getElementById('manualCardQ').value=''; document.getElementById('manualCardA').value='';
+  renderCardsLibrary();
+});
+
+// ==================== Review session (page "Révisions") ====================
+async function renderReviewView(){
+  const empty = document.getElementById('reviewEmpty'), wrap = document.getElementById('reviewWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  const subSel = document.getElementById('reviewSubjectSelect');
+  fillSubjectSelect(subSel);
+  if(currentSubject) subSel.value = currentSubject.id;
+  if(!currentSubject) currentSubject = await loadSubject(subSel.value);
+  document.getElementById('reviewArea').innerHTML = '';
+  renderReviewStats();
+}
+document.getElementById('reviewSubjectSelect').addEventListener('change', async (e)=>{
+  currentSubject = await loadSubject(e.target.value);
+  document.getElementById('reviewArea').innerHTML = '';
+  renderReviewStats();
+});
+function renderReviewStats(){
+  if(!currentSubject) return;
+  const due = dueItems(currentSubject.cards);
+  document.getElementById('dueCardsText').textContent = `${due.length} carte(s) à réviser`;
+  const counts=[0,0,0,0,0];
+  currentSubject.cards.forEach(c=> counts[masteryLevel(c)]++);
+  const total = currentSubject.cards.length || 1;
+  document.getElementById('masteryBar').innerHTML = counts.map((n,i)=> n? `<span style="width:${(n/total*100)}%; background:${MASTERY_COLORS[i]}"></span>` : '').join('');
+  document.getElementById('masteryLegend').innerHTML = counts.map((n,i)=> `<span>${MASTERY_EMOJI[i]} ${MASTERY_LABELS[i]}: ${n}</span>`).join('');
+}
+
+// ==================== Notes (page "Notes") ====================
+async function renderNotesView(){
+  const empty = document.getElementById('notesEmpty'), wrap = document.getElementById('notesWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  const subSel = document.getElementById('noteSubjectSelect');
+  fillSubjectSelect(subSel);
+  if(currentSubject) subSel.value = currentSubject.id;
+  if(!currentSubject) currentSubject = await loadSubject(subSel.value);
+  await fillChapterSelect(document.getElementById('noteChapterSelect'), subSel.value, false);
+  await renderNotesList();
+}
+document.getElementById('noteSubjectSelect').addEventListener('change', async (e)=>{
+  currentSubject = await loadSubject(e.target.value);
+  await fillChapterSelect(document.getElementById('noteChapterSelect'), e.target.value, false);
+});
+document.getElementById('addNoteBtn').addEventListener('click', async ()=>{
+  if(!currentSubject) return;
+  const chapterId = document.getElementById('noteChapterSelect').value;
+  const ch = (currentSubject.chapters||[]).find(c=>c.id===chapterId);
+  if(!ch){ alert("Ajoute d'abord un chapitre à cette matière (page Cours)."); return; }
+  const text = document.getElementById('newNoteText').value.trim();
+  if(!text) return;
+  currentSubject.notes = currentSubject.notes || [];
+  currentSubject.notes.push({ id: uid(), chapterId: ch.id, chapterName: ch.name, text, createdAt: todayISO() });
+  await saveSubject(currentSubject);
+  document.getElementById('newNoteText').value='';
+  await renderNotesList();
+});
+document.getElementById('notesSearchInput').addEventListener('input', renderNotesList);
+async function renderNotesList(){
+  const q = document.getElementById('notesSearchInput').value.trim().toLowerCase();
+  let all = [];
+  for(const s of subjectsIndex){
+    const subj = await loadSubject(s.id);
+    if(!subj) continue;
+    (subj.notes||[]).forEach(n=> all.push({...n, subjectId: subj.id, subjectName: subj.name, subjectColor: subj.color}));
+  }
+  if(q) all = all.filter(n=> n.text.toLowerCase().includes(q) || (n.chapterName||'').toLowerCase().includes(q) || n.subjectName.toLowerCase().includes(q));
+  all.sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  const box = document.getElementById('notesList'), empty = document.getElementById('notesListEmpty');
+  if(all.length===0){ box.innerHTML=''; empty.hidden=false; return; }
+  empty.hidden=true;
+  box.innerHTML = all.map(n=>`
+    <div class="card">
+      <div class="chip"><span class="swatch" style="background:${n.subjectColor}"></span>${escapeHtml(n.subjectName)} › ${escapeHtml(n.chapterName)}</div>
+      <textarea class="note-edit" data-id="${n.id}" data-subject="${n.subjectId}" style="margin-top:8px">${escapeHtml(n.text)}</textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="btn sm secondary" data-savenote="${n.id}" data-subject="${n.subjectId}">Enregistrer</button>
+        <button class="btn sm ghost" data-delnote2="${n.id}" data-subject="${n.subjectId}">Supprimer</button>
+      </div>
+    </div>
+  `).join('');
+  box.querySelectorAll('[data-savenote]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const id = btn.dataset.savenote, subjId = btn.dataset.subject;
+    const subj = (currentSubject && subjId===currentSubject.id) ? currentSubject : await loadSubject(subjId);
+    const note = (subj.notes||[]).find(n=>n.id===id);
+    note.text = box.querySelector(`.note-edit[data-id="${id}"]`).value.trim();
+    await saveSubject(subj);
+    if(currentSubject && subj.id===currentSubject.id) currentSubject = subj;
+    btn.textContent='Enregistré ✓'; setTimeout(()=>{btn.textContent='Enregistrer';},1500);
+  }));
+  box.querySelectorAll('[data-delnote2]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const id = btn.dataset.delnote2, subjId = btn.dataset.subject;
+    const subj = (currentSubject && subjId===currentSubject.id) ? currentSubject : await loadSubject(subjId);
+    subj.notes = (subj.notes||[]).filter(n=>n.id!==id);
+    await saveSubject(subj);
+    if(currentSubject && subj.id===currentSubject.id) currentSubject = subj;
+    await renderNotesList();
+  }));
+}
+document.getElementById('genCardsBtn').addEventListener('click', async ()=>{
+  if(!currentSubject) return;
+  const chapterId = document.getElementById('cardsChapterSelect').value;
+  const ch = (currentSubject.chapters||[]).find(c=>c.id===chapterId);
+  if(!ch || !ch.documents.length){ alert('Ce chapitre ne contient aucun document.'); return; }
+  const btn = document.getElementById('genCardsBtn'), status = document.getElementById('cardsGenStatus');
+  btn.disabled=true; status.hidden=false; status.textContent='Génération de 8 cartes…';
+  document.getElementById('proposedCards').innerHTML='';
+  try{
+    const context = ch.documents.map(d=>d.text).join('\n\n').slice(0,20000);
+    const sys = `Tu réponds UNIQUEMENT avec un tableau JSON valide, sans texte avant/après, sans markdown. Format exact: [{"q":"question","a":"réponse"}]`;
+    const user = `Génère exactement 8 flashcards question/réponse en français à partir de ce cours de dentisterie (chapitre: ${ch.name}). Questions précises, réponses concises.\n\nCOURS:\n${context}`;
+    const raw = await callClaude(sys, user);
+    const proposed = extractJson(raw).map(c=>({...c, _id: uid()}));
+    status.textContent = `${proposed.length} cartes proposées — accepte, modifie ou supprime avant l'ajout.`;
+    renderProposedCards(proposed, ch);
+  }catch(err){ status.textContent = "Échec de la génération. Réessaie."; }
+  btn.disabled=false;
+});
+function renderProposedCards(proposed, ch){
+  const box = document.getElementById('proposedCards');
+  const total = proposed.length;
+  let idx = 0;
+  function draw(){
+    if(idx >= proposed.length){ box.innerHTML = idx>0 ? `<p class="muted">Toutes les cartes proposées ont été traitées.</p>` : ''; return; }
+    const c = proposed[idx];
+    box.innerHTML = `
+      <div class="card" style="margin-top:10px">
+        <span class="chip">Carte ${idx+1}/${total}</span>
+        <input type="text" class="prop-q" value="${escapeHtml(c.q)}" style="margin:8px 0 6px; font-weight:600">
+        <textarea class="prop-a" style="min-height:60px">${escapeHtml(c.a)}</textarea>
+        <p class="muted" style="margin:4px 0 0">Modifie le texte directement si besoin, puis accepte ou supprime.</p>
+        <div class="row" style="margin-top:8px">
+          <button class="btn sm" id="propAccept">✅ Accepter</button>
+          <button class="btn sm ghost" id="propReject">❌ Supprimer</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('propAccept').addEventListener('click', async ()=>{
+      const importance = parseInt(document.getElementById('cardsImportance').value,10);
+      const difficulty = parseInt(document.getElementById('cardsDifficulty').value,10);
+      const q = box.querySelector('.prop-q').value.trim();
+      const a = box.querySelector('.prop-a').value.trim();
+      currentSubject.cards.push({ id:uid(), q, a, chapterId:ch.id, chapterName:ch.name, importance, difficulty, ease:2.3, interval:0, reps:0, lapses:0, due:todayISO(), lastReview:null });
+      await saveSubject(currentSubject);
+      idx++; draw(); renderCardsLibrary();
+    });
+    document.getElementById('propReject').addEventListener('click', ()=>{ idx++; draw(); });
+  }
+  draw();
+}
+document.getElementById('startReviewBtn').addEventListener('click', ()=>{
+  if(!currentSubject) return;
+  reviewQueue = dueItems(currentSubject.cards).map(c=>c.id);
+  if(reviewQueue.length===0){ document.getElementById('reviewArea').innerHTML = `<div class="empty">Rien à réviser — génère des cartes ou reviens plus tard.</div>`; return; }
+  showNextReviewCard();
+});
+function showNextReviewCard(){
+  const area = document.getElementById('reviewArea');
+  if(reviewQueue.length===0){ area.innerHTML = `<div class="empty">Session terminée. Bien joué.</div>`; renderReviewStats(); return; }
+  pendingConfidence = 'medium';
+  const id = reviewQueue[0];
+  const card = currentSubject.cards.find(c=>c.id===id);
+  const lvl = masteryLevel(card), pct = masteryPct(card), hist = cardHistoryStats(currentSubject, id, 'card');
+  area.innerHTML = `
+    <div class="flash-card">
+      <div>
+        <span class="chip" style="border-color:${MASTERY_COLORS[lvl]}; color:${MASTERY_COLORS[lvl]}">${MASTERY_EMOJI[lvl]} ${MASTERY_LABELS[lvl]} · ${pct}%</span>
+        <p class="muted mono" style="margin:6px 0 0; font-size:0.76rem">Dernière révision : ${formatRelativeDate(card.lastReview)} · ${hist.count} révision(s), ${hist.correct} réussite(s)</p>
+      </div>
+      <div class="flash-q">${escapeHtml(card.q)}</div>
+      <div class="row" id="confRow">
+        <button class="btn sm secondary conf-btn" data-conf="low">Peu confiant</button>
+        <button class="btn sm secondary conf-btn active" data-conf="medium">Moyennement</button>
+        <button class="btn sm secondary conf-btn" data-conf="high">Confiant</button>
+      </div>
+      <div class="flash-a" id="flashAnswer" hidden>${escapeHtml(card.a)}</div>
+      <button class="btn secondary" id="revealBtn">Voir la réponse</button>
+      <div class="rate-row" id="rateRow" hidden>
+        <button data-r="0">Encore</button><button data-r="1">Difficile</button><button data-r="2">Bien</button><button data-r="3">Facile</button>
+      </div>
+    </div>
+    <p class="muted mono">${reviewQueue.length} carte(s) restante(s)</p>
+  `;
+  area.querySelectorAll('.conf-btn').forEach(b=> b.addEventListener('click', ()=>{
+    pendingConfidence = b.dataset.conf;
+    area.querySelectorAll('.conf-btn').forEach(x=>x.classList.toggle('active', x===b));
+  }));
+  document.getElementById('revealBtn').addEventListener('click', ()=>{
+    document.getElementById('flashAnswer').hidden=false;
+    document.getElementById('rateRow').hidden=false;
+    document.getElementById('revealBtn').hidden=true;
+  });
+  area.querySelectorAll('[data-r]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const rating = parseInt(btn.dataset.r,10);
+      const idx = currentSubject.cards.findIndex(c=>c.id===id);
+      currentSubject.cards[idx] = scheduleNext(currentSubject.cards[idx], rating, pendingConfidence);
+      currentSubject.reviews.push({date:todayISO(), type:'card', id, correct: rating>=2, confidence: pendingConfidence});
+      reviewQueue.shift();
+      if(rating===0){ reviewQueue.splice(Math.min(3,reviewQueue.length), 0, id); }
+      await saveSubject(currentSubject);
+      showNextReviewCard();
+    });
+  });
+}
+
+// ==================== Quiz ====================
+async function renderQuizView(){
+  const empty = document.getElementById('quizEmpty'), wrap = document.getElementById('quizWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  const subSel = document.getElementById('quizSubjectSelect');
+  fillSubjectSelect(subSel);
+  if(currentSubject) subSel.value = currentSubject.id;
+  if(!currentSubject) currentSubject = await loadSubject(subSel.value);
+  await fillChapterSelect(document.getElementById('quizChapterSelect'), subSel.value, false);
+  document.getElementById('quizArea').innerHTML = '';
+}
+document.getElementById('quizSubjectSelect').addEventListener('change', async (e)=>{
+  currentSubject = await loadSubject(e.target.value);
+  await fillChapterSelect(document.getElementById('quizChapterSelect'), e.target.value, false);
+});
+document.getElementById('genQuizBtn').addEventListener('click', async ()=>{
+  if(!currentSubject) return;
+  const chapterId = document.getElementById('quizChapterSelect').value;
+  const ch = (currentSubject.chapters||[]).find(c=>c.id===chapterId);
+  if(!ch || !ch.documents.length){ alert('Ce chapitre ne contient aucun document.'); return; }
+  const btn = document.getElementById('genQuizBtn'), status = document.getElementById('quizGenStatus');
+  btn.disabled=true; status.hidden=false; status.textContent='Génération de 5 questions…';
+  try{
+    const context = ch.documents.map(d=>d.text).join('\n\n').slice(0,20000);
+    const sys = `Tu réponds UNIQUEMENT avec un tableau JSON valide, sans texte avant/après. Format exact: [{"type":"qcm","q":"...","options":["a","b","c","d"],"correct":0,"explanation":"..."},{"type":"vf","q":"affirmation...","options":["Vrai","Faux"],"correct":0,"explanation":"..."}]`;
+    const user = `Génère exactement 5 questions en français à partir de ce cours de dentisterie (chapitre: ${ch.name}) : un mélange de QCM (4 options) et de vrai/faux. Inclus une courte explication de la bonne réponse.\n\nCOURS:\n${context}`;
+    const raw = await callClaude(sys, user);
+    const items = extractJson(raw);
+    currentSubject.quiz.push(...items.map(q=>({ id:uid(), type:q.type, q:q.q, options:q.options, correct:q.correct, explanation:q.explanation, chapterId:ch.id, chapterName:ch.name })));
+    await saveSubject(currentSubject);
+    status.textContent = `${items.length} nouvelles questions ajoutées.`;
+  }catch(err){ status.textContent = "Échec de la génération. Réessaie."; }
+  btn.disabled=false;
+});
+function buildQuizQueue(subject, n){
+  const scored = subject.quiz.map(q=>{
+    const logs = subject.reviews.filter(r=>r.type==='quiz' && r.id===q.id);
+    const rate = logs.length ? logs.filter(l=>l.correct).length/logs.length : -1;
+    return {q, rate};
+  }).sort((a,b)=>a.rate-b.rate);
+  return scored.slice(0,n).map(s=>s.q.id);
+}
+document.getElementById('startQuizBtn').addEventListener('click', ()=>{
+  if(!currentSubject || currentSubject.quiz.length===0){ document.getElementById('quizArea').innerHTML = `<div class="empty">Génère d'abord des questions.</div>`; return; }
+  quizQueue = buildQuizQueue(currentSubject, 5); quizScore={correct:0,total:0}; quizIsExam=false; quizWrong=[];
+  showNextQuizItem();
+});
+document.getElementById('startExamBtn').addEventListener('click', ()=>{
+  if(!currentSubject || currentSubject.quiz.length===0){ document.getElementById('quizArea').innerHTML = `<div class="empty">Génère d'abord des questions.</div>`; return; }
+  quizQueue = buildQuizQueue(currentSubject, Math.min(15, currentSubject.quiz.length)); quizScore={correct:0,total:0}; quizIsExam=true; quizWrong=[];
+  showNextQuizItem();
+});
+function showNextQuizItem(){
+  const area = document.getElementById('quizArea');
+  if(quizQueue.length===0){
+    const pct = quizScore.total ? Math.round(quizScore.correct/quizScore.total*100) : 0;
+    area.innerHTML = `
+      <div class="card">
+        <h2>${quizIsExam?'Mini-examen terminé':'Quiz terminé'}</h2>
+        <p class="muted">Score : ${quizScore.correct}/${quizScore.total} (${pct}%)</p>
+        ${quizWrong.length ? `<button class="btn secondary" id="convertWrongBtn">Transformer mes ${quizWrong.length} erreur(s) en flashcards</button>` : ''}
+      </div>`;
+    if(quizWrong.length){
+      document.getElementById('convertWrongBtn').addEventListener('click', async ()=>{
+        currentSubject.cards.push(...quizWrong.map(w=>({ id:uid(), q:w.q, a:w.a, chapterId:w.chapterId, chapterName:w.chapterName, importance:2, difficulty:2, ease:2.3, interval:0, reps:0, lapses:0, due:todayISO(), lastReview:null })));
+        await saveSubject(currentSubject);
+        quizWrong=[]; document.getElementById('convertWrongBtn').replaceWith(Object.assign(document.createElement('p'),{className:'muted', textContent:'Cartes ajoutées à ta révision.'}));
+      });
+    }
+    return;
+  }
+  const id = quizQueue[0];
+  const item = currentSubject.quiz.find(q=>q.id===id);
+  area.innerHTML = `
+    <div class="card">
+      <span class="chip">${item.type==='vf'?'Vrai / Faux':'QCM'} · ${escapeHtml(item.chapterName||'')}</span>
+      <div class="flash-q" style="margin:10px 0 14px">${escapeHtml(item.q)}</div>
+      <div id="optsWrap"></div>
+      <div id="explainBox" class="muted" style="margin-top:10px" hidden></div>
+      <button class="btn secondary" id="nextQuizBtn" style="margin-top:12px" hidden>Suivant</button>
+    </div>
+    <p class="muted mono">${quizQueue.length} question(s) restante(s)</p>
+  `;
+  const optsWrap = document.getElementById('optsWrap');
+  item.options.forEach((opt,i)=>{
+    const b = document.createElement('button');
+    b.className='qcm-opt'; b.textContent=opt;
+    b.addEventListener('click', async ()=>{
+      optsWrap.querySelectorAll('.qcm-opt').forEach(o=>o.disabled=true);
+      const correct = i===item.correct;
+      b.classList.add(correct?'correct':'wrong');
+      if(!correct){ optsWrap.children[item.correct].classList.add('correct'); quizWrong.push({ q:item.q, a:item.options[item.correct], chapterId:item.chapterId, chapterName:item.chapterName }); }
+      document.getElementById('explainBox').hidden=false;
+      document.getElementById('explainBox').textContent = item.explanation||'';
+      document.getElementById('nextQuizBtn').hidden=false;
+      currentSubject.reviews.push({date:todayISO(), type:'quiz', id, correct});
+      quizScore.total++; if(correct) quizScore.correct++;
+      await saveSubject(currentSubject);
+    });
+    optsWrap.appendChild(b);
+  });
+  document.getElementById('nextQuizBtn').addEventListener('click', ()=>{ quizQueue.shift(); showNextQuizItem(); });
+}
+
+// ==================== Calendar ====================
+async function renderCalendar(){
+  const sel = document.getElementById('taskSubject');
+  sel.innerHTML = '<option value="">—</option>' + subjectsIndex.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  const list = document.getElementById('taskList'), empty = document.getElementById('taskEmpty');
+  const sorted = [...tasks].sort((a,b)=> new Date(a.date)-new Date(b.date));
+  if(sorted.length===0){ list.innerHTML=''; empty.hidden=false; }
+  else{
+    empty.hidden=true;
+    list.innerHTML = sorted.map(t=>`
+      <div class="task-item">
+        <span>${t.type==='exam'?'📕':t.type==='course'?'📖':t.type==='review'?'🧠':'📝'} ${escapeHtml(t.title)}</span>
+        <span class="when">${new Date(t.date).toLocaleDateString('fr-FR')}</span>
+        <button class="btn ghost" data-deltask="${t.id}">Suppr.</button>
+      </div>
+    `).join('');
+    list.querySelectorAll('[data-deltask]').forEach(btn=> btn.addEventListener('click', async ()=>{ tasks = tasks.filter(t=>t.id!==btn.dataset.deltask); await saveTasks(); renderCalendar(); }));
+  }
+  const exams = tasks.filter(t=>t.type==='exam' && (new Date(t.date)-new Date())/86400000 <= 21 && (new Date(t.date)-new Date()) >= -86400000);
+  const planCard = document.getElementById('examPlanCard');
+  if(exams.length===0){ planCard.hidden=true; }
+  else{
+    planCard.hidden=false;
+    document.getElementById('examPlans').innerHTML = exams.map(ex=>{
+      const daysLeft = Math.max(0, Math.ceil((new Date(ex.date)-new Date())/86400000));
+      const rows=[];
+      for(let d=Math.min(6,daysLeft-1); d>=0; d--){
+        const day = new Date(Date.now() + (daysLeft-1-d)*86400000);
+        const minutes = Math.min(60, 15 + (6-d)*7);
+        rows.push(`<tr><td>${day.toLocaleDateString('fr-FR',{weekday:'short', day:'numeric', month:'short'})}</td><td>${minutes} min</td></tr>`);
+      }
+      return `<h3 style="margin-bottom:4px">${escapeHtml(ex.title)}</h3><p class="muted" style="margin-top:0">${daysLeft} jour(s) restant(s)</p><table class="plan-table">${rows.join('')}</table>`;
+    }).join('<hr style="border:none;border-top:1px solid var(--line); margin:14px 0">');
+  }
+}
+document.getElementById('addTaskBtn').addEventListener('click', async ()=>{
+  const title = document.getElementById('taskTitle').value.trim();
+  const date = document.getElementById('taskDate').value;
+  const type = document.getElementById('taskType').value;
+  const subjectId = document.getElementById('taskSubject').value;
+  if(!title || !date){ alert('Titre et date requis.'); return; }
+  tasks.push({ id:uid(), title, date, type, subjectId });
+  await saveTasks();
+  document.getElementById('taskTitle').value=''; document.getElementById('taskDate').value='';
+  renderCalendar();
+});
+document.getElementById('exportIcsBtn').addEventListener('click', ()=>{
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Musab Study OS//FR'];
+  tasks.forEach(t=>{
+    const d = t.date.replace(/-/g,'');
+    lines.push('BEGIN:VEVENT', `UID:${t.id}@musab-study-os`, `DTSTART;VALUE=DATE:${d}`, `SUMMARY:${t.type==='exam'?'Examen: ':''}${t.title}`, 'END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], {type:'text/calendar'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'musab-study-os.ics'; a.click();
+});
+
+// ==================== Search ====================
+document.getElementById('searchBtn').addEventListener('click', doSearch);
+document.getElementById('searchInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+async function doSearch(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const out = document.getElementById('searchResults');
+  if(!q){ out.innerHTML=''; return; }
+  out.innerHTML = `<p class="loading">Recherche…</p>`;
+  const results = [];
+  for(const s of subjectsIndex){
+    const subj = await loadSubject(s.id);
+    if(!subj) continue;
+    (subj.chapters||[]).forEach(ch=>{ (ch.documents||[]).forEach(d=>{ if(d.text.toLowerCase().includes(q)) results.push({src:`${subj.name} › ${ch.name} › ${d.name}`, text: excerptAround(d.text, q)}); }); });
+    (subj.notes||[]).forEach(n=>{ if(n.text.toLowerCase().includes(q)) results.push({src:`${subj.name} · Note`, text:n.text}); });
+    subj.cards.forEach(c=>{ if(c.q.toLowerCase().includes(q) || c.a.toLowerCase().includes(q)) results.push({src:`${subj.name} · Carte`, text:c.q}); });
+    subj.quiz.forEach(qz=>{ if(qz.q.toLowerCase().includes(q)) results.push({src:`${subj.name} · Quiz`, text:qz.q}); });
+  }
+  tasks.forEach(t=>{ if(t.title.toLowerCase().includes(q)) results.push({src:'Calendrier', text:t.title}); });
+  anatomyStructures.forEach(a=>{ if(a.name.toLowerCase().includes(q)) results.push({src:'Anatomie', text:a.name}); });
+  out.innerHTML = results.length ? results.map(r=>`<div class="search-result"><div class="src">${escapeHtml(r.src)}</div><div>${escapeHtml(r.text)}</div></div>`).join('') : `<div class="empty">Aucun résultat.</div>`;
+}
+function excerptAround(text, q){
+  const i = text.toLowerCase().indexOf(q);
+  const start = Math.max(0, i-60), end = Math.min(text.length, i+q.length+60);
+  return (start>0?'…':'') + text.slice(start,end) + (end<text.length?'…':'');
+}
+
+// ==================== Progress ====================
+async function renderProgress(){
+  const empty = document.getElementById('progressEmpty'), wrap = document.getElementById('progressWrap');
+  if(subjectsIndex.length===0){ wrap.hidden=true; empty.hidden=false; return; }
+  wrap.hidden=false; empty.hidden=true;
+  let allReviews=[], totalCards=0, subjMastery=[];
+  for(const s of subjectsIndex){
+    const subj = await loadSubject(s.id);
+    if(!subj) continue;
+    allReviews = allReviews.concat(subj.reviews);
+    totalCards += subj.cards.length;
+    const items = [...subj.cards, ...subj.quiz.map(q=>({ease:2.3,interval:0,reps:0}))];
+    const avg = items.length ? items.reduce((a,it)=>a+masteryPct(it),0)/items.length : 0;
+    subjMastery.push({ name: subj.name, color: subj.color, pct: Math.round(avg) });
+  }
+  const totalReviews = allReviews.length, correctReviews = allReviews.filter(r=>r.correct).length;
+  const overallRate = totalReviews ? Math.round(correctReviews/totalReviews*100) : 0;
+  document.getElementById('progStats').innerHTML = `
+    <div class="stat-box"><div class="num">${totalCards}</div><div class="lbl">Cartes</div></div>
+    <div class="stat-box"><div class="num">${totalReviews}</div><div class="lbl">Révisions</div></div>
+    <div class="stat-box"><div class="num">${overallRate}%</div><div class="lbl">Réussite globale</div></div>
+  `;
+  document.getElementById('subjectMastery').innerHTML = subjMastery.map(m=>`
+    <div><div style="display:flex; justify-content:space-between; margin-bottom:5px"><span>${escapeHtml(m.name)}</span><span class="mono">${m.pct}%</span></div><div class="mastery-bar"><span style="width:${m.pct}%; background:${m.color}"></span></div></div>
+  `).join('');
+  const map={};
+  allReviews.forEach(r=>{ const d=dayKey(r.date); map[d]=map[d]||{correct:0,total:0}; map[d].total++; if(r.correct) map[d].correct++; });
+  const days=14, stats=[];
+  for(let i=days-1;i>=0;i--){ const d=dayKey(new Date(Date.now()-i*86400000).toISOString()); const e=map[d]; stats.push(e?Math.round(e.correct/e.total*100):null); }
+  const w=600,h=130,pad=10;
+  const pts = stats.map((r,i)=>({ x: pad+i*((w-2*pad)/(stats.length-1)), y: r===null?null:h-pad-(r/100)*(h-2*pad) }));
+  let path='', drawing=false;
+  pts.forEach(p=>{ if(p.y===null){drawing=false; return;} path += (drawing?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)+' '; drawing=true; });
+  const dots = pts.filter(p=>p.y!==null).map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="var(--accent)"/>`).join('');
+  document.getElementById('progressChart').innerHTML = `<line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="var(--line)"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}`;
+  let weak=[];
+  for(const s of subjectsIndex){ const subj=await loadSubject(s.id); weak = weak.concat(weakPoints(subj,3).map(w=>({...w, subject:s.name}))); }
+  weak.sort((a,b)=>a.rate-b.rate); weak = weak.slice(0,6);
+  const wl = document.getElementById('weakList'), we = document.getElementById('weakEmpty');
+  if(weak.length===0){ wl.innerHTML=''; we.hidden=false; }
+  else{ we.hidden=true; wl.innerHTML = weak.map(w=>`<div class="weak-item"><div><span class="chip">${w.subject}</span><div style="margin-top:4px">${escapeHtml(w.label)}</div></div><div class="rate">${Math.round(w.rate*100)}%</div></div>`).join(''); }
+}
+
+// ==================== Anatomy (uniquement basé sur les cours importés) ====================
+async function renderAnatomy(){
+  const sel = document.getElementById('anatSubject');
+  sel.innerHTML = '<option value="">Toutes mes matières</option>' + subjectsIndex.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  const list = document.getElementById('anatList');
+  const filtered = anatomyStructures.filter(a=> anatFilter==='all' || a.category===anatFilter);
+  if(filtered.length===0){ list.innerHTML = `<div class="empty">Aucune structure ${anatFilter==='all'?'':'dans cette catégorie '}pour l'instant. Ajoute-en une ci-dessous.</div>`; return; }
+  list.innerHTML = filtered.map(a=>`
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <div><strong>${escapeHtml(a.name)}</strong> <span class="chip">${a.category}</span></div>
+        <button class="btn ghost" data-delanat="${a.id}">Suppr.</button>
+      </div>
+      ${a.ficheCourse ? `<div class="fiche-box">${escapeHtml(a.ficheCourse)}</div>` : ''}
+      ${a.ficheInternet ? `<div class="fiche-box internet">🌐 ${escapeHtml(a.ficheInternet)}</div>` : ''}
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm secondary" data-genfiche="${a.id}">📚 ${a.ficheCourse?'Régénérer depuis mes cours':'Générer depuis mes cours'}</button>
+        <button class="btn sm secondary" data-geninternet="${a.id}">🌐 Compléter avec internet</button>
+      </div>
+      <p class="loading" id="anatStatus-${a.id}" hidden></p>
+    </div>
+  `).join('');
+  list.querySelectorAll('[data-delanat]').forEach(btn=> btn.addEventListener('click', async ()=>{ anatomyStructures = anatomyStructures.filter(a=>a.id!==btn.dataset.delanat); await saveAnatomy(); renderAnatomy(); }));
+  list.querySelectorAll('[data-genfiche]').forEach(btn=> btn.addEventListener('click', ()=> generateFiche(btn.dataset.genfiche, false)));
+  list.querySelectorAll('[data-geninternet]').forEach(btn=> btn.addEventListener('click', ()=> generateFiche(btn.dataset.geninternet, true)));
+}
+document.getElementById('anatCatToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  anatFilter = btn.dataset.cat;
+  document.querySelectorAll('#anatCatToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+  renderAnatomy();
+});
+document.getElementById('addAnatBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('anatName').value.trim();
+  if(!name){ alert('Donne un nom à cette structure.'); return; }
+  const category = document.getElementById('anatCategory').value;
+  const subjectId = document.getElementById('anatSubject').value;
+  anatomyStructures.push({ id: uid(), name, category, subjectId, ficheCourse:'', ficheInternet:'', generatedAt:null });
+  await saveAnatomy();
+  document.getElementById('anatName').value='';
+  renderAnatomy();
+});
+async function generateFiche(id, useInternet){
+  const structure = anatomyStructures.find(a=>a.id===id);
+  const status = document.getElementById('anatStatus-'+id);
+  if(status){ status.hidden=false; status.textContent = useInternet ? 'Recherche internet…' : 'Recherche dans tes cours…'; }
+  try{
+    if(!useInternet){
+      let context = '';
+      if(structure.subjectId){ const subj = await loadSubject(structure.subjectId); if(subj) context = selectRelevantContext(subj, 'all', structure.name); }
+      else{ let parts=[]; for(const s of subjectsIndex){ const subj = await loadSubject(s.id); if(!subj) continue; const c = selectRelevantContext(subj, 'all', structure.name); if(c) parts.push(c); } context = parts.join('\n\n').slice(0,16000); }
+      const sys = `Tu es un tuteur pour un étudiant en dentisterie. Réponds UNIQUEMENT à partir des extraits de cours fournis. Structure ta réponse en points courts si l'information est disponible (Origine, Insertion/Trajet, Innervation ou rapports, Fonction). Cite le chapitre/document source. Si l'information n'est pas dans les extraits, réponds uniquement "⚠️ Information insuffisante dans tes cours." Réponds en français.\n\nEXTRAITS DE COURS:\n${context || '(aucun document disponible)'}`;
+      structure.ficheCourse = await callClaude(sys, `Fiche anatomique pour : ${structure.name}`, false);
+    } else {
+      const sys2 = `Tu es un tuteur médical. Donne une fiche anatomique brève (Origine, Insertion, Innervation, Fonction) pour la structure demandée, en t'appuyant sur une recherche internet. Précise que cette information vient d'internet et non des cours de l'étudiant — elle doit être vérifiée avant un examen. Réponds en français, de façon concise.`;
+      structure.ficheInternet = await callClaude(sys2, `Structure anatomique : ${structure.name}`, true);
+    }
+    structure.generatedAt = todayISO();
+    await saveAnatomy();
+  }catch(err){ if(status) status.textContent = 'Échec — réessaie.'; }
+  renderAnatomy();
+}
+
+// ==================== Settings ====================
+function fillSettingsForm(){
+  document.getElementById('pfName').value = profile.name;
+  document.getElementById('pfUniversity').value = profile.university;
+  document.getElementById('pfSection').value = profile.section;
+  document.getElementById('pfProgram').value = profile.program;
+  document.getElementById('pfGoals').value = profile.goals;
+}
+document.getElementById('saveProfileBtn').addEventListener('click', async ()=>{
+  profile.name = document.getElementById('pfName').value.trim();
+  profile.university = document.getElementById('pfUniversity').value.trim();
+  profile.section = document.getElementById('pfSection').value.trim();
+  profile.program = document.getElementById('pfProgram').value.trim();
+  profile.goals = document.getElementById('pfGoals').value.trim();
+  await saveProfile();
+  document.getElementById('brandSub').textContent = `${profile.program} — ${profile.university}`;
+  switchView('dashboard');
+});
+document.getElementById('exportDataBtn').addEventListener('click', async ()=>{
+  const subjects = {};
+  for(const s of subjectsIndex){ subjects[s.id] = await loadSubject(s.id); }
+  const dump = { exportedAt: todayISO(), profile, subjectsIndex, subjects, tasks, anatomyStructures };
+  const blob = new Blob([JSON.stringify(dump,null,2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'musab-study-os-backup.json'; a.click();
+});
+document.getElementById('importDataInput').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const dump = JSON.parse(await file.text());
+    if(dump.profile){ profile = dump.profile; await saveProfile(); applyTheme(); fillSettingsForm(); }
+    if(dump.subjectsIndex){ subjectsIndex = dump.subjectsIndex; await saveSubjectsIndex(); }
+    if(dump.subjects){ for(const id in dump.subjects){ await storeSet('subject:'+id, dump.subjects[id]); } }
+    if(dump.tasks){ tasks = dump.tasks; await saveTasks(); }
+    if(dump.anatomyStructures){ anatomyStructures = dump.anatomyStructures; await saveAnatomy(); }
+    alert('Import réussi.');
+    switchView('dashboard');
+  }catch(err){ alert("Fichier invalide."); }
+});
+
+// ==================== Init ====================
+(async function init(){
+  renderNav();
+  await loadProfile();
+  await loadSubjectsIndex();
+  await loadTasks();
+  await loadAnatomy();
+  document.getElementById('brandSub').textContent = `${profile.program} — ${profile.university}`;
+  fillSettingsForm();
+  switchView('dashboard');
+})();
+</script>
+</body>
+</html>

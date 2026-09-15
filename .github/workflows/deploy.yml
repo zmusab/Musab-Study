@@ -1,0 +1,62 @@
+name: Déploiement GitHub Pages
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+# Un seul déploiement à la fois ; les poussées suivantes annulent la précédente
+# plutôt que de s'empiler.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Types et tests AVANT le build : un déploiement ne doit jamais partir
+      # depuis un état qui ne compile pas ou dont les tests échouent.
+      - name: Vérifier les types
+        run: npm run typecheck
+
+      - name: Lancer les tests
+        run: npm test
+
+      - name: Construire
+        run: npm run build
+
+      # GitHub Pages sert les 404 pour toute URL inconnue. L'application
+      # utilisant le routage par hash, index.html suffit — mais copier
+      # index.html en 404.html évite une vraie page d'erreur si un lien
+      # sans hash est ouvert par erreur.
+      - name: Filet de sécurité pour les URL inconnues
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
