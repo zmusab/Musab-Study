@@ -128,10 +128,11 @@ describe('cartes dues', () => {
   const days = weekOf(NOW);
 
   it('agrège par jour au lieu de produire une ligne par carte', () => {
+    const tomorrow = new Date(2026, 2, 19).toISOString();
     const cards = [
-      card({ id: 'c1', subjectId: 's1', due: '2026-03-19T00:00:00.000Z' }),
-      card({ id: 'c2', subjectId: 's1', due: '2026-03-19T00:00:00.000Z' }),
-      card({ id: 'c3', subjectId: 's2', due: '2026-03-19T00:00:00.000Z' }),
+      card({ id: 'c1', subjectId: 's1', due: tomorrow }),
+      card({ id: 'c2', subjectId: 's1', due: tomorrow }),
+      card({ id: 'c3', subjectId: 's2', due: tomorrow }),
     ];
     const buckets = dueByDay(cards, days, subjects, NOW);
     expect(buckets.size).toBe(1);
@@ -185,7 +186,12 @@ describe('agenda d’une journée', () => {
       event({ id: 'sess', day: '2026-03-19', kind: 'review', title: 'Révision nerfs', chapterId: 'ch1' }),
       event({ id: 'task', day: '2026-03-19', kind: 'task', title: 'Rendre le dossier' }),
     ];
-    const due = dueByDay([card({ id: 'c1', subjectId: 's1', due: '2026-03-19T00:00:00.000Z' })], ['2026-03-19'], subjects, NOW);
+    const due = dueByDay(
+      [card({ id: 'c1', subjectId: 's1', due: new Date(2026, 2, 19).toISOString() })],
+      ['2026-03-19'],
+      subjects,
+      NOW,
+    );
     const agenda = buildAgenda('2026-03-19', events, due, subjects, chapters, NOW);
 
     expect(agenda.evaluations.map((entry) => entry.event.id)).toEqual(['exam']);

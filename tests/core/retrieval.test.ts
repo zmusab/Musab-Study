@@ -34,6 +34,13 @@ const HISTOLOGIE = makeChunks(
 const ALL = [...MASSETER, ...HISTOLOGIE];
 
 describe('bm25Retriever', () => {
+  it('comprend le pluriel et préfère le nerf demandé à une sous-branche qui cite le même adjectif', () => {
+    const topic = makeChunks('topic', 'Le nerf ophtalmique de Willis. Il chemine dans le sinus caverneux et se divise en trois branches terminales.');
+    const distractor = makeChunks('distractor', 'Le nerf naso-ciliaire donne une branche pour le ganglion ophtalmique et des nerfs ciliaires.');
+    const results = bm25Retriever.retrieve('Je ne comprends pas les nerfs ophtalmiques', [...distractor, ...topic], 5);
+    expect(results[0]?.chunk.documentId).toBe('topic');
+    expect(results[0]?.matchedTerms).toEqual(expect.arrayContaining(['nerf', 'ophtalmique']));
+  });
   it('ne renvoie rien sans fragment', () => {
     expect(bm25Retriever.retrieve('masséter', [], 5)).toEqual([]);
   });

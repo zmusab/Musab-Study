@@ -53,6 +53,7 @@ export function ChatPage() {
   const navigate = useNavigate();
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const [showHistory, setShowHistory] = useState(false);
   const [subjectId, setSubjectId] = useState<ID | ''>('');
   const [chapterId, setChapterId] = useState<ID | 'all'>('all');
   const [mode, setMode] = useState<Mode>('cours');
@@ -370,10 +371,12 @@ export function ChatPage() {
   }
 
   const conversationEmpty = messages?.length === 0;
+  const hiddenMessages = !showHistory && (messages?.length ?? 0) > 6 ? (messages?.length ?? 0) - 6 : 0;
+  const visibleMessages = hiddenMessages > 0 ? messages?.slice(-6) : messages;
 
   return (
     <PageTransition>
-      <div className="mx-auto flex w-full max-w-[46rem] flex-col">
+      <div className="mx-auto flex w-full flex-col">
         <PageHeader
           title="IA"
           subtitle={
@@ -382,7 +385,7 @@ export function ChatPage() {
         />
 
         {/* Quatre intentions. Tout le reste des actions vit derrière elles. */}
-        <div className="flex flex-wrap gap-2" data-ai-intents>
+        {conversationEmpty && <div className="flex flex-wrap gap-2" data-ai-intents>
           {INTENTS.map((intent) => (
             <button
               key={intent.category}
@@ -395,7 +398,7 @@ export function ChatPage() {
               {intent.label}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* ────────────── La conversation ────────────── */}
         <div className="mt-6 flex flex-col gap-4">
@@ -414,7 +417,13 @@ export function ChatPage() {
             </div>
           )}
 
-          {messages?.map((message, index) => (
+          {hiddenMessages > 0 && (
+            <button type="button" onClick={() => setShowHistory(true)} className="self-center rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--ink-soft)] hover:bg-[var(--surface-2)]">
+              Afficher {hiddenMessages} message{hiddenMessages > 1 ? 's' : ''} précédent{hiddenMessages > 1 ? 's' : ''}
+            </button>
+          )}
+
+          {visibleMessages?.map((message, index) => (
             // `key` stable par message : cette animation ne joue qu'à l'arrivée
             // d'un nouveau message, jamais en boucle au fil des re-rendus — un
             // fournisseur sans diffusion réelle (OpenAI, Gemini) livre sa
@@ -427,7 +436,7 @@ export function ChatPage() {
                 // échange déjà enfoui n'a pas de sens, et répéter trois boutons
                 // sous chaque message reconstituerait l'encombrement qu'on vient
                 // de retirer.
-                actions={index === (messages?.length ?? 0) - 1 ? answerActions(message.text) : undefined}
+                actions={index === (visibleMessages?.length ?? 0) - 1 ? answerActions(message.text) : undefined}
               />
             </FadeUp>
           ))}

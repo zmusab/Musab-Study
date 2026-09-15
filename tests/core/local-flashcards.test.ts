@@ -104,6 +104,17 @@ describe('generateLocalCardDrafts', () => {
     expect(drafts.some((d) => d.question === "Qu'est-ce que l'émail dentaire ?")).toBe(false);
   });
 
+  it('ne repropose pas le même fait sous une autre question', () => {
+    const chunk = makeChunk("L'émail dentaire est le tissu le plus minéralisé de l'organisme.");
+    const first = generateLocalCardDrafts({ chunks: [chunk], lookup: LOOKUP, count: 10, ...BASE_OPTS });
+    const fact = first[0]!;
+    const again = generateLocalCardDrafts({
+      chunks: [chunk], lookup: LOOKUP, count: 10, ...BASE_OPTS,
+      existingAnswerKeys: [`${fact.notionKey}|${fact.answer}`],
+    });
+    expect(again.some((draft) => draft.notionKey === fact.notionKey && draft.answer === fact.answer)).toBe(false);
+  });
+
   it('respecte la limite demandée', () => {
     const chunk = makeChunk(
       "L'émail est un tissu. La dentine est un tissu. La pulpe est un tissu. Le cément est un tissu.",

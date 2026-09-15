@@ -1,4 +1,5 @@
 import type { Confidence, Difficulty, Importance, Rating } from '@/types';
+import { comparisonKey } from '@/core/text';
 
 /**
  * Répétition espacée — SM-2 modifié.
@@ -216,10 +217,33 @@ export function buryUntil(now: Date = new Date()): string {
  * toute file de révision de l'application passe par cette fonction, donc une
  * carte suspendue ne peut pas réapparaître par un chemin oublié.
  */
-export function buildDueQueue<T extends SchedulingState & SetAside>(items: T[], now: Date = new Date()): T[] {
-  return items
+export function buildDueQueue<T extends SchedulingState & SetAside & { notionKey?: string | null; question?: string; answer?: string }>(items: T[], now: Date = new Date()): T[] {
+  const ranked = items
     .filter((item) => isReviewable(item, now))
     .sort((a, b) => a.ease - b.ease || new Date(a.due).getTime() - new Date(b.due).getTime());
+  const exactFacts = new Set<string>();
+  const unique = ranked.filter((item) => {
+    const answer = comparisonKey(item.answer ?? '');
+    const subject = item.notionKey || comparisonKey(item.question ?? '');
+    if (!answer || !subject) return true;
+    const key = `${subject}|${answer}`;
+    if (exactFacts.has(key)) return false;
+    exactFacts.add(key);
+    return true;
+  });
+  const queue: T[] = [];
+  let previous = '';
+  while (unique.length > 0) {
+    const index = unique.findIndex((item) => {
+      const key = item.notionKey || comparisonKey(item.answer ?? '');
+      return key === '' || key !== previous;
+    });
+    const [next] = unique.splice(index < 0 ? 0 : index, 1);
+    if (!next) break;
+    queue.push(next);
+    previous = next.notionKey || comparisonKey(next.answer ?? '');
+  }
+  return queue;
 }
 
 /** État initial d'un nouvel élément : dû immédiatement. */

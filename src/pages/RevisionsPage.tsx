@@ -237,7 +237,8 @@ function ReviewSession({
     });
 
     const rest = queue.slice(1);
-    const nextQueue = rating === 0 ? [...rest.slice(0, 2), current, ...rest.slice(2)] : rest;
+    const retryAfter = Math.min(5, rest.length);
+    const nextQueue = rating === 0 ? [...rest.slice(0, retryAfter), current, ...rest.slice(retryAfter)] : rest;
 
     const nextReviewed = reviewed + 1;
     const nextCorrect = correct + (rating >= 2 ? 1 : 0);

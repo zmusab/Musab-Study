@@ -338,7 +338,7 @@ describe('prochaines révisions', () => {
     const subjects = [subject('s1', 'Anatomie')];
     const cards = [
       card({ id: 'c1', subjectId: 's1', due: '2026-03-01T00:00:00.000Z' }),
-      card({ id: 'c2', subjectId: 's1', due: '2026-03-19T00:00:00.000Z' }),
+      card({ id: 'c2', subjectId: 's1', due: new Date(2026, 2, 19).toISOString() }),
     ];
     const days = upcomingReviews(cards, subjects, 7, NOW);
     expect(days[0]!.label).toBe('Aujourd’hui');

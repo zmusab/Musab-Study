@@ -114,6 +114,8 @@ export interface GenerateLocalCardsInput {
   difficulty: Difficulty;
   /** Questions déjà présentes dans la bibliothèque — jamais reproposées. */
   existingQuestions: readonly string[];
+  /** Existing fact identities: normalized notion + answer. */
+  existingAnswerKeys?: readonly string[];
 }
 
 /**
@@ -139,6 +141,7 @@ const isCloze = (question: string): boolean => question.includes('___');
 export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDraft[] {
   const drafts: CardDraft[] = [];
   const proposedQuestions: string[] = [...input.existingQuestions];
+  const proposedAnswers = new Set((input.existingAnswerKeys ?? []).map(comparisonKey));
 
   for (const chunk of input.chunks) {
     for (const fact of extractFacts(chunk)) {
@@ -151,6 +154,8 @@ export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDra
 
       for (const candidate of candidates) {
         if (candidate.answer.trim().length === 0) continue;
+        const answerKey = comparisonKey(`${comparisonKey(fact.subject)}|${candidate.answer}`);
+        if (proposedAnswers.has(answerKey)) continue;
         const sameForm = proposedQuestions.filter((question) => isCloze(question) === isCloze(candidate.question));
         if (isDuplicateQuestion(candidate.question, sameForm)) continue;
 
@@ -169,6 +174,7 @@ export function generateLocalCardDrafts(input: GenerateLocalCardsInput): CardDra
           notionLabel: fact.subject,
         });
         proposedQuestions.push(candidate.question);
+        proposedAnswers.add(answerKey);
 
         if (drafts.length >= input.count) return drafts;
       }
