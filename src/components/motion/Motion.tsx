@@ -42,6 +42,7 @@ const STILL_CONTAINER: Variants = {
 };
 
 interface AnimatedProps {
+  replayOnScroll?: boolean;
   children: ReactNode;
   className?: string;
   as?: MotionTag;
@@ -109,11 +110,17 @@ export function Stagger({ children, className, as = 'div' }: AnimatedProps) {
 }
 
 /** Enfant d'un `<Stagger>`. */
-export function StaggerItem({ children, className, as = 'div' }: AnimatedProps) {
+export function StaggerItem({ children, className, as = 'div', replayOnScroll = false }: AnimatedProps) {
   const reduced = useReducedMotion();
   const Component = MOTION_TAGS[as];
   return (
-    <Component className={className} variants={reduced ? STILL : fadeUp}>
+    <Component className={className} variants={reduced ? STILL : fadeUp}
+      inherit={replayOnScroll ? false : undefined}
+      animate={replayOnScroll && reduced ? 'visible' : undefined}
+      initial={replayOnScroll && !reduced ? 'hidden' : undefined}
+      whileInView={replayOnScroll ? 'visible' : undefined}
+      viewport={replayOnScroll ? { once: false, amount: 0.12 } : undefined}
+    >
       {children}
     </Component>
   );

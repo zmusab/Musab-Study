@@ -1,10 +1,10 @@
-import { cloneElement, isValidElement, useState, type ReactElement } from 'react';
+import { cloneElement, isValidElement, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { PageTransition } from '@/components/layout/PageTransition';
 import { notationFor } from '@/components/layout/notations';
 import { CountUp } from '@/components/motion/Reveal';
-import { FadeUp, Stagger, StaggerItem } from '@/components/motion/Motion';
+import { FadeUp, Stagger, StaggerItem as MotionItem } from '@/components/motion/Motion';
 import { Button, Card, Chip, EmptyState, Icon, Input, Spinner, Swatch } from '@/components/ui';
 import { agree, plural } from '@/lib/plural';
 import type { IconName } from '@/components/ui/Icon';
@@ -12,6 +12,10 @@ import { useProfile } from '@/hooks/useProfile';
 import { useDashboard } from '@/hooks/useDashboard';
 import { dayKey, daysBetweenDayKeys } from '@/lib/date';
 import { formatDuration } from '@/core/progress';
+
+function StaggerItem({ children }: { children: ReactNode }) {
+  return <MotionItem replayOnScroll>{children}</MotionItem>;
+}
 
 /**
  * Accueil — centre de contrôle quotidien, pas un tableau de bord de

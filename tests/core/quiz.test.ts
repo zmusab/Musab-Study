@@ -146,6 +146,25 @@ describe('scopeCards — le vivier, sans rien inventer', () => {
 });
 
 describe('buildQuiz — construction de QCM réels', () => {
+  it('privilégie des propositions encore inutilisées dans la série', () => {
+    const pool = Array.from({ length: 10 }, (_, i) => card({ id: `variation${i}`, subjectId: 's1', chapterId: 'ch1' }));
+    const result = buildQuiz({ kind: 'subject', subjectId: 's1' }, emptyTables(pool), { count: 2, difficulty: 'mixed', random: seeded(8) });
+    expect(result.questions).toHaveLength(2);
+    const [first, second] = result.questions;
+    expect(second!.options.filter(option => first!.options.includes(option)).length).toBeLessThanOrEqual(1);
+  });
+  it('ne propose pas une liste de branches en réponse à une localisation', () => {
+    const locations = ['Dans le canal Alpha', 'Au niveau du massif Beta', 'Sur la face Gamma', 'Près du repère Delta'].map((answer, i) => card({ id: `lieu${i}`, subjectId: 's1', question: `Où se situe la structure ${i} ?`, answer }));
+    const unrelated = card({ id: 'branches', subjectId: 's1', question: 'De quoi se compose la structure ?', answer: 'Branche une, branche deux' });
+    const result = buildQuiz({ kind: 'cards', cardIds: ['lieu0'] }, emptyTables([...locations, unrelated]), { count: 1, difficulty: 'mixed', random: seeded(4) });
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.options).not.toContain(unrelated.answer);
+  });
+  it('départage les priorités égales aléatoirement entre les séries', () => {
+    const pool = Array.from({ length: 12 }, (_, i) => card({ id: `var${i}`, subjectId: 's1' }));
+    const generate = (seed: number) => buildQuiz({ kind: 'subject', subjectId: 's1' }, emptyTables(pool), { count: 5, difficulty: 'mixed', random: seeded(seed) }).questions.map(q => q.cardId);
+    expect(generate(1)).not.toEqual(generate(42));
+  });
   it('construit le nombre de questions demandé quand les données suffisent', () => {
     const result = buildQuiz(
       { kind: 'subject', subjectId: 's1' },
@@ -273,7 +292,7 @@ describe('buildQuiz — construction de QCM réels', () => {
     }
   });
 
-  it('ne saute vers une autre matière qu’en dernier recours, quand la matière courante n’a réellement pas assez de cartes', () => {
+  it('ne complète jamais les choix avec une autre matière', () => {
     const targeted = card({ id: 't1', subjectId: 's1', chapterId: 'ch1' });
     // Une seule autre carte dans toute la matière s1 : insuffisant pour 3
     // distracteurs sans sortir de la matière.
@@ -288,13 +307,8 @@ describe('buildQuiz — construction de QCM réels', () => {
       emptyTables([targeted, sameSubjectOnly, ...otherSubjectCards]),
       { count: 2, difficulty: 'mixed', now: NOW, random: seeded(11) },
     );
-    expect(result.blocked).toBeNull();
-    const question = result.questions.find((q) => q.cardId === 't1')!;
-    // Le distracteur de la matière courante doit être utilisé...
-    expect(question.options).toContain(sameSubjectOnly.answer);
-    // ...et le dernier recours (autre matière) complète, faute de mieux.
-    const otherSubjectAnswers = new Set(otherSubjectCards.map((c) => c.answer));
-    expect(question.options.some((o) => otherSubjectAnswers.has(o))).toBe(true);
+    expect(result.blocked).not.toBeNull();
+    expect(result.questions).toEqual([]);
   });
 
   it('réduit le nombre de questions plutôt que d’imposer des réponses hors sujet quand aucune matière ne suffit', () => {
