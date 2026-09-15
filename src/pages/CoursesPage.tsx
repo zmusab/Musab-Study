@@ -137,7 +137,6 @@ export function CoursesPage() {
       {subjects === undefined ? null : subjects.length === 0 ? (
         <EmptyState
           icon={<Icon name="courses" size={30} />}
-          mark="Ca₁₀(PO₄)₆(OH)₂"
           title="Commence par créer une matière"
           description="Une matière contient des chapitres, et chaque chapitre contient tes documents de cours. C’est à partir d’eux que l’IA, les flashcards et les quiz travailleront."
           action={<Button onClick={() => setCreating(true)}>Créer ma première matière</Button>}

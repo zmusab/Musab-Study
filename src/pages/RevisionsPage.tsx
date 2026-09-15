@@ -614,7 +614,6 @@ export function RevisionsPage() {
         <PageHeader title="Révisions" />
         <EmptyState
           icon={<Icon name="review" size={30} />}
-          mark="1 · 3 · 7 · 14 · 30 j"
           title="Importe d’abord un cours"
           description="La répétition espacée porte sur tes flashcards. Crée une matière, ajoute un document, puis des cartes avant de réviser."
           action={
@@ -741,7 +740,6 @@ export function RevisionsPage() {
       {totalDue === 0 ? (
         <EmptyState
           icon={<Icon name="review" size={30} />}
-          mark="I(n) = I(n−1) × EF"
           title="Tout est à jour"
           description="Aucune carte due pour l’instant. Reviens quand la répétition espacée en aura reprogrammé."
         />
