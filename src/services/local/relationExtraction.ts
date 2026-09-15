@@ -466,6 +466,16 @@ export function extractFacts(chunk: DocumentChunk): RawFact[] {
     const line = stripBulletPrefix(rawLine);
     const sentences = splitIntoSentences(line);
 
+    // Les polycopiés utilisent souvent « Nerf supra-orbitaire : … » sur la
+    // même ligne que la première explication. Ce libellé devient le contexte
+    // des phrases à pronom qui suivent sur cette ligne et les suivantes ; il
+    // ne faut pas les rattacher au grand titre précédent (« Nerf frontal »).
+    const inlineLabel = line.match(/^([^:]{3,70})\s*:\s+\S/);
+    if (inlineLabel && /^(?:nerf|muscle|artere|artère|veine|ganglion|branche)\b/i.test(inlineLabel[1]!.trim())) {
+      const candidate = headingCandidate(inlineLabel[1]!);
+      if (candidate) heading = candidate;
+    }
+
     /*
       Une ligne courte, sans ponctuation finale, qui ne produit aucun fait :
       c'est un titre de section. On la retient pour les lignes suivantes.

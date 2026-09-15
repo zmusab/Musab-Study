@@ -116,6 +116,20 @@ describe('extractFacts — motifs positifs', () => {
     expect(fact).toBeDefined();
     expect(fact!.items).toEqual(['le maxillaire', 'la mandibule', 'les os nasaux']);
   });
+
+  it('attribue une phrase pronominale au libellé anatomique présent sur la même ligne', () => {
+    const chunk = makeChunk(
+      'Nerf frontal\n' +
+      'Nerf supra-orbitaire (ou nerf frontal externe) : sort de l’orbite. Ce nerf finit en se divisant en 3 catégories de branches :\n' +
+      '  o Branches ascendantes pour la peau du front\n' +
+      '  o Branches descendantes pour la paupière supérieure\n' +
+      '  o Branches osseuses pour l’os frontal',
+    );
+    const facts = extractFacts(chunk);
+    const division = facts.find((fact) => fact.items?.some((item) => item.includes('Branches ascendantes')));
+    expect(division?.subject).toContain('Nerf supra-orbitaire');
+    expect(division?.subject).not.toBe('Nerf frontal');
+  });
 });
 
 describe('extractFacts — abstention sur négations et exceptions (contrainte obligatoire)', () => {

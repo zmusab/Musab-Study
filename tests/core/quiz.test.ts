@@ -146,6 +146,59 @@ describe('scopeCards — le vivier, sans rien inventer', () => {
 });
 
 describe('buildQuiz — construction de QCM réels', () => {
+  it('reproduit la capture : ne mélange jamais branches, rapports, trajet et innervation', () => {
+    const cards = [
+      card({ id: 'frontal', subjectId: 's1', chapterId: 'ch1', origin: 'local', question: 'De quoi se compose Nerf frontal ?', answer: 'Branches ascendantes sensitives pour la peau du front, Branches descendantes (ou palpébrales) pour la partie moyenne de la paupière supérieure et Branches osseuses (osteo-périostées) pour l’os frontal et pour la muqueuse qui tapisse le sinus frontal' }),
+      card({ id: 'rapports', subjectId: 's1', chapterId: 'ch1', origin: 'local', question: 'De quoi se compose le nerf ophtalmique ?', answer: 'L’artère carotide interne, Le sinus caverneux et Les nerf III, IV et VI' }),
+      card({ id: 'infra', subjectId: 's1', chapterId: 'ch1', origin: 'local', question: 'Quelles sont les branches du nerf infra-orbitaire ?', answer: 'Branches ascendante (ou palpébrales) pour la peau de la paupière inférieure, Branches descendante (ou jugales) pour les joues et Branches internes (ou nasales) pour les ailes du nez' }),
+      card({ id: 'alveolaire', subjectId: 's1', chapterId: 'ch1', origin: 'local', question: 'De quoi se compose le nerf alvéolaire supérieur et antérieur ?', answer: 'Il se détache à environ 5 mm en avant de la terminaison du nerf maxillaire et réalise l’innervation des incisives et des canines supérieures' }),
+    ];
+    const result = buildQuiz(
+      { kind: 'cards', cardIds: ['frontal'] },
+      emptyTables(cards),
+      { count: 1, difficulty: 'mixed', format: 'mixed', now: NOW, random: seeded(2) },
+    );
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.format).toBe('recall');
+    expect(result.questions[0]!.question).toBe('Quelles sont les branches du nerf frontal ?');
+    expect(result.questions[0]!.options).not.toContain(cards[1]!.answer);
+    expect(result.questions[0]!.options).not.toContain(cards[3]!.answer);
+  });
+
+  it('écarte une ancienne carte générée dont la question et la réponse se contredisent', () => {
+    const malformed = card({
+      id: 'maxillaire', subjectId: 's1', chapterId: 'ch1', origin: 'local',
+      question: 'De quoi se compose le nerf maxillaire (V’’) et le ganglion sphéno-palatin de Meckel ?',
+      answer: 'C’est un nerf sensitif. Il chemine par le canal moyen du cavum Meckeli et sort du crâne par le foramen rond.',
+    });
+    const result = buildQuiz(
+      { kind: 'cards', cardIds: [malformed.id] },
+      emptyTables([malformed]),
+      { count: 1, difficulty: 'mixed', format: 'mixed', now: NOW },
+    );
+    expect(result.questions).toEqual([]);
+    expect(result.blocked).not.toBeNull();
+  });
+
+  it('ne recycle aucune proposition entre deux QCM de la même série', () => {
+    const pool = Array.from({ length: 12 }, (_, i) => card({
+      id: `unique-${i}`, subjectId: 's1', chapterId: 'ch1',
+      question: `Question anatomique ${i}`,
+      answer: `Réponse anatomique unique ${i}`,
+    }));
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' }, emptyTables(pool),
+      { count: 3, difficulty: 'mixed', format: 'qcm', now: NOW, random: seeded(33) },
+    );
+    const seen = new Set<string>();
+    for (const question of result.questions) {
+      for (const option of question.options) {
+        expect(seen.has(option)).toBe(false);
+        seen.add(option);
+      }
+    }
+  });
+
   it('écarte les listes de branches et de trajets pour les quatre muscles de la capture', () => {
     const cards = [
       card({ id: 'muscles', subjectId: 's1', question: 'De quoi se compose 4 muscles droits ?', answer: 'Droit supérieur, Droit inférieur, Droit médial et Droit latéral' }),
@@ -185,7 +238,7 @@ describe('buildQuiz — construction de QCM réels', () => {
     const result = buildQuiz(
       { kind: 'subject', subjectId: 's1' },
       emptyTables(),
-      { count: 4, difficulty: 'mixed', now: NOW, random: seeded(1) },
+      { count: 4, difficulty: 'mixed', format: 'mixed', now: NOW, random: seeded(1) },
     );
     expect(result.blocked).toBeNull();
     expect(result.questions).toHaveLength(4);
@@ -234,7 +287,7 @@ describe('buildQuiz — construction de QCM réels', () => {
     const result = buildQuiz(
       { kind: 'chapter', subjectId: 's1', chapterId: 'ch1' },
       emptyTables([...cards, ...richCards]),
-      { count: 4, difficulty: 'easy', now: NOW, random: seeded(5) },
+      { count: 4, difficulty: 'easy', format: 'mixed', now: NOW, random: seeded(5) },
     );
     // Pas assez de cartes "faciles" seules (1), mais le chapitre en contient
     // d'autres au total : le quiz s'élargit au lieu de rester bloqué à 1.
@@ -504,7 +557,7 @@ describe('summarizeQuiz — résultat, sans donnée fabriquée', () => {
   const built = buildQuiz(
     { kind: 'subject', subjectId: 's1' },
     emptyTables(),
-    { count: 4, difficulty: 'mixed', now: NOW, random: seeded(9) },
+    { count: 4, difficulty: 'mixed', format: 'mixed', now: NOW, random: seeded(9) },
   );
 
   const answers: QuizAnswerRecord[] = built.questions.map((question, i) => ({
