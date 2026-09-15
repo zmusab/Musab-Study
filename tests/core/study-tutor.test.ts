@@ -50,10 +50,27 @@ describe('tuteur local', () => {
     try {
       const answer = answerWithStudyTutor('Explique le nerf trijumeau', chunks('Le nerf trijumeau possède trois branches : ophtalmique, maxillaire et mandibulaire.'), lookup);
       expect(answer?.text).toContain('trois branches');
-      expect(answer?.text).toContain('À toi');
+    expect(answer?.text).not.toContain('À toi');
       expect(answer?.citations[0]?.page).toBe(2);
       expect(network).not.toHaveBeenCalled();
     } finally { network.mockRestore(); }
+  });
+  it('répond au nerf ophtalmique lui-même plutôt qu’à une sous-branche qui cite son ganglion', () => {
+    const topicText = 'Le nerf ophtalmique de Willis\n• Il chemine par le canal interne de Cavum Meckeli.\n• Puis il entre dans le sinus caverneux où il est en rapport avec :\n§ L’artère carotide interne\n§ Les nerfs III, IV et VI\n• Il se divise en 3 branches terminales :\n§ Nerf naso-ciliaire\n§ Nerf frontal\n§ Nerf lacrymal';
+    const distractorText = 'Nerf naso-ciliaire\n• Sur son trajet le nerf naso-ciliaire donne 3 branches collatérales :\n§ Une branche pour le ganglion ophtalmique %❶)';
+    const topic = chunks(topicText)[0]!;
+    topic.chunk.id = 'topic'; topic.chunk.documentId = 'topic-doc';
+    topic.chunk.termFreq = termFrequencies(tokenize(topicText)); topic.chunk.tokenCount = tokenize(topicText).length;
+    const distractor = chunks(distractorText)[0]!;
+    distractor.chunk.id = 'distractor'; distractor.chunk.documentId = 'distractor-doc';
+    distractor.chunk.termFreq = termFrequencies(tokenize(distractorText)); distractor.chunk.tokenCount = tokenize(distractorText).length;
+    const retrieved = bm25Retriever.retrieve('Je ne comprends pas les nerfs ophtalmiques', [distractor.chunk, topic.chunk], 8);
+    const answer = answerWithStudyTutor('Je ne comprends pas les nerfs ophtalmiques', retrieved, lookup);
+    expect(answer?.text).toContain('Le nerf ophtalmique de Willis');
+    expect(answer?.text).toContain('### Trajet');
+    expect(answer?.text).toContain('### Branches');
+    expect(answer?.text).not.toContain('Pour comprendre et retenir');
+    expect(answer?.text).not.toContain('%❶');
   });
   it('ne fabrique pas de réponse pour un sujet absent', () => {
     expect(answerWithStudyTutor('Explique le nerf optique', chunks('Le nerf facial possède plusieurs branches.'), lookup)).toBeNull();

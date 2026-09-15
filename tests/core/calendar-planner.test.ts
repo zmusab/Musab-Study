@@ -354,7 +354,9 @@ describe('placement des séances', () => {
   });
 
   it('lancé en milieu de plage, commence maintenant et non à l’ouverture', () => {
-    const midway = new Date('2026-03-18T15:30:00.000Z');
+    // Heure civile locale : le planificateur travaille avec les disponibilités
+    // locales de l'utilisateur, indépendamment du fuseau de la machine de test.
+    const midway = new Date(2026, 2, 18, 15, 30);
     const result = scheduleSessions([request()], [], availability, { now: midway, horizonDays: 1 });
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]!.day).toBe(dayKey(midway));

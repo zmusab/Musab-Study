@@ -95,19 +95,21 @@ export async function listDueCards(subjectId: ID, now: Date = new Date()): Promi
   des lignes dues, jamais de tout le volume : la borne d'index reste la même.
 */
 export async function countDueCards(subjectId: ID, now: Date = new Date()): Promise<number> {
-  return db.flashcards
+  const cards = await db.flashcards
     .where('[subjectId+due]')
     .between([subjectId, Dexie.minKey], [subjectId, now.toISOString()], true, true)
     .filter((card) => isReviewable(card, now))
-    .count();
+    .toArray();
+  return buildDueQueue(cards, now).length;
 }
 
 export async function countAllDueCards(now: Date = new Date()): Promise<number> {
-  return db.flashcards
+  const cards = await db.flashcards
     .where('due')
     .belowOrEqual(now.toISOString())
     .filter((card) => isReviewable(card, now))
-    .count();
+    .toArray();
+  return buildDueQueue(cards, now).length;
 }
 
 /** Cartes dues de TOUTES les matières, pour une session de révision globale. */

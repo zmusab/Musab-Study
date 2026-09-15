@@ -87,22 +87,20 @@ export class NoIndexedContentError extends Error {
  * `listCards`, déjà lu par la Bibliothèque de la page Flashcards ; aucune
  * nouvelle table, aucun nouvel appel IA.
  */
-async function existingQuestionsFor(chunks: DocumentChunk[]): Promise<string[]> {
+async function existingCardsFor(chunks: DocumentChunk[]) {
   const subjectId = chunks[0]?.subjectId;
   if (!subjectId) return [];
   const chapterIds = new Set(chunks.map((c) => c.chapterId));
   const cards = await listCards(subjectId);
-  return cards
-    .filter((card) => card.chapterId === null || chapterIds.has(card.chapterId))
-    .map((card) => card.question)
-    .slice(0, MAX_EXISTING_QUESTIONS);
+  return cards.filter((card) => card.chapterId === null || chapterIds.has(card.chapterId));
 }
 
 /** Génère des propositions de cartes, déjà vérifiées, sourcées, et filtrées des doublons évidents avec la bibliothèque existante. */
 export async function generateCardDrafts(input: GenerateCardsInput): Promise<CardDraft[]> {
   if (input.chunks.length === 0) throw new NoIndexedContentError();
 
-  const existingQuestions = await existingQuestionsFor(input.chunks);
+  const existingCards = await existingCardsFor(input.chunks);
+  const existingQuestions = existingCards.map((card) => card.question);
 
   if ((input.source ?? 'local') === 'local') {
     return generateLocalCardDrafts({
@@ -112,13 +110,15 @@ export async function generateCardDrafts(input: GenerateCardsInput): Promise<Car
       importance: input.importance,
       difficulty: input.difficulty,
       existingQuestions,
+      existingAnswerKeys: existingCards.flatMap((card) =>
+        card.notionKey ? [`${card.notionKey}|${card.answer}`] : []),
     });
   }
 
   const context = buildContext(chunksInReadingOrder(input.chunks), input.lookup, CONTEXT_BUDGET);
 
   const raw = await aiOrchestrator.ask({
-    system: systemPrompt(input.count, context.text, existingQuestions),
+    system: systemPrompt(input.count, context.text, existingQuestions.slice(0, MAX_EXISTING_QUESTIONS)),
     prompt: `Génère jusqu'à ${input.count} flashcards demandées, au format JSON.`,
     maxTokens: 3072,
     signal: input.signal,

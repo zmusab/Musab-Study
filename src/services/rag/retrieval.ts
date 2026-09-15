@@ -1,5 +1,6 @@
 import type { Chapter, DocumentChunk, StudyDocument, Subject } from '@/types';
 import { tokenize } from './tokenize';
+import { significantWordEntries } from '@/core/text';
 
 /**
  * Récupération lexicale BM25 sur les fragments de cours.
@@ -45,7 +46,11 @@ export const bm25Retriever: Retriever = {
   retrieve(query, chunks, limit) {
     if (chunks.length === 0) return [];
 
-    const terms = [...new Set(tokenize(query))];
+    // Keep persisted index forms and add singularized question forms. French
+    // users naturally ask in the plural while anatomy headings are commonly
+    // singular ("nerfs ophtalmiques" → "nerf ophtalmique").
+    const phrase = significantWordEntries(query, true).map((entry) => entry.normalized);
+    const terms = [...new Set([...tokenize(query), ...phrase])];
     if (terms.length === 0) return [];
 
     const averageLength =
@@ -66,6 +71,15 @@ export const bm25Retriever: Retriever = {
           frequency * (K1 + 1) /
           (frequency + K1 * (1 - B + B * (chunk.tokenCount / averageLength)));
         score += (idf.get(term) ?? 0) * normalized;
+      }
+
+      // An exact ordered anatomical expression is far stronger evidence than
+      // its words scattered across a paragraph about another structure.
+      if (phrase.length >= 2) {
+        const words = significantWordEntries(chunk.text).map((entry) => entry.normalized);
+        const hasPhrase = words.some((_, start) =>
+          phrase.every((term, offset) => words[start + offset] === term));
+        if (hasPhrase) score += 3 + phrase.length;
       }
 
       if (score > 0) scored.push({ chunk, score, matchedTerms });

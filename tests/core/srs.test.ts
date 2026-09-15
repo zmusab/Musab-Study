@@ -174,6 +174,21 @@ describe('scheduleNext — progression normale', () => {
 });
 
 describe('isDue / buildDueQueue', () => {
+  it('espace les cartes d’une même notion dans la session', () => {
+    const queue = buildDueQueue([
+      { ...makeItem(), notionKey: 'nerf-ophtalmique', answer: 'A' },
+      { ...makeItem(), notionKey: 'nerf-ophtalmique', answer: 'B' },
+      { ...makeItem(), notionKey: 'muscles-droits', answer: 'C' },
+    ], NOW);
+    expect(queue.map((item) => item.notionKey)).toEqual(['nerf-ophtalmique', 'muscles-droits', 'nerf-ophtalmique']);
+  });
+  it('ne présente qu’une fois deux cartes qui testent exactement le même fait', () => {
+    const queue = buildDueQueue([
+      { ...makeItem(), notionKey: 'nerf-ophtalmique', question: 'Q1', answer: 'Trois branches' },
+      { ...makeItem(), notionKey: 'nerf-ophtalmique', question: 'Q2', answer: 'Trois branches' },
+    ], NOW);
+    expect(queue).toHaveLength(1);
+  });
   const past = new Date(NOW.getTime() - DAY_MS).toISOString();
   const future = new Date(NOW.getTime() + DAY_MS).toISOString();
 

@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Fragment, useId, type ReactNode } from 'react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
 import { NAV_ENTRIES, type NavEntry } from './navigation';
 import { StudyPlates } from './StudyPlates';
 import { cn } from '@/lib/cn';
@@ -71,7 +71,7 @@ function NavItem({ entry, indicatorId, compact }: { entry: NavEntry; indicatorId
  * complet y consommait 240 px sur les ~1194 px d'un iPad en paysage, au
  * détriment du modèle et des panneaux.
  */
-function Sidebar({ compact }: { compact?: boolean }) {
+function Sidebar({ compact, toggleable, onToggle }: { compact?: boolean; toggleable?: boolean; onToggle?: () => void }) {
   const indicatorId = useId();
   const profile = useProfile();
 
@@ -84,12 +84,16 @@ function Sidebar({ compact }: { compact?: boolean }) {
     >
       <div className={cn('sticky top-0 flex h-dvh flex-col gap-4 overflow-y-auto scroll-contain py-5 pt-safe', compact ? 'px-2' : 'px-3')}>
         {compact ? (
-          <p className="px-1 text-center text-[0.95rem] font-semibold leading-none text-[var(--ink)]" title="Musab Study">
-            M
-          </p>
+          <div className="flex flex-col items-center gap-2">
+            <p className="px-1 text-center text-[0.95rem] font-semibold leading-none text-[var(--ink)]" title="Musab Study">M</p>
+            {toggleable && <button type="button" onClick={onToggle} aria-label="Agrandir la navigation" title="Agrandir la navigation" className="grid size-10 place-items-center rounded-xl text-lg text-[var(--ink-soft)] hover:bg-[var(--surface-2)]">›</button>}
+          </div>
         ) : (
           <div className="px-2 pb-1">
-            <h1 className="text-[1.05rem] leading-tight">Musab Study</h1>
+            <div className="flex items-center justify-between gap-2">
+              <h1 className="text-[1.05rem] leading-tight">Musab Study</h1>
+              {toggleable && <button type="button" onClick={onToggle} aria-label="Réduire la navigation" title="Réduire la navigation" className="grid size-9 place-items-center rounded-xl text-lg text-[var(--ink-soft)] hover:bg-[var(--surface-2)]">‹</button>}
+            </div>
             <p className="mt-0.5 text-[0.7rem] leading-snug text-[var(--ink-faint)]">
               {profile ? `${profile.program} — ${profile.section}` : 'Chargement…'}
             </p>
@@ -190,6 +194,9 @@ const FULL_BLEED_PREFIXES = ['/anatomie'];
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const fullBleed = FULL_BLEED_PREFIXES.some((prefix) => location.pathname.startsWith(prefix));
+  const focused = ['/ia', '/quiz', '/revisions', '/flashcards'].some((prefix) => location.pathname.startsWith(prefix));
+  const [focusedNavExpanded, setFocusedNavExpanded] = useState(false);
+  const compactNav = fullBleed || (focused && !focusedNavExpanded);
 
   return (
     // Anatomie force le thème sombre sur toute la coquille (rail compris),
@@ -212,15 +219,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Planches de fond — jamais sur les routes « cockpit » (Anatomie 3D,
           lecteur PDF), où le contenu occupe tout l'écran. */}
       {!fullBleed && location.pathname === '/' && <StudyPlates />}
-      <Sidebar compact={fullBleed} />
+      <Sidebar compact={compactNav} toggleable={focused && !fullBleed} onToggle={() => setFocusedNavExpanded((value) => !value)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main
           key={location.pathname}
           className={cn(
-            'flex-1',
             fullBleed
               ? 'flex min-h-0 flex-col pb-20 pt-safe md:pb-0'
-              : 'mx-auto w-full max-w-3xl px-4 pt-6 sm:px-6 md:px-8 md:pt-10 pb-28 md:pb-16 pt-safe',
+              : cn('mx-auto w-full px-4 pt-6 sm:px-6 md:px-8 md:pt-10 pb-28 md:pb-16 pt-safe', focused ? 'max-w-5xl' : 'max-w-3xl'),
           )}
         >
           {children}
