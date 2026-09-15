@@ -99,7 +99,7 @@ export type PreferredProvider = 'auto' | ProviderId;
 
 export function getPreferredProvider(): PreferredProvider {
   const raw = readStorage(PREFERRED_PROVIDER_STORAGE);
-  return raw === 'anthropic' || raw === 'openai' || raw === 'gemini' ? raw : 'auto';
+  return raw === 'anthropic' || raw === 'openai' ? raw : 'auto';
 }
 
 export function setPreferredProvider(provider: PreferredProvider): void {

@@ -1,6 +1,5 @@
 import { anthropicProvider } from './providers/anthropic';
 import { openaiProvider } from './providers/openai';
-import { geminiProvider } from './providers/gemini';
 import { missingRequirements, selectProviderCandidates, TASK_ROUTES } from './taskRouter';
 import { getPreferredProvider } from './settings';
 import { getTaskProviderPreference } from './taskPreferences';
@@ -346,4 +345,4 @@ export function createOrchestrator(providers: readonly AIProvider[]) {
   return { ask, describeAiError, hasAvailableProvider, testProvider, getRecentLog };
 }
 
-export const aiOrchestrator = createOrchestrator([anthropicProvider, openaiProvider, geminiProvider]);
+export const aiOrchestrator = createOrchestrator([anthropicProvider, openaiProvider]);

@@ -188,11 +188,7 @@ export const fromMinutes = (minutes: number): string =>
 
 /** Minutes réellement disponibles dans une journée, selon ses plages actives. */
 export function availableMinutes(day: DayAvailability): number {
-  return SLOT_ORDER.reduce((total, id) => {
-    const slot = day[id];
-    if (!slot.enabled) return total;
-    return total + Math.max(0, toMinutes(slot.end) - toMinutes(slot.start));
-  }, 0);
+  return freeMinutesRemaining(day, []);
 }
 
 /** Minutes disponibles sur la semaine entière — le plafond hebdomadaire réel. */
@@ -247,13 +243,20 @@ export function freeMinutesRemaining(
     .filter((range) => range.end > range.start)
     .sort((a, b) => a.start - b.start);
 
+  const enabled = SLOT_ORDER.map((id) => day[id]).filter((slot) => slot.enabled)
+    .map((slot) => ({ start: toMinutes(slot.start), end: toMinutes(slot.end) }))
+    .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end) && slot.end > slot.start)
+    .sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const slot of enabled) {
+    const previous = merged[merged.length - 1];
+    if (previous && slot.start <= previous.end) previous.end = Math.max(previous.end, slot.end);
+    else merged.push({ ...slot });
+  }
   let free = 0;
-  for (const id of SLOT_ORDER) {
-    const slot = day[id];
-    if (!slot.enabled) continue;
-
-    const slotEnd = toMinutes(slot.end);
-    let cursor = Math.max(toMinutes(slot.start), notBefore);
+  for (const slot of merged) {
+    const slotEnd = slot.end;
+    let cursor = Math.max(slot.start, notBefore);
     if (slotEnd <= cursor) continue;
 
     for (const range of ranges) {

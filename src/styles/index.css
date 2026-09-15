@@ -14,6 +14,46 @@
    le choix explicite de l'utilisateur doit gagner dans les deux sens. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+/* Espace de travail : surfaces nettes et accent turquoise. */
+html:root {
+  --bg: #f0f4f8;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #e7eef5;
+  --surface-hover: #dce8f0;
+  --ink: #172b40;
+  --ink-soft: #465e74;
+  --ink-faint: #597086;
+  --line: #d5e0eb;
+  --line-strong: #a6bacb;
+  --accent: #086b73;
+  --accent-hover: #06555d;
+  --accent-tint: #e0f2f1;
+  --accent-ink: #075c64;
+  --on-accent: #ffffff;
+  --grid-minor: transparent;
+  --grid-major: transparent;
+  --paper-wash: radial-gradient(ellipse at top right, #d9eef0, transparent 65%);
+}
+html[data-theme='dark'] {
+  --bg: #0b1522;
+  --bg-elevated: #111f30;
+  --surface: #15263a;
+  --surface-2: #1e334a;
+  --surface-hover: #28425b;
+  --ink: #edf5fc;
+  --ink-soft: #b6c8d9;
+  --ink-faint: #9eb5c9;
+  --line: #2b4258;
+  --line-strong: #48627a;
+  --accent: #72ddd2;
+  --accent-hover: #9fece4;
+  --accent-tint: #123c43;
+  --accent-ink: #a0ece3;
+  --on-accent: #0b2930;
+  --paper-wash: radial-gradient(ellipse at top right, #123340, transparent 65%);
+}
+
 @theme {
   --font-sans: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif: 'Newsreader', ui-serif, Georgia, serif;
