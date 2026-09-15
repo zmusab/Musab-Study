@@ -36,7 +36,7 @@ import { deleteDocument, moveDocument } from '@/data/repositories/documents';
 import { deleteNote } from '@/data/repositories/notes';
 import { listCards } from '@/data/repositories/cards';
 import { db } from '@/data/db';
-import { averageMastery } from '@/core/mastery';
+import { subjectProgress } from '@/core/progress';
 import { springSoft } from '@/components/motion/transitions';
 import { formatRelativePast } from '@/lib/date';
 import type { Chapter, ID } from '@/types';
@@ -71,6 +71,7 @@ export function SubjectDetailPage() {
     [subjectId],
   );
   const cards = useLiveQuery(() => (subjectId ? listCards(subjectId) : []), [subjectId]);
+  const reviewLogs = useLiveQuery(() => subjectId ? db.reviewLogs.where('subjectId').equals(subjectId).toArray() : [], [subjectId]);
 
   // Document le plus récemment ouvert de CETTE matière — alimente « Continuer ».
   const recentDocument = useLiveQuery(async () => {
@@ -108,6 +109,7 @@ export function SubjectDetailPage() {
   if (!subject || !subjectId) return null;
 
   const stats = overviews?.[subjectId];
+  const measured = cards && reviewLogs ? subjectProgress([subject], chapters ?? [], cards, reviewLogs)[0] : null;
   const allDocuments = Object.values(documentsByChapter ?? {}).flat();
   const totalPages = allDocuments.reduce((sum, doc) => sum + (doc.pageCount ?? 0), 0);
   const notionCount = analyses?.reduce((sum, a) => sum + a.notions.length, 0) ?? 0;
@@ -478,8 +480,8 @@ export function SubjectDetailPage() {
         <EmptyState
           icon={<Icon name="quiz" size={30} />}
           title="Me tester"
-          description="Le générateur de quiz n'est pas encore construit — ce bouton mène à la page Quiz, en préparation."
-          action={<Button onClick={() => navigate('/quiz')}>❓ Me tester</Button>}
+          description="Teste les notions de cette matière. Tes réponses enregistrées alimentent ton taux de réussite et tes points faibles."
+          action={<Button onClick={() => navigate(`/quiz?scope=subject&subject=${encodeURIComponent(subjectId)}`)}>Commencer un quiz de cette matière</Button>}
         />
       )}
 
@@ -488,14 +490,13 @@ export function SubjectDetailPage() {
         <div className="flex flex-col gap-4">
           <Card>
             <p className="text-[0.8rem] text-[var(--ink-faint)]">
-              Résumé réel, limité à ce que l'app peut mesurer : lire un cours ne signifie pas le maîtriser — la
-              maîtrise vient des quiz, des flashcards et des révisions. La page de progression complète n'est pas
-              encore construite.
+              Retrouve ici les mêmes mesures que dans ta progression : tes révisions pour l’indice de maîtrise,
+              et tes réponses aux quiz et aux cartes pour le taux de réussite. Lire un document seul ne valide pas une acquisition.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
-                <p className="text-[1.4rem] font-semibold">{cards ? averageMastery(cards) : 0}%</p>
-                <p className="text-[0.76rem] text-[var(--ink-faint)]">Maîtrise moyenne</p>
+                <p className="text-[1.4rem] font-semibold">{measured?.masteryPct == null ? 'À mesurer' : `${measured.masteryPct} %`}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Indice de maîtrise</p>
               </div>
               <div>
                 <p className="text-[1.4rem] font-semibold">{stats?.cards ?? 0}</p>
@@ -506,10 +507,11 @@ export function SubjectDetailPage() {
                 <p className="text-[0.76rem] text-[var(--ink-faint)]">À réviser</p>
               </div>
               <div>
-                <p className="text-[1.4rem] font-semibold">{stats?.notes ?? 0}</p>
-                <p className="text-[0.76rem] text-[var(--ink-faint)]">Notes</p>
+                <p className="text-[1.4rem] font-semibold">{measured?.successRate == null ? 'À mesurer' : `${Math.round(measured.successRate * 100)} %`}</p>
+                <p className="text-[0.76rem] text-[var(--ink-faint)]">Réussite · {measured?.reviews ?? 0} réponses</p>
               </div>
             </div>
+            <Link to={`/progression?subject=${encodeURIComponent(subjectId)}`} className="mt-5 inline-flex min-h-11 items-center rounded-full bg-[var(--accent-tint)] px-4 text-sm font-semibold text-[var(--accent-ink)]">Voir mes chapitres et préparer mon examen →</Link>
           </Card>
         </div>
       )}

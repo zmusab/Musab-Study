@@ -1,4 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useState } from 'react';
+import { isEvaluationKind } from '@/core/progress/exam';
 import { db } from '@/data/db';
 import { listAllDueCards } from '@/data/repositories/cards';
 import { listRecentlyOpenedDocuments, type DocumentSummary } from '@/data/repositories/documents';
@@ -48,6 +50,13 @@ const RECENT_DOCUMENTS_SCAN = 50;
  * joli » : chaque champ retrace directement à une table Dexie.
  */
 export function useDashboard(): DashboardData | undefined {
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const refresh = () => setClock(value => value + 1);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, []);
   return useLiveQuery(async () => {
     const now = new Date();
     const today = dayKey(now);
@@ -93,7 +102,7 @@ export function useDashboard(): DashboardData | undefined {
       const day = dayKey(addDays(now, offset));
       return { day, minutes: freeMinutesRemaining(availabilityFor(availability, day), busyRanges(upcomingEvents, day), offset === 0 ? now.getHours() * 60 + now.getMinutes() : 0) };
     }) : null;
-    const firstExam = upcomingEvents.find((event) => event.kind === 'exam' && !event.done) ?? null;
+    const firstExam = upcomingEvents.find((event) => isEvaluationKind(event.kind) && !event.done) ?? null;
     let nextExam: UpcomingExam | null = null;
     if (firstExam) {
       const subjectCards = firstExam.subjectId
@@ -118,5 +127,5 @@ export function useDashboard(): DashboardData | undefined {
       dailySummary,
       dailyCardGoal: (profile ?? DEFAULT_PROFILE).dailyCardGoal,
     };
-  }, []);
+  }, [clock]);
 }

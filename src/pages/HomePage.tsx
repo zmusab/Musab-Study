@@ -207,7 +207,7 @@ export function HomePage() {
         )}
         {nextExam && nextExam.masteryPct !== null && (
           <p className="mt-3 text-[0.78rem] text-[var(--ink-faint)]">
-            Indice de révision des cartes de cette matière : {nextExam.masteryPct} %. Cette estimation ne prédit pas ta note d’examen.
+            {nextExam.event.title} : indice de révision des cartes de la matière de {nextExam.masteryPct} %. Cette estimation ne prédit pas ta note d’examen.
           </p>
         )}
         <Link to="/calendrier" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[var(--accent)] hover:underline">
