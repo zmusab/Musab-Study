@@ -146,6 +146,22 @@ describe('scopeCards — le vivier, sans rien inventer', () => {
 });
 
 describe('buildQuiz — construction de QCM réels', () => {
+  it('écarte les listes de branches et de trajets pour les quatre muscles de la capture', () => {
+    const cards = [
+      card({ id: 'muscles', subjectId: 's1', question: 'De quoi se compose 4 muscles droits ?', answer: 'Droit supérieur, Droit inférieur, Droit médial et Droit latéral' }),
+      card({ id: 'branches', subjectId: 's1', question: 'Quelles sont les branches du nerf frontal ?', answer: 'Branches ascendantes sensitives pour la peau du front, branches descendantes pour la paupière supérieure' }),
+      card({ id: 'nasal', subjectId: 's1', question: 'Quelles sont les branches du nerf nasal ?', answer: 'Ils sont au nombre de 2, 3 et ils réalisent l’innervation sensitive de la muqueuse nasale' }),
+      card({ id: 'trajet', subjectId: 's1', question: 'Quels sont les changements de trajet du nerf ?', answer: 'Quand il sort du crâne et Quand il entre dans l’orbite' }),
+    ];
+    const tables = { subjects, chapters, cards, logs: [] };
+    for (let seed = 1; seed <= 20; seed++) {
+      const result = buildQuiz({ kind: 'cards', cardIds: ['muscles'] }, tables, { count: 1, difficulty: 'mixed', format: 'mixed', random: seeded(seed) });
+      expect(result.questions[0]?.format).toBe('recall');
+      expect(result.questions[0]?.question).toBe('Quels sont les 4 muscles droits ?');
+      expect(result.questions[0]?.options[0]).toBe(cards[0]!.answer);
+    }
+    expect(buildQuiz({ kind: 'cards', cardIds: ['muscles'] }, tables, { count: 1, difficulty: 'mixed', format: 'qcm' }).questions).toEqual([]);
+  });
   it('privilégie des propositions encore inutilisées dans la série', () => {
     const pool = Array.from({ length: 10 }, (_, i) => card({ id: `variation${i}`, subjectId: 's1', chapterId: 'ch1' }));
     const result = buildQuiz({ kind: 'subject', subjectId: 's1' }, emptyTables(pool), { count: 2, difficulty: 'mixed', random: seeded(8) });
@@ -450,7 +466,7 @@ describe('buildQuiz — format Vrai/Faux', () => {
     expect(result.questions[0]!.correctIndex).toBe(0);
   });
 
-  it('format mixte : retombe sur Vrai/Faux quand le QCM est impossible, plutôt que de perdre la carte', () => {
+  it('format mixte : propose un rappel libre quand le QCM est impossible', () => {
     // Deux cartes seulement, dans deux matières différentes : le QCM ne peut
     // jamais aboutir ici (il faut 3 distracteurs, il n'y en a qu'1 au
     // total), donc les deux cartes ne peuvent produire qu'un Vrai/Faux —
@@ -466,7 +482,7 @@ describe('buildQuiz — format Vrai/Faux', () => {
     );
     expect(result.blocked).toBeNull();
     expect(result.questions).toHaveLength(1);
-    expect(result.questions[0]!.format).toBe('vf');
+    expect(result.questions[0]!.format).toBe('recall');
   });
 
   it('un format QCM explicite reste bloqué comme avant — pas de repli automatique vers Vrai/Faux', () => {

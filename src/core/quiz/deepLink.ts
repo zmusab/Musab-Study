@@ -31,7 +31,7 @@ export interface QuizDeepLink {
   difficulty: QuizDifficulty;
 }
 
-const FORMATS: readonly QuizFormat[] = ['qcm', 'vf', 'mixed'];
+const FORMATS: readonly QuizFormat[] = ['qcm', 'vf', 'recall', 'mixed'];
 const DIFFICULTIES: readonly QuizDifficulty[] = ['easy', 'medium', 'hard', 'mixed'];
 const MIN_COUNT = 3;
 const MAX_COUNT = 30;

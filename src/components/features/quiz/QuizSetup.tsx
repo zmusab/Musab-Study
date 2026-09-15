@@ -44,7 +44,8 @@ const DIFFICULTY_OPTIONS: { value: QuizDifficulty; label: string }[] = [
 const FORMAT_OPTIONS: { value: QuizFormat; label: string }[] = [
   { value: 'qcm', label: 'QCM' },
   { value: 'vf', label: 'Vrai ou faux' },
-  { value: 'mixed', label: 'QCM + Vrai/Faux' },
+  { value: 'recall', label: 'Rappel libre' },
+  { value: 'mixed', label: 'Entraînement varié' },
 ];
 
 /**
@@ -164,7 +165,7 @@ export function QuizSetup({
   const [examLikelyChapterIds, setExamLikelyChapterIds] = useState<ID[]>([]);
   const [count, setCount] = useState(10);
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('mixed');
-  const [format, setFormat] = useState<QuizFormat>('qcm');
+  const [format, setFormat] = useState<QuizFormat>('mixed');
 
   const subjectChapters = useMemo(
     () => chapters.filter((chapter) => chapter.subjectId === subjectId),
@@ -515,8 +516,10 @@ export function QuizSetup({
       <Card className="flex flex-wrap items-center justify-between gap-3 border-[var(--accent)]/30">
         <p className="text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
           {format === 'vf'
-            ? 'Chaque affirmation associe une question réelle de tes flashcards à une réponse réelle — la sienne, ou celle d’une autre carte.'
-            : 'Les questions viennent de tes flashcards réelles : la bonne réponse et les trois autres sont des réponses existantes, jamais inventées.'}
+            ? 'Affirmations tirées de tes cartes. Si aucun choix comparable n’existe, la question passe en rappel libre.'
+            : format === 'qcm' ? 'Quatre réponses comparables tirées de tes cartes. Les questions sans choix cohérents sont écartées.'
+            : format === 'recall' ? 'Réponds avec tes mots, compare au cours puis autoévalue ton rappel.'
+            : 'QCM et vrai/faux lorsque les choix sont comparables, rappel libre sinon. Les rappels libres sont autoévalués.'}
         </p>
         <Button
           size="lg"

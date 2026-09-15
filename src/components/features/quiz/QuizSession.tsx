@@ -37,6 +37,8 @@ export function QuizSession({
   const reduced = useReducedMotion();
   const [selected, setSelected] = useState<number | null>(null);
   const [hintShown, setHintShown] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [answerVisible, setAnswerVisible] = useState(false);
   const [startedAt, setStartedAt] = useState(() => Date.now());
 
   const question = questions[index]!;
@@ -58,6 +60,8 @@ export function QuizSession({
     });
     setSelected(null);
     setHintShown(false);
+    setDraft('');
+    setAnswerVisible(false);
     setStartedAt(Date.now());
   };
 
@@ -108,7 +112,24 @@ export function QuizSession({
             </div>
             <p className="mt-1.5 text-[1.08rem] font-medium leading-relaxed">{question.question}</p>
 
-            <div className="mt-4 flex flex-col gap-2" data-quiz-options>
+            {question.format === 'recall' ? (
+              <div className="mt-5 space-y-4" data-quiz-recall>
+                <p className="text-sm text-[var(--ink-soft)]">Rappel libre · formule ta réponse avant de consulter le corrigé.</p>
+                <textarea aria-label="Ma réponse" value={draft} onChange={event => setDraft(event.target.value)}
+                  disabled={answerVisible} placeholder="Écris ce dont tu te souviens…"
+                  className="min-h-28 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4 text-[var(--ink)]" />
+                {!answerVisible ? <Button onClick={() => setAnswerVisible(true)}>Comparer avec le cours</Button> : (
+                  <div className="space-y-3" aria-live="polite">
+                    <p className="rounded-xl bg-[var(--surface-2)] p-4 leading-relaxed whitespace-pre-line">{question.options[0]}</p>
+                    <p className="text-sm text-[var(--ink-soft)]">Autoévaluation : avais-tu retrouvé les éléments essentiels ?</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button disabled={revealed} onClick={() => choose(1)}>À revoir</Button>
+                      <Button disabled={revealed} onClick={() => choose(0)}>Je les avais retrouvés</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : <div className="mt-4 flex flex-col gap-2" data-quiz-options>
               {question.options.map((option, optionIndex) => {
                 const isCorrect = optionIndex === question.correctIndex;
                 const isSelected = optionIndex === selected;
@@ -131,11 +152,11 @@ export function QuizSession({
                     data-touch-target
                     className={`min-h-11 rounded-[var(--radius-control)] border px-4 py-2.5 text-left text-[0.92rem] transition-colors ${tone}`}
                   >
-                    {option}
+                    <span className="mr-3 inline-flex size-7 items-center justify-center rounded-lg bg-[var(--surface-2)] text-xs font-semibold" aria-hidden>{String.fromCharCode(65 + optionIndex)}</span>{option}
                   </button>
                 );
               })}
-            </div>
+            </div>}
 
             {!revealed && question.hint && (
               <div className="mt-3">
@@ -170,7 +191,7 @@ export function QuizSession({
                       className="text-[0.88rem] font-medium"
                       style={{ color: selected === question.correctIndex ? 'var(--success)' : 'var(--danger)' }}
                     >
-                      {selected === question.correctIndex ? 'Bonne réponse' : 'Mauvaise réponse'}
+                      {question.format === 'recall' ? (selected === 0 ? 'Retrouvé · autoévaluation' : 'À retravailler · autoévaluation') : selected === question.correctIndex ? 'Bonne réponse' : 'Mauvaise réponse'}
                     </p>
                     <p className="mt-1 text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
                       {question.masteryContext}

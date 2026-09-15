@@ -25,7 +25,7 @@ const PROVENANCE_BADGE: Record<AnswerProvenance, { label: string; icon: IconName
   course: { label: 'Trouvé dans tes cours', icon: 'courses', color: 'var(--success)' },
   'course-local': { label: 'Tes cours', icon: 'courses', color: 'var(--success)' },
   internet: { label: 'Complété par internet', icon: 'search', color: 'var(--accent)' },
-  insufficient: { label: 'Absent de tes cours', icon: 'quiz', color: 'var(--warning)' },
+  insufficient: { label: 'À préciser', icon: 'quiz', color: 'var(--warning)' },
   error: { label: 'Erreur', icon: 'close', color: 'var(--danger)' },
 };
 

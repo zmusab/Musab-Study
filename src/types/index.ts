@@ -320,6 +320,8 @@ export type Rating = 0 | 1 | 2 | 3;
  * de toutes les statistiques de progression.
  */
 export interface ReviewLog {
+  /** Missing on older records. Distinguishes recalled self-reports from checked choices. */
+  assessment?: 'self' | 'choice';
   id: ID;
   subjectId: ID;
   chapterId: ID | null;

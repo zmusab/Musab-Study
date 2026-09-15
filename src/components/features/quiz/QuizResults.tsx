@@ -58,6 +58,9 @@ export function QuizResults({
   return (
     <div data-quiz-results>
       <Card className="text-center">
+        {result.answers.some(answer => answer.question.format === 'recall') && (
+          <p className="mb-3 text-sm text-[var(--ink-soft)]">Ce bilan inclut {result.answers.filter(answer => answer.question.format === 'recall').length} rappel(s) libre(s) autoévalué(s).</p>
+        )}
         <p className="text-[0.8rem] font-medium uppercase tracking-wide text-[var(--ink-faint)]">Score</p>
         <p className="mt-1 text-[2.4rem] font-semibold leading-none tabular-nums" style={{ color: scoreColor }} data-quiz-score>
           {result.scorePct} %

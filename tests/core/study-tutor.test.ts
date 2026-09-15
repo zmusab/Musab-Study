@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { answerWithStudyTutor, resolveStudyQuestion, studyTopic } from '@/services/local/studyTutor';
 import { availableMinutes, freeMinutesRemaining, DEFAULT_DAY_AVAILABILITY } from '@/core/calendar/availability';
 import type { ContextLookup, ScoredChunk } from '@/services/rag/retrieval';
+import { bm25Retriever } from '@/services/rag/retrieval';
+import { tokenize, termFrequencies } from '@/services/rag/tokenize';
+import { correctCourseQuery } from '@/services/local/querySpelling';
 
 const lookup: ContextLookup = { subjects: new Map(), chapters: new Map(), documents: new Map() };
 function chunks(text: string): ScoredChunk[] {
@@ -9,6 +12,22 @@ function chunks(text: string): ScoredChunk[] {
 }
 
 describe('tuteur local', () => {
+  it('retrouve puis explique la question exacte de la capture, malgré nefs', () => {
+    const text = 'Le nerf ophtalmique de Willis\n• Il entre dans le sinus caverneux.\n• Il se divise en trois branches :\n§ Nerf naso-ciliaire\n§ Nerf frontal\n§ Nerf lacrymal';
+    const source = chunks(text)[0]!.chunk;
+    source.termFreq = termFrequencies(tokenize(text));
+    source.tokenCount = tokenize(text).length;
+    const query = correctCourseQuery('Je en comprends pas les nefs de willis', [text]);
+    const retrieved = bm25Retriever.retrieve(query, [source], 8);
+    const answer = answerWithStudyTutor(query, retrieved, lookup);
+    expect(answer?.text).toContain('lacrymal');
+    expect(answer?.citations.length).toBeGreaterThan(0);
+  });
+  it('ne corrige ni un mot connu ni une faute ambiguë ni une question sans ancrage', () => {
+    expect(correctCourseQuery('nerf optique', ['nerf ophtalmique'])).toBe('nerf optique');
+    expect(correctCourseQuery('nerf mare', ['nerf mère rare'])).toBe('nerf mare');
+    expect(correctCourseQuery('nefs', ['nerf'])).toBe('nefs');
+  });
   it('corrige la séparation fautive et ne réaffiche pas les mots déformés en titre', () => {
     const question = 'Je ne comprends pas les nerfsd e willis';
     expect(resolveStudyQuestion(question)).toBe('Je ne comprends pas les nerfs de willis');

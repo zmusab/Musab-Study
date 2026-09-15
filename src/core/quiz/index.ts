@@ -74,7 +74,7 @@ export type QuizDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
  * sur un vrai/faux plutôt que d'être perdu, puisque ce dernier se construit
  * toujours avec les mêmes données réelles.
  */
-export type QuizFormat = 'qcm' | 'vf' | 'mixed';
+export type QuizFormat = 'qcm' | 'vf' | 'recall' | 'mixed';
 type ResolvedQuizFormat = Exclude<QuizFormat, 'mixed'>;
 
 const DIFFICULTY_VALUE: Record<Exclude<QuizDifficulty, 'mixed'>, Difficulty> = {
@@ -329,6 +329,20 @@ function answerFamily(question: string): string {
   return 'other';
 }
 
+/** A list of muscles is not interchangeable with a list of nerve branches.
+ * Use the question's entity class, not words incidentally present in its answer.
+ */
+function entityFamily(question: string): string {
+  const q = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const families = [
+    ['muscle', /muscles?|muscul/], ['nerve', /nerfs?|nerveux|nerveuse/],
+    ['artery', /arter/], ['vein', /veines?|veineu/], ['tooth', /dents?|dentaire|molaires?|incisives?|canines?/],
+    ['bone', /\bos\b|osseu/], ['opening', /foramen|canal|fissure|orifice/],
+    ['ligament', /ligament|anneau/],
+  ] as const;
+  return families.filter(([, pattern]) => pattern.test(q)).map(([name]) => name).join(':');
+}
+
 function pickRelevantAnswers(
   card: Flashcard,
   allCards: readonly Flashcard[],
@@ -345,6 +359,7 @@ function pickRelevantAnswers(
       (usage.get(normalize(a.answer)) ?? 0) - (usage.get(normalize(b.answer)) ?? 0))) {
       if (picked.length >= needed) break;
       if (other.subjectId !== card.subjectId || answerFamily(other.question) !== answerFamily(card.question)) continue;
+      if (entityFamily(other.question) !== entityFamily(card.question)) continue;
       const text = other.answer.trim();
       const lengthRatio = text.length / Math.max(1, card.answer.trim().length);
       if (lengthRatio > 4 || lengthRatio < 1 / 4) continue;
@@ -395,6 +410,10 @@ function buildMasteryContext(card: Flashcard): string {
   return `Maîtrise actuelle de cette carte dans tes flashcards : ${pct} % (${card.reps} révision${card.reps > 1 ? 's' : ''}).`;
 }
 
+function readableQuestion(question: string): string {
+  return question.replace(/^De quoi se compose\s+(\d+\s+.+?)\s*\?$/i, 'Quels sont les $1 ?');
+}
+
 /** Le contenu propre au format d'une question — le reste (matière, chapitre, maîtrise…) est commun. */
 interface QuestionContent {
   format: ResolvedQuizFormat;
@@ -411,7 +430,7 @@ function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random
   const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
   return {
     format: 'qcm',
-    question: card.question,
+    question: readableQuestion(card.question),
     options: optionTexts,
     correctIndex: optionTexts.indexOf(card.answer.trim()),
     hint: buildHint(card.answer),
@@ -425,6 +444,8 @@ function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random
  * fausse honnête, l'affirmation reste vraie plutôt que d'en fabriquer une.
  */
 function buildVfContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number): QuestionContent {
+  // Without a credible alternative, always-true questions teach a guessing pattern.
+  if (pickRelevantAnswers(card, allCards, 1, random).length === 0) return buildRecallContent(card);
   const wantsFalse = random() < 0.5;
   const falseAnswer = wantsFalse ? pickRelevantAnswers(card, allCards, 1, random)[0] : undefined;
   const isTrue = falseAnswer === undefined;
@@ -436,6 +457,10 @@ function buildVfContent(card: Flashcard, allCards: readonly Flashcard[], random:
     correctIndex: isTrue ? 0 : 1,
     hint: '',
   };
+}
+
+function buildRecallContent(card: Flashcard): QuestionContent {
+  return { format: 'recall', question: readableQuestion(card.question), options: [card.answer.trim(), 'À revoir'], correctIndex: 0, hint: '' };
 }
 
 function resolveFormat(format: QuizFormat, random: () => number): ResolvedQuizFormat {
@@ -550,10 +575,11 @@ export function buildQuiz(
   for (const card of ordered) {
     if (questions.length >= options.count) break;
     const chosenFormat = resolveFormat(requestedFormat, random);
-    let content = chosenFormat === 'qcm' ? buildQcmContent(card, allCards, random, optionUsage) : buildVfContent(card, allCards, random);
+    let content = chosenFormat === 'qcm' ? buildQcmContent(card, allCards, random, optionUsage)
+      : chosenFormat === 'recall' ? buildRecallContent(card) : buildVfContent(card, allCards, random);
     // En format mixte, un QCM impossible à compléter ne fait pas perdre la
     // carte : le vrai/faux se construit toujours avec les mêmes données.
-    if (!content && requestedFormat === 'mixed') content = buildVfContent(card, allCards, random);
+    if (!content && requestedFormat === 'mixed') content = buildRecallContent(card);
     if (!content) continue;
     if (content.options.length > 2) for (const text of content.options) {
       const key = normalize(text);
@@ -577,7 +603,7 @@ export function buildQuiz(
 
   if (questions.length === 0) {
     return empty(
-      'Pas assez de réponses distinctes et comparables dans cette matière pour créer un QCM cohérent. Ajoute des cartes du même type (lieux, fonctions, listes…) ou choisis le format mixte.',
+      'Pas assez de réponses distinctes et comparables pour un QCM cohérent. Choisis « Rappel libre » ou « Entraînement varié » pour travailler ces questions sans propositions hors sujet.',
     );
   }
 

@@ -24,6 +24,7 @@ export async function recordQuizResults(answers: readonly QuizAnswerRecord[], no
       chapterId: answer.question.chapterId,
       itemId: answer.question.cardId,
       itemKind: 'quiz',
+      assessment: answer.question.format === 'recall' ? 'self' : 'choice',
       at: now.toISOString(),
       day: dayKey(now),
       correct: answer.correct,

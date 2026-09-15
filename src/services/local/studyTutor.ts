@@ -1,6 +1,7 @@
 import { findLocalAnswer, type LocalAnswer } from './localAnswer';
 import { normalizeText, significantWords } from '@/core/text';
 import { answerPassageQuestion } from './passageRelations';
+import { correctCourseQuery } from './querySpelling';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 
 /** Local conversation policy. No network, generated medical facts or model dependency. */
@@ -22,6 +23,7 @@ export function answerWithStudyTutor(
   chunks: ScoredChunk[],
   lookup: ContextLookup,
 ): LocalAnswer | null {
+  question = correctCourseQuery(resolveStudyQuestion(question), chunks.map(({ chunk }) => chunk.text));
   const normalized = normalizeText(question);
   const passageAnswer = answerPassageQuestion(question, chunks, lookup);
   if (passageAnswer) return passageAnswer;
@@ -38,12 +40,27 @@ export function answerWithStudyTutor(
   const explanatory = /comprend|comprendre|expliqu|simplement/.test(normalized);
   if (!explanatory) return answer;
 
+  const content = normalizeText(answer.text);
+  const guide: string[] = [];
+  if (/chemine|traverse|entre dans|passe par|sort par/.test(content)) {
+    guide.push('**Le trajet : où passe-t-il ?** Lis les lieux dans l’ordre indiqué. « Traverse » ou « entre dans » décrit un passage.');
+  }
+  if (/rapport avec|en rapport|voisin/.test(content)) {
+    guide.push('**Les rapports : qu’y a-t-il à côté ?** « En rapport avec » décrit un voisinage ; cela ne signifie pas que le nerf traverse cette structure.');
+  }
+  if (/branches|se divise/.test(content)) {
+    guide.push('**Les branches : en quoi se divise-t-il ?** Représente le nerf comme un tronc, puis place chaque branche citée à son point de division.');
+  }
+  if (/innerve|innervation/.test(content)) {
+    guide.push('**L’innervation : quel territoire dessert-il ?** Distingue le territoire indiqué des endroits par lesquels le nerf passe.');
+  }
+
   // A teaching scaffold surrounds extracted content; facts remain attributable to the course.
   return {
     ...answer,
     text: answer.text +
       '\n\n### Pour comprendre et retenir\n' +
-      'Lis un bloc à la fois, puis cache-le et reformule son idée principale avec tes mots. Pour un trajet, note les lieux dans leur ordre ; pour une division, dessine les branches à partir du même point.\n\n' +
+      (guide.length ? guide.join('\n\n') : 'Cache le passage et reformule son idée principale avec tes mots.') + '\n\n' +
       '**À toi : quel point reste flou : le rôle, le trajet ou les branches ?**',
   };
 }
