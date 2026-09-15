@@ -23,7 +23,7 @@ import type { AnswerProvenance, ChatMessage } from '@/types';
 
 const PROVENANCE_BADGE: Record<AnswerProvenance, { label: string; icon: IconName; color: string }> = {
   course: { label: 'Trouvé dans tes cours', icon: 'courses', color: 'var(--success)' },
-  'course-local': { label: 'Généré à partir de tes cours — aucun appel IA', icon: 'settings', color: 'var(--success)' },
+  'course-local': { label: 'Tes cours', icon: 'courses', color: 'var(--success)' },
   internet: { label: 'Complété par internet', icon: 'search', color: 'var(--accent)' },
   insufficient: { label: 'Absent de tes cours', icon: 'quiz', color: 'var(--warning)' },
   error: { label: 'Erreur', icon: 'close', color: 'var(--danger)' },
@@ -52,6 +52,7 @@ export interface AnswerAction {
 export function ChatMessageView({ message, actions }: { message: ChatMessage; actions?: AnswerAction[] }) {
   const reduced = useReducedMotion();
   const [showSources, setShowSources] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'done' | 'error'>('idle');
 
   if (message.role === 'user') {
     return (
@@ -64,7 +65,7 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
   const badge = message.provenance ? PROVENANCE_BADGE[message.provenance] : null;
 
   return (
-    <div className="max-w-[94%]">
+    <motion.div className="max-w-[94%]" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
       {badge && (
         <div className="mb-2">
           <Chip color={badge.color}>
@@ -83,6 +84,13 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
         )}
       >
         <AnswerText text={message.text} />
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button type="button" className="rounded-full border border-[var(--line)] px-3 py-2 text-xs transition-colors hover:bg-[var(--accent-tint)]" onClick={async () => {
+          try { await navigator.clipboard.writeText(message.text); setCopyState('done'); }
+          catch { setCopyState('error'); }
+        }}>Copier la réponse</button>
+        <span role="status" className="text-xs text-[var(--ink-soft)]">{copyState === 'done' ? 'Réponse copiée' : copyState === 'error' ? 'Copie indisponible. Sélectionne le texte pour le copier.' : ''}</span>
       </div>
 
       {/* Actions proposées seulement sous une VRAIE réponse — jamais sous une
@@ -159,6 +167,6 @@ export function ChatMessageView({ message, actions }: { message: ChatMessage; ac
           </AnimatePresence>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

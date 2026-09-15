@@ -5,9 +5,9 @@ import type { ExamLikelihood, QuizResult } from '@/core/quiz';
 import type { ID } from '@/types';
 
 const EXAM_LIKELIHOOD_META: Record<ExamLikelihood, { label: string; color: string }> = {
-  high: { label: 'Probabilité élevée', color: 'var(--mastery-3)' },
-  medium: { label: 'Probabilité moyenne', color: 'var(--mastery-2)' },
-  low: { label: 'Probabilité faible', color: 'var(--mastery-1)' },
+  high: { label: 'Priorité élevée', color: 'var(--mastery-3)' },
+  medium: { label: 'Priorité moyenne', color: 'var(--mastery-2)' },
+  low: { label: 'Priorité faible', color: 'var(--mastery-1)' },
 };
 
 /**
@@ -72,6 +72,16 @@ export function QuizResults({
         </p>
       </Card>
 
+      <Card className="mt-4">
+        <h3 className="font-semibold">Ta progression après ce quiz</h3>
+        <p className="mt-1 text-sm text-[var(--ink-soft)]">Tes réponses alimentent le taux de réussite et les points faibles de chaque matière, utilisés pour orienter tes prochaines révisions.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[...new Map(result.answers.map(({ question }) => [question.subjectId, question.subjectName])).entries()].map(([id, name]) => (
+            <Link key={id} to={`/progression?subject=${encodeURIComponent(id)}`} className="rounded-full border border-[var(--line)] px-3 py-2 text-sm transition-colors hover:bg-[var(--accent-tint)]">Voir ma progression · {name}</Link>
+          ))}
+        </div>
+      </Card>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Card>
           <h3 className="text-[0.95rem] font-semibold">Chapitres faibles détectés</h3>
@@ -120,7 +130,7 @@ export function QuizResults({
       {isExamLikelyQuiz && (
         <div className="mt-4 grid gap-4 sm:grid-cols-2" data-quiz-exam-likely-results>
           <Card>
-            <h3 className="text-[0.95rem] font-semibold">Par probabilité estimée</h3>
+            <h3 className="text-[0.95rem] font-semibold">Par priorité de révision</h3>
             <ul className="mt-2 flex flex-col gap-2" data-quiz-exam-likely-breakdown>
               {tierBreakdown
                 .filter((row) => row.total > 0)

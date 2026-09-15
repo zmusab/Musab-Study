@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { CountUp, Reveal, useCascade } from '@/components/motion/Reveal';
@@ -43,7 +43,13 @@ export function ProgressionPage() {
   const profile = useProfile();
   const { notify } = useToast();
 
-  const [subjectId, setSubjectId] = useState<ID | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const subjectId = searchParams.get('subject');
+  const setSubjectId = (id: ID | null) => setSearchParams((previous) => {
+    const next = new URLSearchParams(previous);
+    if (id) next.set('subject', id); else next.delete('subject');
+    return next;
+  });
   const [openSubject, setOpenSubject] = useState<ID | null>(null);
   const [period, setPeriod] = useState<Period>('week');
   const [goalsOpen, setGoalsOpen] = useState(false);

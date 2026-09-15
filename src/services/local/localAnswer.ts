@@ -426,7 +426,7 @@ const MAX_SECTIONS = 3;
  * réponse à elle seule : les faits reprennent la main.
  */
 const MIN_TITLED_LINES = 3;
-const MAX_LINES_PER_SECTION = 8;
+const MAX_LINES_PER_SECTION = 24;
 /** Au-delà, ce n'est plus une réponse ciblée mais un survol de la section. */
 const MAX_ANCHORS = 3;
 
@@ -927,18 +927,14 @@ export function findLocalAnswer(
  */
 function passageAnswer(
   sections: { passages: string[]; chunkIds: string[] },
-  terms: ReadonlySet<string>,
+  _terms: ReadonlySet<string>,
   chunkById: Map<string, ScoredChunk['chunk']>,
   lookup: ContextLookup,
 ): LocalAnswer | null {
   if (sections.passages.length === 0) return null;
 
   const text = [
-    `Voici ce que ton cours dit à propos de **${[...terms].join(' ')}** :`,
-    '',
     ...sections.passages,
-    '',
-    '_Ces lignes viennent telles quelles de ton document. Le moteur local les retrouve et les regroupe ; il ne les reformule pas._',
   ].join('\n');
 
   const citations: Citation[] = [];
