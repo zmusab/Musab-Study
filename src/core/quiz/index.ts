@@ -319,20 +319,35 @@ function priorityOrder(
  * pertinente qui existe ailleurs dans la même matière. Peut renvoyer moins
  * de `needed` éléments — jamais plus, jamais une réponse fabriquée.
  */
+function answerFamily(question: string): string {
+  const q = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/combien|nombre/.test(q)) return 'number';
+  if (/^\s*ou\b|localis|situ|trajet|passe/.test(q)) return 'location';
+  if (/role|fonction|innerve|sert/.test(q)) return 'function';
+  if (/compose|composition|branches|enumer|quels sont|quelles sont/.test(q)) return 'list';
+  if (/defini|qu.est.ce|c.est quoi/.test(q)) return 'definition';
+  return 'other';
+}
+
 function pickRelevantAnswers(
   card: Flashcard,
   allCards: readonly Flashcard[],
   needed: number,
   random: () => number,
+  usage: ReadonlyMap<string, number> = new Map(),
 ): string[] {
   const correct = normalize(card.answer);
   const seen = new Set([correct]);
   const picked: string[] = [];
 
   const addFrom = (candidates: readonly Flashcard[]) => {
-    for (const other of shuffle(candidates, random)) {
+    for (const other of shuffle(candidates, random).sort((a, b) =>
+      (usage.get(normalize(a.answer)) ?? 0) - (usage.get(normalize(b.answer)) ?? 0))) {
       if (picked.length >= needed) break;
+      if (other.subjectId !== card.subjectId || answerFamily(other.question) !== answerFamily(card.question)) continue;
       const text = other.answer.trim();
+      const lengthRatio = text.length / Math.max(1, card.answer.trim().length);
+      if (lengthRatio > 4 || lengthRatio < 1 / 4) continue;
       const key = normalize(text);
       if (key === '' || seen.has(key)) continue;
       // Une réponse réelle mais qui se recoupe trop avec la bonne réponse
@@ -357,18 +372,14 @@ function pickRelevantAnswers(
   if (picked.length < needed) {
     addFrom(allCards.filter((other) => other.id !== card.id && other.subjectId === card.subjectId));
   }
-  // 3. Dernier recours seulement : une autre matière, quand la matière
-  //    courante n'a réellement pas assez de réponses distinctes.
-  if (picked.length < needed) {
-    addFrom(allCards.filter((other) => other.id !== card.id));
-  }
+  // Ne jamais compléter artificiellement avec une autre matière.
 
   return picked;
 }
 
 /** Trois distracteurs de QCM — `null` si les données réelles n'en fournissent pas assez. */
-function pickDistractors(card: Flashcard, allCards: readonly Flashcard[], random: () => number): string[] | null {
-  const picked = pickRelevantAnswers(card, allCards, 3, random);
+function pickDistractors(card: Flashcard, allCards: readonly Flashcard[], random: () => number, usage: ReadonlyMap<string, number>): string[] | null {
+  const picked = pickRelevantAnswers(card, allCards, 3, random, usage);
   return picked.length === 3 ? picked : null;
 }
 
@@ -394,8 +405,8 @@ interface QuestionContent {
 }
 
 /** QCM : `null` si les données réelles ne fournissent pas 3 distracteurs distincts. */
-function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number): QuestionContent | null {
-  const distractors = pickDistractors(card, allCards, random);
+function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number, usage: ReadonlyMap<string, number>): QuestionContent | null {
+  const distractors = pickDistractors(card, allCards, random, usage);
   if (!distractors) return null;
   const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
   return {
@@ -523,7 +534,7 @@ export function buildQuiz(
           ) ?? null);
 
     const ranking = rankForExamLikely(
-      effectivePool,
+      shuffle(effectivePool, random),
       chapterSignals,
       (chapterId) => (chapterId ? (chapterName.get(chapterId) ?? null) : null),
       tables.logs,
@@ -534,15 +545,20 @@ export function buildQuiz(
   }
 
   const questions: QuizQuestionInstance[] = [];
+  const optionUsage = new Map<string, number>();
   let counter = 0;
   for (const card of ordered) {
     if (questions.length >= options.count) break;
     const chosenFormat = resolveFormat(requestedFormat, random);
-    let content = chosenFormat === 'qcm' ? buildQcmContent(card, allCards, random) : buildVfContent(card, allCards, random);
+    let content = chosenFormat === 'qcm' ? buildQcmContent(card, allCards, random, optionUsage) : buildVfContent(card, allCards, random);
     // En format mixte, un QCM impossible à compléter ne fait pas perdre la
     // carte : le vrai/faux se construit toujours avec les mêmes données.
     if (!content && requestedFormat === 'mixed') content = buildVfContent(card, allCards, random);
     if (!content) continue;
+    if (content.options.length > 2) for (const text of content.options) {
+      const key = normalize(text);
+      optionUsage.set(key, (optionUsage.get(key) ?? 0) + 1);
+    }
 
     counter += 1;
     questions.push({
@@ -561,7 +577,7 @@ export function buildQuiz(
 
   if (questions.length === 0) {
     return empty(
-      'Pas assez de cartes aux réponses distinctes pour proposer des choix multiples. Ajoute d’autres flashcards à cette matière.',
+      'Pas assez de réponses distinctes et comparables dans cette matière pour créer un QCM cohérent. Ajoute des cartes du même type (lieux, fonctions, listes…) ou choisis le format mixte.',
     );
   }
 
