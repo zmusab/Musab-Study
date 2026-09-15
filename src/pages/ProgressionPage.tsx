@@ -98,7 +98,6 @@ export function ProgressionPage() {
         <div className="mt-6">
           <EmptyState
             icon={<Icon name="progress" size={30} />}
-            mark="R = e^(−t/S)"
             title="Ta progression se construit à partir de tes cours"
             description="Crée une matière, importe un cours et transforme-le en flashcards : dès la première révision, cette page mesure ta maîtrise, ton temps de révision, tes points faibles et ta régularité — uniquement à partir de tes vraies réponses."
             action={

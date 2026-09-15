@@ -129,7 +129,6 @@ export function QuizPage() {
         <PageHeader title="Quiz" />
         <EmptyState
           icon={<Icon name="quiz" size={30} />}
-          mark="p(hasard) = 1/4"
           title="Le quiz se construit à partir de tes flashcards"
           description="Crée une matière et quelques flashcards : le quiz choisit alors une question parmi tes cartes réelles et forme ses propositions avec de vraies réponses, jamais inventées."
           action={

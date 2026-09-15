@@ -446,7 +446,6 @@ export function FlashcardsPage() {
         <PageHeader title="Flashcards" />
         <EmptyState
           icon={<Icon name="cards" size={30} />}
-          mark="EF ∈ [1,3 ; 3,2]"
           title="Importe d’abord un cours"
           description="Les flashcards se génèrent à partir de tes documents. Crée une matière et ajoute un document avant d’en générer."
           action={
