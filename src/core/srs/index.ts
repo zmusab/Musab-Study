@@ -221,14 +221,14 @@ export function buildDueQueue<T extends SchedulingState & SetAside & { notionKey
   const ranked = items
     .filter((item) => isReviewable(item, now))
     .sort((a, b) => a.ease - b.ease || new Date(a.due).getTime() - new Date(b.due).getTime());
-  const exactFacts = new Set<string>();
+  const repeatedAnswers = new Set<string>();
   const unique = ranked.filter((item) => {
     const answer = comparisonKey(item.answer ?? '');
-    const subject = item.notionKey || comparisonKey(item.question ?? '');
-    if (!answer || !subject) return true;
-    const key = `${subject}|${answer}`;
-    if (exactFacts.has(key)) return false;
-    exactFacts.add(key);
+    if (!answer) return true;
+    // Même sous deux questions différentes, réciter exactement la même
+    // réponse deux fois dans une session reste une répétition inutile.
+    if (repeatedAnswers.has(answer)) return false;
+    repeatedAnswers.add(answer);
     return true;
   });
   const queue: T[] = [];

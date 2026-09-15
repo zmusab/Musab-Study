@@ -329,6 +329,45 @@ function answerFamily(question: string): string {
   return 'other';
 }
 
+type AnswerKind = 'branches' | 'relations' | 'trajectory' | 'location' | 'function' | 'number' | 'list' | 'other';
+
+const semanticText = (text: string): string =>
+  text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/**
+ * Classe la REPONSE elle-même. La capture réelle a montré pourquoi la seule
+ * forme de la question ne suffit pas : plusieurs anciennes cartes portaient
+ * toutes « De quoi se compose… », alors que leurs réponses décrivaient tantôt
+ * un trajet, tantôt des rapports, tantôt de vraies branches.
+ */
+function answerKind(card: Pick<Flashcard, 'question' | 'answer'>): AnswerKind {
+  const q = semanticText(card.question);
+  const a = semanticText(card.answer);
+  if (/\bbranches?\b/.test(a)) return 'branches';
+  if (/\b(?:chemine|parcourt|sort|entre|arrive|passe|descend|remonte|se detache|change (?:son nom|sa direction)|finit au niveau)\b/.test(a)) return 'trajectory';
+  if (/\b(?:au fond|au niveau|dans|sur|sous|pres|près|au-dessus|en dehors|en dedans|partie|paroi|face|massif|repere|repère|fosse|canal|orbite)\b/.test(a) && answerFamily(q) === 'location') return 'location';
+  if (/\b(?:innerve|innervation|assure|realise|fonction|role|commande|controle)\b/.test(a)) return 'function';
+  if (/\b(?:artere|sinus|nerf)\b.*[,;].*\b(?:artere|sinus|nerf)\b/.test(a)) return 'relations';
+  if (/\b(?:deux|trois|quatre|cinq|six|sept|huit|neuf|dix|\d+)\b/.test(a) && a.split(/\s+/).length <= 5) return 'number';
+  if ((card.answer.match(/[,;]/g)?.length ?? 0) >= 2 || /\s+et\s+/.test(a)) return 'list';
+  return 'other';
+}
+
+/** Les cartes générées dont la question promet une liste mais dont la réponse
+ * raconte un trajet/une fonction sont retirées du quiz. Les cartes manuelles
+ * restent sous le contrôle explicite de l'étudiant.
+ */
+function isQuizCardCoherent(card: Flashcard): boolean {
+  if (card.origin === 'manual' || card.origin === 'quiz-error') return true;
+  const family = answerFamily(card.question);
+  const kind = answerKind(card);
+  if (family === 'list') return ['branches', 'relations', 'list', 'number'].includes(kind);
+  if (family === 'location') return kind === 'location' || kind === 'trajectory';
+  if (family === 'function') return kind === 'function';
+  if (family === 'number') return kind === 'number';
+  return true;
+}
+
 /** A list of muscles is not interchangeable with a list of nerve branches.
  * Use the question's entity class, not words incidentally present in its answer.
  */
@@ -358,12 +397,19 @@ function pickRelevantAnswers(
     for (const other of shuffle(candidates, random).sort((a, b) =>
       (usage.get(normalize(a.answer)) ?? 0) - (usage.get(normalize(b.answer)) ?? 0))) {
       if (picked.length >= needed) break;
-      if (other.subjectId !== card.subjectId || answerFamily(other.question) !== answerFamily(card.question)) continue;
+      if (!isQuizCardCoherent(other)) continue;
+      const family = answerFamily(card.question);
+      if (other.subjectId !== card.subjectId || answerFamily(other.question) !== family) continue;
       if (entityFamily(other.question) !== entityFamily(card.question)) continue;
+      if (family !== 'other' && answerKind(other) !== answerKind(card)) continue;
       const text = other.answer.trim();
       const lengthRatio = text.length / Math.max(1, card.answer.trim().length);
       if (lengthRatio > 4 || lengthRatio < 1 / 4) continue;
       const key = normalize(text);
+      // Une proposition ne réapparaît jamais dans un second QCM de la même
+      // série. Voir la capture où une ancienne bonne réponse était recyclée
+      // comme distracteur à la question suivante.
+      if ((usage.get(key) ?? 0) > 0) continue;
       if (key === '' || seen.has(key)) continue;
       // Une réponse réelle mais qui se recoupe trop avec la bonne réponse
       // rendrait l'option défendable comme partiellement vraie — jamais
@@ -410,7 +456,13 @@ function buildMasteryContext(card: Flashcard): string {
   return `Maîtrise actuelle de cette carte dans tes flashcards : ${pct} % (${card.reps} révision${card.reps > 1 ? 's' : ''}).`;
 }
 
-function readableQuestion(question: string): string {
+function readableQuestion(card: Pick<Flashcard, 'question' | 'answer'>): string {
+  const question = card.question.trim();
+  const composition = question.match(/^De quoi se compose\s+(.+?)\s*\?$/i);
+  if (composition && answerKind(card) === 'branches' && /\bnerf\b/i.test(composition[1]!)) {
+    const raw = composition[1]!.replace(/^(?:le|la|les|un|une)\s+/i, '').trim();
+    return `Quelles sont les branches du ${raw[0]!.toLowerCase()}${raw.slice(1)} ?`;
+  }
   return question.replace(/^De quoi se compose\s+(\d+\s+.+?)\s*\?$/i, 'Quels sont les $1 ?');
 }
 
@@ -425,12 +477,13 @@ interface QuestionContent {
 
 /** QCM : `null` si les données réelles ne fournissent pas 3 distracteurs distincts. */
 function buildQcmContent(card: Flashcard, allCards: readonly Flashcard[], random: () => number, usage: ReadonlyMap<string, number>): QuestionContent | null {
+  if ((usage.get(normalize(card.answer)) ?? 0) > 0) return null;
   const distractors = pickDistractors(card, allCards, random, usage);
   if (!distractors) return null;
   const optionTexts = shuffle([card.answer.trim(), ...distractors], random);
   return {
     format: 'qcm',
-    question: readableQuestion(card.question),
+    question: readableQuestion(card),
     options: optionTexts,
     correctIndex: optionTexts.indexOf(card.answer.trim()),
     hint: buildHint(card.answer),
@@ -460,7 +513,7 @@ function buildVfContent(card: Flashcard, allCards: readonly Flashcard[], random:
 }
 
 function buildRecallContent(card: Flashcard): QuestionContent {
-  return { format: 'recall', question: readableQuestion(card.question), options: [card.answer.trim(), 'À revoir'], correctIndex: 0, hint: '' };
+  return { format: 'recall', question: readableQuestion(card), options: [card.answer.trim(), 'À revoir'], correctIndex: 0, hint: '' };
 }
 
 function resolveFormat(format: QuizFormat, random: () => number): ResolvedQuizFormat {
@@ -481,7 +534,7 @@ export function buildQuiz(
   const random = options.random ?? Math.random;
   const empty = (blocked: string): QuizBuildResult => ({ questions: [], requestedCount: options.count, blocked });
 
-  const pool = scopeCards(scope, tables, now);
+  const pool = scopeCards(scope, tables, now).filter(isQuizCardCoherent);
   if (pool.length === 0) {
     return empty(
       scope.kind === 'weak'

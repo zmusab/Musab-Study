@@ -189,6 +189,13 @@ describe('isDue / buildDueQueue', () => {
     ], NOW);
     expect(queue).toHaveLength(1);
   });
+  it('ne répète pas la même réponse sous deux questions différentes dans une session', () => {
+    const queue = buildDueQueue([
+      { ...makeItem(), notionKey: 'anneau-zinn', question: 'Où se situe-t-il ?', answer: 'Au fond de l’orbite' },
+      { ...makeItem(), notionKey: 'orbite', question: 'Quelle est cette localisation ?', answer: 'Au fond de l’orbite' },
+    ], NOW);
+    expect(queue).toHaveLength(1);
+  });
   const past = new Date(NOW.getTime() - DAY_MS).toISOString();
   const future = new Date(NOW.getTime() + DAY_MS).toISOString();
 

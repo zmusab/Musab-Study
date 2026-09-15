@@ -57,6 +57,22 @@ describe('generateLocalCardDrafts', () => {
     expect(main!.citations[0]!.chapterName).toBe('Nerfs crâniens');
   });
 
+  it('nomme explicitement les branches dans une question sur un nerf', () => {
+    const chunk = makeChunk('Le nerf trijumeau se compose de trois nerfs : nerf ophtalmique, nerf maxillaire et nerf mandibulaire.');
+    const drafts = generateLocalCardDrafts({ chunks: [chunk], lookup: LOOKUP, count: 10, ...BASE_OPTS });
+    expect(drafts.some((draft) => draft.question === 'Quelles sont les branches du nerf trijumeau ?')).toBe(true);
+  });
+
+  it('ne transforme pas le trajet sous un titre en fausse composition', () => {
+    const chunk = makeChunk(
+      'Le nerf maxillaire (V’’) et le ganglion sphéno-palatin de Meckel\n' +
+      '• C’est un nerf sensitif.\n' +
+      '• Il chemine par le canal moyen du cavum Meckeli et sort du crâne par le foramen rond.',
+    );
+    const drafts = generateLocalCardDrafts({ chunks: [chunk], lookup: LOOKUP, count: 10, ...BASE_OPTS });
+    expect(drafts.some((draft) => draft.question.startsWith('De quoi se compose le nerf maxillaire'))).toBe(false);
+  });
+
   it('génère une carte à trous quand un compte explicite est détecté', () => {
     const chunk = makeChunk('Le nerf trijumeau possède trois branches : ophtalmique, maxillaire et mandibulaire.');
     const drafts = generateLocalCardDrafts({ chunks: [chunk], lookup: LOOKUP, count: 10, ...BASE_OPTS });

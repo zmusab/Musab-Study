@@ -70,6 +70,21 @@ function questionAnswerFor(fact: RawFact): QuestionAnswer | null {
     case 'definition':
       return { question: `Qu'est-ce que ${subject} ?`, answer: capitalize(fact.object) };
     case 'composition':
+      // Une suite de paragraphes complets sous un titre n'est pas une liste
+      // de composants. C'est précisément ce qui avait créé la carte
+      // « De quoi se compose le nerf maxillaire… ? » avec son trajet comme
+      // réponse. Le moteur de réponse peut conserver ces passages ; le
+      // générateur de cartes, lui, s'abstient.
+      if (fact.items?.some((item) => /[.!?]\s*$/.test(item.trim()) || /\b(?:chemine|sort|entre|arrive|parcourt|se detache|se détache)\b/i.test(item))) {
+        return null;
+      }
+      if (fact.items && /\bnerf\b/i.test(subject) && fact.items.every((item) => /^\s*(?:le\s+|la\s+|les\s+|un\s+|une\s+)?nerf\b/i.test(item))) {
+        const nerve = subject.replace(/^(?:le|la|les|un|une)\s+/i, '');
+        return {
+          question: `Quelles sont les branches du ${nerve[0]!.toLowerCase()}${nerve.slice(1)} ?`,
+          answer: capitalize(ITEMS_JOINER(fact.items)),
+        };
+      }
       return {
         question: `De quoi se compose ${subject} ?`,
         answer: fact.items ? capitalize(ITEMS_JOINER(fact.items)) : capitalize(fact.object),
