@@ -1,5 +1,6 @@
 import { findLocalAnswer, type LocalAnswer } from './localAnswer';
 import { normalizeText, significantWords } from '@/core/text';
+import { answerPassageQuestion } from './passageRelations';
 import type { ScoredChunk, ContextLookup } from '@/services/rag/retrieval';
 
 /** Local conversation policy. No network, generated medical facts or model dependency. */
@@ -22,6 +23,8 @@ export function answerWithStudyTutor(
   lookup: ContextLookup,
 ): LocalAnswer | null {
   const normalized = normalizeText(question);
+  const passageAnswer = answerPassageQuestion(question, chunks, lookup);
+  if (passageAnswer) return passageAnswer;
   const corpus = normalizeText(chunks.map(({ chunk }) => chunk.text).join('\n'));
   // These are different nerves, not interchangeable spellings. Ask before substituting.
   if (/\boptiques?\b/.test(normalized) && !/\boptiques?\b/.test(corpus) && /\bophtalmiques?\b/.test(corpus)) {

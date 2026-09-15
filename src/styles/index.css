@@ -438,6 +438,17 @@ html[data-theme='dark'] {
     box-shadow: var(--shadow-soft);
   }
 
+  a.surface-card {
+    transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    a.surface-card:hover { transform: translateY(-3px); }
+  }
+  a.surface-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
   /*
    * En sombre, l'ombre ne suffit plus à séparer : la bordure revient, et
    * surtout un LISERÉ CLAIR en haut de la carte. C'est ce liseré qui fait
