@@ -6,6 +6,8 @@ import { ConfirmProvider, ToastProvider, Spinner } from '@/components/ui';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { refreshProviderStatus } from '@/services/ai/providerStatus';
 import { runPendingReindex } from '@/services/local/autoReindex';
+import { KNOWLEDGE_ENGINE_VERSION, syncKnowledgeLibrary } from '@/data/repositories/knowledge';
+import { getProfile, saveProfile } from '@/data/repositories/profile';
 import { MorePage } from '@/pages/MorePage';
 
 /**
@@ -115,7 +117,13 @@ export function App() {
     — un prochain lancement réessaiera.
   */
   useEffect(() => {
-    void runPendingReindex();
+    void (async () => {
+      await runPendingReindex();
+      const profile = await getProfile();
+      if ((profile?.knowledgeEngineVersion ?? 0) >= KNOWLEDGE_ENGINE_VERSION) return;
+      await syncKnowledgeLibrary();
+      await saveProfile({ knowledgeEngineVersion: KNOWLEDGE_ENGINE_VERSION });
+    })();
   }, []);
 
   return (
