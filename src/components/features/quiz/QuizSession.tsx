@@ -28,10 +28,12 @@ const EXAM_LIKELIHOOD_META: Record<'high' | 'medium' | 'low', { label: string; c
 export function QuizSession({
   questions,
   index,
+  notice,
   onAnswer,
 }: {
   questions: QuizQuestionInstance[];
   index: number;
+  notice?: string | null;
   onAnswer: (record: QuizAnswerRecord) => void;
 }) {
   const reduced = useReducedMotion();
@@ -67,6 +69,11 @@ export function QuizSession({
 
   return (
     <div data-quiz-session>
+      {notice && (
+        <p className="mb-4 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-[0.86rem] leading-relaxed text-[var(--ink-soft)]">
+          {notice}
+        </p>
+      )}
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[0.8rem] text-[var(--ink-faint)]" data-quiz-progress>
