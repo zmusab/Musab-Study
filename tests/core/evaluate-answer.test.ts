@@ -180,3 +180,12 @@ describe('evaluateAnswer — contradictions : faux, jamais « partiellement corr
     expect(result.verdict).toBe('incorrect');
   });
 });
+
+describe('evaluateAnswer — abstention de l’étudiant', () => {
+  it.each(['Je ne sais pas', 'je sais pas', 'aucune idée', 'idk'])(
+    '« %s » est une réponse incorrecte, pas une réponse comprise comme du contenu',
+    (attempt) => {
+      expect(evaluateAnswer(attempt, 'Le nerf ophtalmique est sensitif', 'Quel est son rôle ?').verdict).toBe('incorrect');
+    },
+  );
+});
