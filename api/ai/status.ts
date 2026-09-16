@@ -1,4 +1,4 @@
-import { hasEnvValue, jsonResponse } from './_shared';
+import { hasEnvValue, jsonResponse } from './_shared.js';
 
 export const config = { runtime: 'edge' };
 

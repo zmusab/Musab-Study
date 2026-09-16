@@ -1,4 +1,4 @@
-import { jsonResponse } from './_shared';
+import { jsonResponse } from './_shared.js';
 
 export const config = { runtime: 'edge' };
 
