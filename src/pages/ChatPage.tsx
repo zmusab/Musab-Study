@@ -22,6 +22,7 @@ import {
 import { aiOrchestrator, resolveProviderChoice } from '@/services/ai/orchestrator';
 import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/services/ai/settings';
 import { answerWithStudyTutor, resolveStudyQuestion, studyTopic } from '@/services/local/studyTutor';
+import { answerFromKnowledge } from '@/services/local/knowledgeTutor';
 import { correctCourseQuery } from '@/services/local/querySpelling';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ID } from '@/types';
@@ -157,6 +158,26 @@ export function ChatPage() {
         documents: new Map(documentRows.map((row) => [row.id, { id: row.id, name: row.name }])),
       };
       const context = buildContext(scored, lookup);
+
+      // Le Knowledge Engine est consulté AVANT le regroupement de passages :
+      // une orthographe ou une formulation différente peut faire tomber le
+      // score BM25 sous son seuil alors qu'un fait sourcé correspond bien.
+      if (mode === 'cours' && !options.forceAi) {
+        const [facts, concepts, evidence] = await Promise.all([
+          db.knowledgeFacts.where('subjectId').equals(subjectId).toArray(),
+          db.knowledgeConcepts.where('subjectId').equals(subjectId).toArray(),
+          db.knowledgeEvidence.toArray(),
+        ]);
+        const scopedFacts = chapterId === 'all' ? facts : facts.filter((fact) => fact.chapterId === chapterId);
+        const scopedConcepts = chapterId === 'all' ? concepts : concepts.filter((concept) => concept.chapterId === chapterId || concept.chapterId === null);
+        const knowledge = answerFromKnowledge(resolvedQuestion, scopedFacts, scopedConcepts, evidence, chunks, lookup);
+        if (knowledge) {
+          topicRef.current = { subject: subjectId, chapter: chapterId, topic: studyTopic(resolvedQuestion) };
+          await appendChatMessage({ subjectId, role: 'assistant', text: knowledge.text, provenance: 'course-local', citations: knowledge.citations });
+          setAwaitingAiChoice(null);
+          return;
+        }
+      }
 
       // Sans le moindre extrait pertinent, ni le moteur local ni l'IA ne
       // pourraient produire une réponse vérifiable : on économise l'appel,

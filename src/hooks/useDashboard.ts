@@ -9,6 +9,7 @@ import { addDays, dayKey } from '@/lib/date';
 import { normalizeAvailability, availabilityFor, busyRanges, freeMinutesRemaining } from '@/core/calendar/availability';
 import { expandRecurring } from '@/core/calendar/recurrence';
 import { averageMastery } from '@/core/mastery';
+import { buildDailyStudySession, type DailyStudySession, type SessionDuration } from '@/core/studySession';
 import {
   averageElapsedMs,
   computeDailySummary,
@@ -40,9 +41,16 @@ export interface DashboardData {
   nextExam: UpcomingExam | null;
   dailySummary: DailySummary;
   dailyCardGoal: number;
+  dailySession: DailyStudySession;
 }
 
 const RECENT_DOCUMENTS_SCAN = 50;
+
+function supportedDuration(minutes: number | undefined): SessionDuration {
+  const choices: SessionDuration[] = [10, 20, 30, 45, 60];
+  const target = minutes ?? 45;
+  return choices.reduce((best, current) => Math.abs(current - target) < Math.abs(best - target) ? current : best, 45 as SessionDuration);
+}
 
 /**
  * Assemble les données de l'accueil — une seule requête réactive, purement
@@ -69,6 +77,9 @@ export function useDashboard(): DashboardData | undefined {
       recentDocuments,
       calendarRows,
       profile,
+      knowledgeFacts,
+      knowledgeEvidence,
+      factStates,
     ] = await Promise.all([
       db.subjects.toArray(),
       listAllDueCards(now),
@@ -77,6 +88,9 @@ export function useDashboard(): DashboardData | undefined {
       listRecentlyOpenedDocuments(RECENT_DOCUMENTS_SCAN),
       db.calendarEvents.toArray(),
       db.profile.get('me'),
+      db.knowledgeFacts.toArray(),
+      db.knowledgeEvidence.toArray(),
+      db.learnerFactStates.toArray(),
     ]);
 
     const dueTriage = triageDueCards(dueCards);
@@ -113,6 +127,15 @@ export function useDashboard(): DashboardData | undefined {
         masteryPct: subjectCards.some((card) => logs.some((log) => log.itemKind === 'card' && log.itemId === card.id)) ? averageMastery(subjectCards) : null,
       };
     }
+    const dailySession = buildDailyStudySession({
+      duration: supportedDuration(profile?.sessionMinutes),
+      cards: allCards,
+      facts: knowledgeFacts,
+      evidence: knowledgeEvidence,
+      states: factStates,
+      events: calendarRows,
+      now,
+    });
 
     return {
       studyWindows,
@@ -126,6 +149,7 @@ export function useDashboard(): DashboardData | undefined {
       nextExam,
       dailySummary,
       dailyCardGoal: (profile ?? DEFAULT_PROFILE).dailyCardGoal,
+      dailySession,
     };
   }, [clock]);
 }

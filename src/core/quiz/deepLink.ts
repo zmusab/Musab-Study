@@ -18,6 +18,7 @@ export interface QuizDeepLinkParams {
   subject?: string | null;
   chapter?: string | null;
   cards?: string | null;
+  facts?: string | null;
   evaluation?: string | null;
   format?: string | null;
   count?: string | null;
@@ -84,6 +85,11 @@ export function parseQuizDeepLink(params: QuizDeepLinkParams): QuizDeepLink | nu
     case 'cards': {
       const cardIds = (params.cards ?? '').split(',').map((id) => id.trim()).filter(Boolean) as ID[];
       if (cardIds.length > 0) scope = { kind: 'cards', cardIds };
+      break;
+    }
+    case 'facts': {
+      const factIds = (params.facts ?? '').split(',').map((id) => id.trim()).filter(Boolean) as ID[];
+      if (factIds.length > 0) scope = { kind: 'facts', factIds };
       break;
     }
     default:

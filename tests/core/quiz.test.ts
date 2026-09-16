@@ -7,7 +7,7 @@ import {
   type QuizTables,
 } from '@/core/quiz';
 import { DEFAULT_EASE } from '@/core/srs';
-import type { Chapter, Flashcard, ReviewLog, Subject } from '@/types';
+import type { Chapter, Flashcard, KnowledgeConcept, KnowledgeEvidence, KnowledgeFact, ReviewLog, Subject } from '@/types';
 
 /**
  * Le principe testé partout ici : un quiz ne montre et ne journalise que des
@@ -642,5 +642,39 @@ describe('summarizeQuiz — résultat, sans donnée fabriquée', () => {
       elapsedMs: 3000,
     }));
     expect(summarizeQuiz(allCorrect).weakChapters).toEqual([]);
+  });
+});
+
+describe('quiz fact-first', () => {
+  const concepts: KnowledgeConcept[] = [
+    'Nerf ophtalmique (V1)',
+    'Nerf maxillaire (V2)',
+    'Nerf mandibulaire (V3)',
+    'Nerf facial (VII)',
+  ].map((label, index) => ({
+    id: `concept-${index}`, subjectId: 's1', chapterId: 'ch1', label, normalizedLabel: label.toLowerCase(),
+    kind: 'nerf', aliases: [], origin: 'course-local', status: 'verified', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+  }));
+  const facts: KnowledgeFact[] = concepts.map((concept, index) => ({
+    id: `fact-${index}`, subjectId: 's1', chapterId: 'ch1', conceptId: concept.id, predicate: 'composition',
+    objectText: `branche ${index}a, branche ${index}b et branche ${index}c`, objectConceptId: null,
+    items: [`branche ${index}a`, `branche ${index}b`, `branche ${index}c`], confidence: 'high', importance: 2,
+    origin: 'course-local', status: 'verified', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+  }));
+  const evidence: KnowledgeEvidence[] = facts.map((fact, index) => ({
+    id: `evidence-${index}`, factId: fact.id, documentId: 'doc1', sourceChunkId: `chunk-${index}`,
+    excerpt: `Extrait ${index}`, page: index + 1, active: true, createdAt: '2026-01-01T00:00:00.000Z',
+  }));
+
+  it('préfère les faits vérifiés aux anciennes cartes et conserve leur identité', () => {
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      { ...emptyTables(richCards), knowledgeFacts: facts, knowledgeConcepts: concepts, knowledgeEvidence: evidence },
+      { count: 1, difficulty: 'mixed', format: 'qcm', now: NOW, random: seeded(41) },
+    );
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.factIds).toHaveLength(1);
+    expect(result.questions[0]!.evidenceIds).toHaveLength(1);
+    expect(facts.map((fact) => fact.id)).toContain(result.questions[0]!.factIds[0]);
   });
 });

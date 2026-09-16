@@ -32,6 +32,7 @@ import { listChunks } from '@/data/repositories/documents';
 import { generateCardDrafts, NoIndexedContentError } from '@/services/flashcards/generate';
 import { parseCardFile, toCardFile, type ImportPreview } from '@/services/flashcards/importFile';
 import { isDuplicateQuestion } from '@/services/flashcards/dedupe';
+import { analyzeCardQuality } from '@/services/flashcards/quality';
 import { aiOrchestrator } from '@/services/ai/orchestrator';
 import { masteryStatus, MASTERY_COLOR_VARS } from '@/core/mastery';
 import { downloadText } from '@/lib/download';
@@ -115,6 +116,7 @@ export function FlashcardsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [preview, setPreview] = useState<(ImportPreview & { fileName: string }) | null>(null);
   const [importing, setImporting] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   const chapters = useChapters(subjectId || undefined);
   const cards = useFlashcards(subjectId || undefined);
@@ -170,6 +172,19 @@ export function FlashcardsPage() {
     });
   }, [cards, filterChapterId, originFilter, search]);
 
+  const qualityByCardId = useMemo(
+    () => new Map(analyzeCardQuality(cards ?? []).map((quality) => [quality.cardId, quality])),
+    [cards],
+  );
+  const cleanupCards = useMemo(
+    () => cleanupOpen ? filteredCards.filter((card) => (qualityByCardId.get(card.id)?.status ?? 'valid') !== 'valid') : filteredCards,
+    [cleanupOpen, filteredCards, qualityByCardId],
+  );
+  const cleanupCount = useMemo(
+    () => [...qualityByCardId.values()].filter((quality) => quality.status !== 'valid').length,
+    [qualityByCardId],
+  );
+
   const localCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'local').length, [cards]);
   const aiCount = useMemo(() => (cards ?? []).filter((c) => c.origin === 'ai').length, [cards]);
   // « Manuelles » = tout ce qui n'a été produit par aucun générateur : la
@@ -185,7 +200,7 @@ export function FlashcardsPage() {
    * `source: 'ai'` : régénération explicite via l'IA, seulement si demandée
    * (bouton « Régénérer avec l'IA »), jamais silencieuse.
    */
-  const handleGenerate = async (source: 'local' | 'ai' = 'local') => {
+  const handleGenerate = async (source: 'local' | 'ai' = 'local', forcedChapterId?: ID | null) => {
     if (!subjectId) return;
     if (source === 'ai' && !aiOrchestrator.hasAvailableProvider()) {
       notify('Ajoute une clé API dans Paramètres pour régénérer avec l’IA.', 'error');
@@ -196,7 +211,7 @@ export function FlashcardsPage() {
     setDrafts([]);
     setDraftIndex(0);
     try {
-      const scopeChapterId = chapterId === 'all' ? null : chapterId;
+      const scopeChapterId = forcedChapterId === undefined ? (chapterId === 'all' ? null : chapterId) : forcedChapterId;
       const chunks = await listChunks({ subjectId, chapterId: scopeChapterId });
 
       const [subjectRows, chapterRows, documentRows] = await Promise.all([
@@ -438,6 +453,17 @@ export function FlashcardsPage() {
     if (!ok) return;
     await deleteCard(card.id);
     notify('Carte supprimée.', 'info');
+  };
+
+  const handleKeepCard = async (card: Flashcard) => {
+    await updateCard(card.id, { qualityReviewedAt: new Date().toISOString() });
+    notify('Carte conservée : elle reste disponible sans être modifiée.', 'success');
+  };
+
+  const handleRegenerateFromCourse = async (card: Flashcard) => {
+    setChapterId(card.chapterId ?? 'all');
+    setCleanupOpen(false);
+    await handleGenerate('local', card.chapterId);
   };
 
   if (subjects && subjects.length === 0) {
@@ -819,7 +845,17 @@ export function FlashcardsPage() {
       </Card>
 
       <Card>
-        <h2 className="mb-4 text-[1.05rem]">Bibliothèque ({cards?.length ?? 0})</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-[1.05rem]">Bibliothèque ({cards?.length ?? 0})</h2>
+          <Button size="sm" variant={cleanupOpen ? 'secondary' : 'ghost'} onClick={() => setCleanupOpen((open) => !open)}>
+            {cleanupOpen ? 'Voir toutes les cartes' : `Nettoyer mes cartes${cleanupCount > 0 ? ` (${cleanupCount})` : ''}`}
+          </Button>
+        </div>
+        {cleanupOpen && (
+          <div className="mb-4 rounded-[var(--radius-control)] border border-[var(--warning)]/35 bg-[var(--warning-tint)] p-3 text-[0.84rem] text-[var(--ink-soft)]">
+            Cette analyse ne supprime rien. Elle affiche seulement les cartes fragmentaires, dupliquées, non reliées ou sans source afin que tu choisisses : conserver, modifier, régénérer ou supprimer.
+          </div>
+        )}
         {/* Une seule bibliothèque : « IA » et « Manuelles » ne sont que des filtres
             sur cette même liste, jamais deux systèmes séparés — une carte générée
             par l'IA reste une flashcard normale, révisée par le même SM-2. */}
@@ -853,7 +889,7 @@ export function FlashcardsPage() {
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[0.78rem] text-[var(--ink-faint)]">
-            {plural(filteredCards.length, 'carte')} {agree(filteredCards.length, 'affichée')}
+            {plural(cleanupCards.length, 'carte')} {agree(cleanupCards.length, 'affichée')}
           </p>
           {/*
             EXPORTER — le retour de l'import. Un jeu de cartes construit sur
@@ -863,7 +899,7 @@ export function FlashcardsPage() {
           <button
             type="button"
             onClick={handleExport}
-            disabled={filteredCards.length === 0}
+            disabled={cleanupCards.length === 0}
             className="text-[0.78rem] text-[var(--ink-soft)] underline underline-offset-2 transition-colors hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
             data-cards-export
           >
@@ -871,7 +907,7 @@ export function FlashcardsPage() {
           </button>
         </div>
 
-        {filteredCards.length === 0 ? (
+        {cleanupCards.length === 0 ? (
           <EmptyState
             icon={<Icon name="cards" size={26} />}
             title="Aucune carte"
@@ -879,8 +915,9 @@ export function FlashcardsPage() {
           />
         ) : (
           <Stagger className="flex flex-col gap-3">
-            {filteredCards.map((card) => {
+            {cleanupCards.map((card) => {
               const status = masteryStatus(card);
+              const quality = qualityByCardId.get(card.id);
               return (
                 <StaggerItem key={card.id}>
                   <div className="rounded-[var(--radius-control)] border border-[var(--line)] p-3.5">
@@ -911,6 +948,11 @@ export function FlashcardsPage() {
                         {card.chapterId && <Chip>{chapterName(card.chapterId)}</Chip>}
                         {card.origin === 'ai' && <Chip>IA</Chip>}
                         {card.origin === 'local' && <Chip>Locale</Chip>}
+                        {quality && quality.status !== 'valid' && (
+                          <Chip color={quality.status === 'suspect' ? 'var(--danger)' : 'var(--warning)'}>
+                            {quality.status === 'suspect' ? 'À corriger' : quality.status === 'unmapped' ? 'À relier' : 'À vérifier'}
+                          </Chip>
+                        )}
                         {/*
                           UNE CARTE SUSPENDUE DOIT SE VOIR ICI, sinon elle
                           devient introuvable : elle ne revient plus en
@@ -925,6 +967,12 @@ export function FlashcardsPage() {
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        {cleanupOpen && quality && quality.status !== 'valid' && (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => void handleKeepCard(card)}>Conserver</Button>
+                            <Button size="sm" variant="ghost" onClick={() => void handleRegenerateFromCourse(card)}>Régénérer</Button>
+                          </>
+                        )}
                         {/* Ne s'affiche que sur une carte DÉJÀ révisée : il
                             n'y a rien à remettre à zéro sur une carte neuve. */}
                         {card.reps > 0 && (

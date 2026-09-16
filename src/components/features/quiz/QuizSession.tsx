@@ -3,6 +3,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button, Card, Chip, Swatch } from '@/components/ui';
 import { springSoft } from '@/components/motion/transitions';
 import type { QuizAnswerRecord, QuizQuestionInstance } from '@/core/quiz';
+import { evaluateAnswer } from '@/core/revisions/evaluateAnswer';
+import type { LearningVerdict } from '@/types';
 
 const DIFFICULTY_LABEL: Record<1 | 2 | 3, string> = { 1: 'Facile', 2: 'Moyen', 3: 'Difficile' };
 
@@ -41,11 +43,15 @@ export function QuizSession({
   const [hintShown, setHintShown] = useState(false);
   const [draft, setDraft] = useState('');
   const [answerVisible, setAnswerVisible] = useState(false);
+  const [recallVerdict, setRecallVerdict] = useState<LearningVerdict | null>(null);
   const [startedAt, setStartedAt] = useState(() => Date.now());
 
   const question = questions[index]!;
   const total = questions.length;
   const revealed = selected !== null;
+  const automaticRecall = answerVisible && question.format === 'recall' && draft.trim().length > 0
+    ? evaluateAnswer(draft, question.options[0] ?? '', question.question)
+    : null;
 
   const choose = (optionIndex: number) => {
     if (revealed) return;
@@ -58,12 +64,14 @@ export function QuizSession({
       question,
       selectedIndex: selected,
       correct: selected === question.correctIndex,
+      verdict: recallVerdict ?? undefined,
       elapsedMs: Date.now() - startedAt,
     });
     setSelected(null);
     setHintShown(false);
     setDraft('');
     setAnswerVisible(false);
+    setRecallVerdict(null);
     setStartedAt(Date.now());
   };
 
@@ -128,11 +136,55 @@ export function QuizSession({
                 {!answerVisible ? <Button onClick={() => setAnswerVisible(true)}>Comparer avec le cours</Button> : (
                   <div className="space-y-3" aria-live="polite">
                     <p className="rounded-xl bg-[var(--surface-2)] p-4 leading-relaxed whitespace-pre-line">{question.options[0]}</p>
-                    <p className="text-sm text-[var(--ink-soft)]">Autoévaluation : avais-tu retrouvé les éléments essentiels ?</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button disabled={revealed} onClick={() => choose(1)}>À revoir</Button>
-                      <Button disabled={revealed} onClick={() => choose(0)}>Je les avais retrouvés</Button>
-                    </div>
+                    {automaticRecall ? (
+                      <div className="space-y-2" data-quiz-recall-verdict={automaticRecall.verdict}>
+                        <p className="text-sm text-[var(--ink-soft)]">
+                          {automaticRecall.verdict === 'correct'
+                            ? 'Réponse correcte.'
+                            : automaticRecall.verdict === 'partial'
+                              ? 'Réponse partiellement correcte : les éléments manquants restent à revoir.'
+                              : automaticRecall.verdict === 'incorrect'
+                                ? 'Réponse incorrecte : compare-la avec le corrigé avant de poursuivre.'
+                                : 'Je ne peux pas évaluer cette formulation de manière fiable.'}
+                        </p>
+                        {automaticRecall.verdict === 'indeterminate' ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button disabled={revealed} onClick={() => choose(1)}>À revoir</Button>
+                            <Button disabled={revealed} onClick={() => choose(0)}>Je les avais retrouvés</Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              disabled={revealed}
+                              onClick={() => {
+                                setRecallVerdict('incorrect');
+                                choose(1);
+                              }}
+                            >
+                              À revoir
+                            </Button>
+                            <Button
+                              disabled={revealed}
+                              onClick={() => {
+                                const verdict = automaticRecall.verdict as Exclude<LearningVerdict, 'unable-to-evaluate'>;
+                                setRecallVerdict(verdict);
+                                choose(verdict === 'correct' ? 0 : 1);
+                              }}
+                            >
+                              Continuer
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm text-[var(--ink-soft)]">Écris une réponse pour une correction locale, ou évalue-toi honnêtement.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button disabled={revealed} onClick={() => choose(1)}>À revoir</Button>
+                          <Button disabled={revealed} onClick={() => choose(0)}>Je les avais retrouvés</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -198,7 +250,13 @@ export function QuizSession({
                       className="text-[0.88rem] font-medium"
                       style={{ color: selected === question.correctIndex ? 'var(--success)' : 'var(--danger)' }}
                     >
-                      {question.format === 'recall' ? (selected === 0 ? 'Retrouvé · autoévaluation' : 'À retravailler · autoévaluation') : selected === question.correctIndex ? 'Bonne réponse' : 'Mauvaise réponse'}
+                      {question.format === 'recall'
+                        ? recallVerdict === 'partial'
+                          ? 'Partiellement retrouvé · à consolider'
+                          : selected === 0
+                            ? 'Retrouvé · autoévaluation'
+                            : 'À retravailler · autoévaluation'
+                        : selected === question.correctIndex ? 'Bonne réponse' : 'Mauvaise réponse'}
                     </p>
                     <p className="mt-1 text-[0.82rem] leading-relaxed text-[var(--ink-faint)]">
                       {question.masteryContext}

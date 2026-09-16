@@ -209,7 +209,7 @@ describe('import puis export', () => {
     await importBackup(convertLegacyDump(LEGACY));
     const exported = await exportBackup();
 
-    expect(exported.v).toBe(2);
+    expect(exported.v).toBe(3);
     expect(exported.flashcards.find((c) => c.id === 'card-1')!.interval).toBe(14);
     expect(exported.reviewLogs).toHaveLength(3);
   });

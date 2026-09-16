@@ -1,5 +1,5 @@
 import { masteryPct } from '@/core/mastery';
-import { isBuried } from '@/core/srs';
+import { initialSchedulingState, isBuried } from '@/core/srs';
 import { comparisonKey, singularize } from '@/core/text';
 import { chapterProgress, weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
@@ -8,7 +8,20 @@ import {
   rankForExamLikely,
   type ExamLikelihoodInfo,
 } from '@/core/quiz/examLikely';
-import type { CalendarEvent, Chapter, ChapterAnalysis, Difficulty, Flashcard, ID, ReviewLog, Subject } from '@/types';
+import type {
+  CalendarEvent,
+  Chapter,
+  ChapterAnalysis,
+  Difficulty,
+  Flashcard,
+  ID,
+  KnowledgeConcept,
+  KnowledgeEvidence,
+  KnowledgeFact,
+  LearningVerdict,
+  ReviewLog,
+  Subject,
+} from '@/types';
 
 export type { ExamLikelihood, ExamLikelihoodInfo } from '@/core/quiz/examLikely';
 
@@ -63,7 +76,9 @@ export type QuizScope =
    */
   | { kind: 'exam-likely'; subjectId: ID; chapterIds: ID[]; evaluationEventId: ID | null }
   /** Cartes précises, désignées par id — sert par exemple à « Refaire les questions importantes ». */
-  | { kind: 'cards'; cardIds: ID[] };
+  | { kind: 'cards'; cardIds: ID[] }
+  /** Faits précis, rejoués depuis les résultats d'un quiz fact-first. */
+  | { kind: 'facts'; factIds: ID[] };
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
 
@@ -92,12 +107,20 @@ export interface QuizTables {
   events?: readonly CalendarEvent[];
   /** Analyses IA déjà enregistrées par chapitre (voir `services/courses/notions.ts`) — jamais recalculées ici. */
   chapterAnalyses?: readonly ChapterAnalysis[];
+  /** Le nouveau chemin fact-first. Sans faits vérifiés, le quiz legacy reste disponible. */
+  knowledgeFacts?: readonly KnowledgeFact[];
+  knowledgeConcepts?: readonly KnowledgeConcept[];
+  knowledgeEvidence?: readonly KnowledgeEvidence[];
 }
 
 export interface QuizQuestionInstance {
   id: ID;
   /** Carte réelle derrière la question — c'est elle qui reçoit le journal de réponse. */
   cardId: ID;
+  /** Peut être vide pour une question legacy. Une question fact-first ne dépend jamais d'une carte persistée. */
+  factIds: ID[];
+  conceptIds: ID[];
+  evidenceIds: ID[];
   subjectId: ID;
   subjectName: string;
   chapterId: ID | null;
@@ -255,6 +278,10 @@ export function scopeCards(scope: QuizScope, tables: QuizTables, now: Date = new
     }
     case 'cards': {
       const wanted = new Set(scope.cardIds);
+      return cards.filter((card) => wanted.has(card.id));
+    }
+    case 'facts': {
+      const wanted = new Set(scope.factIds);
       return cards.filter((card) => wanted.has(card.id));
     }
     default:
@@ -481,6 +508,80 @@ function readableQuestion(card: Pick<Flashcard, 'question' | 'answer'>): string 
   return question.replace(/^De quoi se compose\s+(\d+\s+.+?)\s*\?$/i, 'Quels sont les $1 ?');
 }
 
+function joinItems(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} et ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}`;
+}
+
+function plainConceptLabel(label: string): string {
+  return label.replace(/^(?:le|la|les|un|une|du|des)\s+/i, '').trim();
+}
+
+/** Une formulation prudente d'un fait déjà vérifié — aucun contenu n'est inventé. */
+function questionForFact(fact: KnowledgeFact, concept: KnowledgeConcept): string | null {
+  const label = plainConceptLabel(concept.label);
+  if (label.length < 3 || /^(?:ii|iii|iv|v|vi|→|➔|c['’]?)$/i.test(label)) return null;
+  switch (fact.predicate) {
+    case 'definition': return `Comment définit-on ${label} ?`;
+    case 'composition': return fact.items?.length ? `Quels éléments composent ${label} ?` : `Que faut-il retenir de la composition de ${label} ?`;
+    case 'classification': return fact.items?.length ? `Quels sont les types de ${label} ?` : `Comment ${label} est-il classé ?`;
+    case 'possession': return `Que possède ${label} ?`;
+    case 'function': return `Quel rôle joue ${label} ?`;
+    case 'location': return `Où se situe ${label} ?`;
+    default: return null;
+  }
+}
+
+/**
+ * Transforme des faits vérifiés en supports de quiz éphémères. Aucune carte
+ * n'est créée en base : la connaissance reste le fait, la question n'est
+ * qu'une manière de la tester. Le chemin legacy n'est utilisé que si ce
+ * vivier sûr est absent ou si le scope est explicitement centré sur les
+ * échéances historiques des cartes.
+ */
+function factQuizCards(tables: QuizTables, now: Date): Flashcard[] {
+  const concepts = new Map((tables.knowledgeConcepts ?? []).map((concept) => [concept.id, concept]));
+  const activeEvidence = new Map<string, KnowledgeEvidence[]>();
+  for (const evidence of tables.knowledgeEvidence ?? []) {
+    if (!evidence.active) continue;
+    const list = activeEvidence.get(evidence.factId);
+    if (list) list.push(evidence);
+    else activeEvidence.set(evidence.factId, [evidence]);
+  }
+  return (tables.knowledgeFacts ?? []).flatMap((fact) => {
+    if (fact.status !== 'verified' || fact.confidence !== 'high') return [];
+    const concept = concepts.get(fact.conceptId);
+    const evidence = activeEvidence.get(fact.id) ?? [];
+    if (!concept || evidence.length === 0) return [];
+    const question = questionForFact(fact, concept);
+    const answer = (fact.items?.length ?? 0) >= 2 ? joinItems(fact.items!) : fact.objectText.trim();
+    if (!question || answer.length < 2) return [];
+    return [{
+      id: fact.id,
+      subjectId: fact.subjectId,
+      chapterId: fact.chapterId,
+      question,
+      answer,
+      importance: fact.importance,
+      difficulty: fact.items?.length ? 2 : fact.predicate === 'definition' ? 1 : 2,
+      origin: 'local' as const,
+      sourceChunkIds: evidence.map((item) => item.sourceChunkId),
+      notionKey: fact.conceptId,
+      notionLabel: concept.label,
+      knowledgeFactIds: [fact.id],
+      knowledgeConceptId: fact.conceptId,
+      createdAt: now.toISOString(),
+      ...initialSchedulingState(now),
+    }];
+  });
+}
+
+function shouldUseFacts(scope: QuizScope, factCards: readonly Flashcard[]): boolean {
+  if (factCards.length === 0) return false;
+  return scope.kind !== 'due' && scope.kind !== 'weak' && scope.kind !== 'cards';
+}
+
 /** Le contenu propre au format d'une question — le reste (matière, chapitre, maîtrise…) est commun. */
 interface QuestionContent {
   format: ResolvedQuizFormat;
@@ -549,7 +650,9 @@ export function buildQuiz(
   const random = options.random ?? Math.random;
   const empty = (blocked: string): QuizBuildResult => ({ questions: [], requestedCount: options.count, blocked, notice: null });
 
-  const pool = scopeCards(scope, tables, now).filter(isQuizCardCoherent);
+  const factCards = factQuizCards(tables, now);
+  const activeTables: QuizTables = shouldUseFacts(scope, factCards) ? { ...tables, cards: factCards } : tables;
+  const pool = scopeCards(scope, activeTables, now).filter(isQuizCardCoherent);
   if (pool.length === 0) {
     return empty(
       scope.kind === 'weak'
@@ -570,9 +673,9 @@ export function buildQuiz(
   // un quiz qui aurait pu exister.
   const effectivePool = filtered.length > 0 ? filtered : pool;
 
-  const subjectName = new Map(tables.subjects.map((s) => [s.id, s.name]));
-  const chapterName = new Map(tables.chapters.map((c) => [c.id, c.name]));
-  const allCards = tables.cards;
+  const subjectName = new Map(activeTables.subjects.map((s) => [s.id, s.name]));
+  const chapterName = new Map(activeTables.chapters.map((c) => [c.id, c.name]));
+  const allCards = activeTables.cards;
 
   const requestedFormat = options.format ?? 'qcm';
 
@@ -608,7 +711,7 @@ export function buildQuiz(
    * badge de probabilité, ajouterait un jugement là où il n'a rien demandé.
    */
   if (scope.kind === 'exam' || scope.kind === 'weak' || scope.kind === 'cards') {
-    ordered = priorityOrder(scope, effectivePool, tables, random);
+    ordered = priorityOrder(scope, effectivePool, activeTables, random);
   } else {
     const chapterSignals = chapterSignalsFromAnalyses(tables.chapterAnalyses ?? []);
     const evaluation =
@@ -630,7 +733,7 @@ export function buildQuiz(
       shuffle(effectivePool, random),
       chapterSignals,
       (chapterId) => (chapterId ? (chapterName.get(chapterId) ?? null) : null),
-      tables.logs,
+      activeTables.logs,
       evaluation,
     );
     ordered = ranking.ordered;
@@ -638,6 +741,13 @@ export function buildQuiz(
   }
 
   const questions: QuizQuestionInstance[] = [];
+  const evidenceIdsByFact = new Map<string, string[]>();
+  for (const evidence of tables.knowledgeEvidence ?? []) {
+    if (!evidence.active) continue;
+    const list = evidenceIdsByFact.get(evidence.factId);
+    if (list) list.push(evidence.id);
+    else evidenceIdsByFact.set(evidence.factId, [evidence.id]);
+  }
   // La mémoire de la série commence avec les propositions récentes. Elle est
   // ensuite enrichie à chaque QCM : une réponse correcte ou un distracteur ne
   // peut pas revenir bêtement à la question suivante, ni dans une relance
@@ -664,6 +774,9 @@ export function buildQuiz(
     questions.push({
       id: `quiz_${card.id}_${counter}`,
       cardId: card.id,
+      factIds: card.knowledgeFactIds ?? [],
+      conceptIds: card.knowledgeConceptId ? [card.knowledgeConceptId] : [],
+      evidenceIds: (card.knowledgeFactIds ?? []).flatMap((factId) => evidenceIdsByFact.get(factId) ?? []),
       subjectId: card.subjectId,
       subjectName: subjectName.get(card.subjectId) ?? 'Matière',
       chapterId: card.chapterId,
@@ -697,6 +810,8 @@ export interface QuizAnswerRecord {
   question: QuizQuestionInstance;
   selectedIndex: number | null;
   correct: boolean;
+  /** Présent pour le rappel libre : « partiel » ne devient jamais un faux succès binaire. */
+  verdict?: LearningVerdict;
   elapsedMs: number;
 }
 

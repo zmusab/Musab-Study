@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { PageHeader, PageTransition } from '@/components/layout/PageTransition';
 import { FadeUp } from '@/components/motion/Motion';
 import { CountUp, Reveal, useCascade } from '@/components/motion/Reveal';
@@ -12,6 +13,8 @@ import { PriorityList } from '@/components/features/progress/PriorityList';
 import { WeakStrongPair } from '@/components/features/progress/WeakStrongPair';
 import { SecondaryPanels, type Period } from '@/components/features/progress/SecondaryPanels';
 import { useProgress } from '@/hooks/useProgress';
+import { db } from '@/data/db';
+import { priorityFactViews, rankExamPriority, type PriorityFactView } from '@/core/examPriority';
 import { useProfile } from '@/hooks/useProfile';
 import { saveProfile } from '@/data/repositories/profile';
 import { progressView } from '@/core/progress/view';
@@ -23,7 +26,7 @@ import {
   type SubjectProgress,
 } from '@/core/progress';
 import type { SubjectReadiness } from '@/core/progress/view';
-import type { ID } from '@/types';
+import type { ID, LearnerFactState } from '@/types';
 
 /**
  * PROGRESSION — le centre de pilotage des études.
@@ -53,6 +56,15 @@ export function ProgressionPage() {
   const [openSubject, setOpenSubject] = useState<ID | null>(null);
   const [period, setPeriod] = useState<Period>('week');
   const [goalsOpen, setGoalsOpen] = useState(false);
+  const factData = useLiveQuery(async () => {
+    const [facts, concepts, evidence, states] = await Promise.all([
+      db.knowledgeFacts.toArray(),
+      db.knowledgeConcepts.toArray(),
+      db.knowledgeEvidence.toArray(),
+      db.learnerFactStates.toArray(),
+    ]);
+    return { facts, concepts, evidence, states };
+  }, []);
 
   const view = useMemo(() => {
     if (!source) return null;
@@ -68,6 +80,13 @@ export function ProgressionPage() {
     if (!source || !openSubject) return [];
     return chapterProgress(openSubject, source.tables.chapters, source.tables.cards, source.tables.logs);
   }, [source, openSubject]);
+  const factPriority = useMemo(() => {
+    if (!source || !factData) return [];
+    const facts = subjectId ? factData.facts.filter((fact) => fact.subjectId === subjectId) : factData.facts;
+    const priorities = rankExamPriority(facts, factData.states, factData.evidence, source.tables.events, new Date(source.loadedAt));
+    return priorityFactViews(priorities, facts, factData.concepts).slice(0, 8);
+  }, [source, factData, subjectId]);
+  const factStateById = useMemo(() => new Map((factData?.states ?? []).map((state) => [state.factId, state])), [factData]);
 
   /**
    * Cascade de la liste des matières. Le crochet est appelé ICI, avec les
@@ -347,7 +366,21 @@ export function ProgressionPage() {
         )}
       </Reveal>
 
-      {/* ═══ 5. POINTS FAIBLES ET POINTS FORTS — compacts, côte à côte. ═══ */}
+      {/* ═══ 5. CONNAISSANCES — le niveau attaché aux faits, pas aux cartes. ═══ */}
+      <Reveal className="mt-7">
+        <SectionTitle hint="Chaque ligne est un fait vérifié et sourcé dans tes cours. La maîtrise vient de tes tentatives, pas du nombre de cartes créées.">
+          Connaissances à travailler
+        </SectionTitle>
+        {factPriority.length === 0 ? (
+          <EmptyHint title="Aucun fait vérifié à afficher pour l’instant.">
+            Importe un cours puis laisse l’indexation créer des faits sourcés. Les anciennes statistiques de cartes restent disponibles pendant la migration.
+          </EmptyHint>
+        ) : (
+          <FactPriorityPanel rows={factPriority} states={factStateById} />
+        )}
+      </Reveal>
+
+      {/* ═══ 6. POINTS FAIBLES ET POINTS FORTS — compacts, côte à côte. ═══ */}
       <Reveal className="mt-7">
         {/* Sans phrase d'accroche : les deux cartes juste en dessous
             s'intitulent « Tes points faibles » et « Tes points forts » et
@@ -358,7 +391,7 @@ export function ProgressionPage() {
         <WeakStrongPair weak={weak} strengths={view.strengths} />
       </Reveal>
 
-      {/* ═══ 6. ACTIVITÉ ET ÉVOLUTION — la progression dans le temps. ═══ */}
+      {/* ═══ 7. ACTIVITÉ ET ÉVOLUTION — la progression dans le temps. ═══ */}
       <Reveal className="mt-8 mb-4">
         {/* Idem : la phrase se contentait d'énumérer les titres des cartes
             qui suivent immédiatement. */}
@@ -593,6 +626,43 @@ function SubjectRow({
           )}
         </div>
       )}
+    </Card>
+  );
+}
+
+function FactPriorityPanel({ rows, states }: { rows: readonly PriorityFactView[]; states: ReadonlyMap<string, LearnerFactState> }) {
+  const labelFor = (level: PriorityFactView['level']) =>
+    level === 'very-high' ? 'Très élevée' : level === 'high' ? 'Élevée' : level === 'medium' ? 'Moyenne' : 'Faible';
+  return (
+    <Card className="divide-y divide-[var(--line)] p-0">
+      {rows.map((row) => {
+        const state = states.get(row.factId);
+        const factIds = encodeURIComponent(row.factId);
+        return (
+          <div key={row.factId} className="flex flex-wrap items-center gap-3 p-4">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{row.concept?.label ?? 'Notion du cours'}</p>
+              <p className="mt-1 text-[0.84rem] leading-relaxed text-[var(--ink-soft)]">
+                {row.fact.objectText}
+              </p>
+              <p className="mt-1.5 text-[0.76rem] text-[var(--ink-faint)]">
+                {row.reasons.join(' · ')}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <span className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[0.76rem] font-medium text-[var(--ink-soft)]">
+                Priorité {labelFor(row.level)}
+              </span>
+              <span className="rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[0.76rem] text-[var(--ink-soft)]">
+                {state?.mastery === null || !state ? 'Non étudié' : `${state.mastery} % · ${state.status === 'fragile' ? 'fragile' : state.status === 'secure' ? 'consolidé' : 'en apprentissage'}`}
+              </span>
+              <Link to={`/quiz?scope=facts&facts=${factIds}&format=recall&count=3`}>
+                <Button size="sm" variant="ghost">Travailler</Button>
+              </Link>
+            </div>
+          </div>
+        );
+      })}
     </Card>
   );
 }

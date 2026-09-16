@@ -1,5 +1,5 @@
 import { db } from '@/data/db';
-import { comparisonKey } from '@/core/text';
+import { comparisonKey, significantWords } from '@/core/text';
 import { nowISO } from '@/lib/date';
 import { uid } from '@/lib/id';
 import { extractFacts } from '@/services/local/relationExtraction';
@@ -13,7 +13,7 @@ import type {
 } from '@/types';
 
 /** Version de remplissage : incrémentée si les règles d'extraction changent. */
-export const KNOWLEDGE_ENGINE_VERSION = 1;
+export const KNOWLEDGE_ENGINE_VERSION = 2;
 
 function conceptKind(label: string): string | null {
   const value = comparisonKey(label);
@@ -170,8 +170,10 @@ export async function syncKnowledgeForChunks(chunks: readonly DocumentChunk[]): 
 }
 
 /** Remplissage unique de la bibliothèque existante, sans toucher aux cartes ni aux logs. */
-export async function syncKnowledgeLibrary(): Promise<{ concepts: number; facts: number; evidence: number }> {
-  return syncKnowledgeForChunks(await db.chunks.toArray());
+export async function syncKnowledgeLibrary(): Promise<{ concepts: number; facts: number; evidence: number; linkedCards: number }> {
+  const synced = await syncKnowledgeForChunks(await db.chunks.toArray());
+  const linkedCards = await linkExistingLocalFlashcards();
+  return { ...synced, linkedCards };
 }
 
 /** Lecture stricte : le tuteur local ne doit utiliser que des faits vérifiés et sourcés. */
@@ -184,14 +186,62 @@ export async function listVerifiedKnowledge(subjectId: string, chapterId?: strin
 }
 
 /** Relie une carte à un fait seulement lorsqu'une correspondance source est exacte. */
+function answerIdentity(text: string): string {
+  // Les listes locales ont pu être enregistrées comme « A, B et C » alors que
+  // le fait source conserve « A, B, C ». Cette normalisation ne cherche pas
+  // des synonymes : elle enlève uniquement la ponctuation de coordination.
+  return comparisonKey(text).replace(/\b(?:et|ou)\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Relie une carte seulement si sa réponse est exactement celle d'un fait ET
+ * si sa question ou son extrait source désigne cette notion. Cette deuxième
+ * condition évite d'attacher par accident deux réponses textuellement égales
+ * à des concepts différents.
+ */
 export async function linkFlashcardToKnowledge(card: Flashcard): Promise<Pick<Flashcard, 'knowledgeFactIds' | 'knowledgeConceptId'>> {
   const facts = await db.knowledgeFacts.where('subjectId').equals(card.subjectId).toArray();
-  const answerKey = comparisonKey(card.answer);
-  const candidates = facts.filter((fact) =>
-    fact.status === 'verified'
-    && comparisonKey(fact.objectText) === answerKey
-    && (card.chapterId === null || fact.chapterId === card.chapterId),
-  );
+  const concepts = await db.knowledgeConcepts.where('subjectId').equals(card.subjectId).toArray();
+  const conceptById = new Map(concepts.map((concept) => [concept.id, concept]));
+  const activeEvidence = await db.knowledgeEvidence.where('factId').anyOf(facts.map((fact) => fact.id)).toArray();
+  const evidenceChunkIds = new Map<string, Set<string>>();
+  for (const evidence of activeEvidence) {
+    if (!evidence.active) continue;
+    const list = evidenceChunkIds.get(evidence.factId) ?? new Set<string>();
+    list.add(evidence.sourceChunkId);
+    evidenceChunkIds.set(evidence.factId, list);
+  }
+  const answerKey = answerIdentity(card.answer);
+  const questionWords = significantWords(card.question);
+  const candidates = facts.filter((fact) => {
+    if (fact.status !== 'verified' || (card.chapterId !== null && fact.chapterId !== card.chapterId)) return false;
+    const factAnswerKeys = [fact.objectText, fact.items?.join(' ') ?? ''].map(answerIdentity);
+    if (!factAnswerKeys.includes(answerKey)) return false;
+    const concept = conceptById.get(fact.conceptId);
+    const hasConceptInQuestion = concept
+      ? [...significantWords(concept.label)].some((word) => questionWords.has(word) && word.length >= 4)
+      : false;
+    const sourceMatches = [...(evidenceChunkIds.get(fact.id) ?? [])].some((chunkId) => card.sourceChunkIds.includes(chunkId));
+    return hasConceptInQuestion || sourceMatches;
+  });
   if (candidates.length !== 1) return { knowledgeFactIds: [], knowledgeConceptId: null };
   return { knowledgeFactIds: [candidates[0]!.id], knowledgeConceptId: candidates[0]!.conceptId };
+}
+
+/**
+ * Migration additive des cartes du moteur local déjà présentes. Les cartes
+ * manuelles et IA restent volontairement non reliées : leur contenu n'est pas
+ * suffisamment traçable pour attribuer rétroactivement une maîtrise de fait.
+ */
+export async function linkExistingLocalFlashcards(): Promise<number> {
+  const cards = await db.flashcards.toArray();
+  let linked = 0;
+  for (const card of cards) {
+    if (card.origin !== 'local' || (card.knowledgeFactIds?.length ?? 0) > 0) continue;
+    const link = await linkFlashcardToKnowledge(card);
+    if ((link.knowledgeFactIds?.length ?? 0) === 0) continue;
+    await db.flashcards.update(card.id, link);
+    linked += 1;
+  }
+  return linked;
 }

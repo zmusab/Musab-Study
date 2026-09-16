@@ -52,6 +52,8 @@ export class MusabStudyDatabase extends Dexie {
   knowledgeFacts!: EntityTable<import('@/types').KnowledgeFact, 'id'>;
   knowledgeEvidence!: EntityTable<import('@/types').KnowledgeEvidence, 'id'>;
   quizRuns!: EntityTable<import('@/types').QuizRun, 'id'>;
+  factAttempts!: EntityTable<import('@/types').FactAttempt, 'id'>;
+  learnerFactStates!: EntityTable<import('@/types').LearnerFactState, 'factId'>;
 
   constructor() {
     super('musab-study');
@@ -136,6 +138,21 @@ export class MusabStudyDatabase extends Dexie {
       knowledgeFacts: 'id, subjectId, chapterId, conceptId, status, [conceptId+predicate]',
       knowledgeEvidence: 'id, factId, documentId, sourceChunkId, active, [documentId+active]',
       quizRuns: 'id, createdAt, completedAt',
+    });
+
+    // v7 : tentatives et maîtrise attachées aux FAITS, jamais aux seules
+    // formulations de cartes. C'est strictement additif : les anciennes
+    // révisions restent dans `reviewLogs` et peuvent être reliées plus tard
+    // lorsqu'une carte possède un `knowledgeFactIds` non ambigu.
+    this.version(7).stores({
+      factAttempts: 'id, factId, conceptId, subjectId, at, [factId+at], [subjectId+at]',
+      learnerFactStates: 'factId, conceptId, subjectId, status, nextReviewAt, [subjectId+status]',
+    });
+
+    // v8 : annuler une révision doit aussi annuler la tentative de fait qui
+    // en découle. Cet index évite un scan complet au moment de l'annulation.
+    this.version(8).stores({
+      factAttempts: 'id, factId, conceptId, subjectId, sourceItemId, at, [factId+at], [subjectId+at]',
     });
   }
 }

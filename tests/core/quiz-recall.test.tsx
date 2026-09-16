@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 it('cache le corrigé, demande une autoévaluation puis journalise le choix à la fin', () => {
   const question: QuizQuestionInstance = {
-    id: 'q1', cardId: 'c1', subjectId: 's1', subjectName: 'Anatomie', chapterId: null,
+    id: 'q1', cardId: 'c1', factIds: [], conceptIds: [], evidenceIds: [], subjectId: 's1', subjectName: 'Anatomie', chapterId: null,
     chapterName: null, format: 'recall', question: 'Quels muscles ?',
     options: ['Les quatre muscles du cours', 'À revoir'], correctIndex: 0,
     difficulty: 2, hint: '', masteryContext: '', examLikelihood: null,

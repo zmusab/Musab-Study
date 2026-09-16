@@ -3,6 +3,8 @@ import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { dayKey } from '@/lib/date';
 import { linkFlashcardToKnowledge } from './knowledge';
+import { recordFactAttempt } from './learning';
+import { deriveFactState } from '@/core/learning';
 import {
   buildDueQueue,
   buryUntil,
@@ -170,7 +172,7 @@ export async function reviewCardUndoable(
   elapsedMs: number,
   now: Date = new Date(),
 ): Promise<UndoableReview> {
-  return db.transaction('rw', [db.flashcards, db.reviewLogs], async () => {
+  const result = await db.transaction('rw', [db.flashcards, db.reviewLogs], async () => {
     const card = await db.flashcards.get(cardId);
     if (!card) throw new Error(`Carte introuvable : ${cardId}`);
 
@@ -188,6 +190,8 @@ export async function reviewCardUndoable(
       correct: rating >= 2,
       rating,
       confidence,
+      knowledgeFactIds: card.knowledgeFactIds ?? [],
+      verdict: rating >= 2 ? 'correct' : rating === 1 ? 'partial' : 'incorrect',
       elapsedMs,
     };
 
@@ -206,6 +210,22 @@ export async function reviewCardUndoable(
       logId: log.id,
     };
   });
+  // La carte et son journal sont d'abord écrits atomiquement. La projection
+  // factuelle est ensuite ajoutée avec le même identifiant de journal, ce qui
+  // permet à `undoReview` de la retirer exactement.
+  if ((result.card.knowledgeFactIds?.length ?? 0) > 0) {
+    await recordFactAttempt({
+      factIds: result.card.knowledgeFactIds ?? [],
+      subjectId: result.card.subjectId,
+      chapterId: result.card.chapterId,
+      kind: 'flashcard',
+      verdict: rating >= 2 ? 'correct' : rating === 1 ? 'partial' : 'incorrect',
+      at: now,
+      elapsedMs,
+      sourceItemId: result.logId,
+    });
+  }
+  return result;
 }
 
 /**
@@ -222,8 +242,18 @@ export async function reviewCardUndoable(
  * erreur.
  */
 export async function undoReview(review: UndoableReview): Promise<Flashcard | undefined> {
-  return db.transaction('rw', [db.flashcards, db.reviewLogs], async () => {
+  return db.transaction('rw', [db.flashcards, db.reviewLogs, db.factAttempts, db.learnerFactStates, db.knowledgeFacts], async () => {
     await db.reviewLogs.delete(review.logId);
+    const attempts = await db.factAttempts.where('sourceItemId').equals(review.logId).toArray();
+    const factIds = [...new Set(attempts.map((attempt) => attempt.factId))];
+    if (attempts.length > 0) await db.factAttempts.bulkDelete(attempts.map((attempt) => attempt.id));
+    for (const factId of factIds) {
+      const fact = await db.knowledgeFacts.get(factId);
+      if (!fact) continue;
+      const remaining = await db.factAttempts.where('factId').equals(factId).toArray();
+      if (remaining.length === 0) await db.learnerFactStates.delete(factId);
+      else await db.learnerFactStates.put(deriveFactState(factId, remaining, fact));
+    }
     const card = await db.flashcards.get(review.card.id);
     if (!card) return undefined;
     const restored: Flashcard = { ...card, ...review.previous };

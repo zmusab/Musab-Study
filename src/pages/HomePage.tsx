@@ -5,7 +5,7 @@ import { PageTransition } from '@/components/layout/PageTransition';
 import { notationFor } from '@/components/layout/notations';
 import { CountUp } from '@/components/motion/Reveal';
 import { FadeUp, Stagger, StaggerItem as MotionItem } from '@/components/motion/Motion';
-import { Button, Card, Chip, EmptyState, Icon, Input, Spinner, Swatch } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, Input, Spinner } from '@/components/ui';
 import { agree, plural } from '@/lib/plural';
 import type { IconName } from '@/components/ui/Icon';
 import { useProfile } from '@/hooks/useProfile';
@@ -124,10 +124,16 @@ export function HomePage() {
     );
   }
 
-  const { dueTriage, weakConcepts, recentDocuments, upcomingEvents, nextExam, dailySummary, dailyCardGoal } = data;
+  const { dueTriage, weakConcepts, recentDocuments, upcomingEvents, nextExam, dailySummary, dailyCardGoal, dailySession } = data;
 
   // Personnalisation : sans révision urgente, mettre en avant les cours et le
   const prioritizeSession = dueTriage.total > 0;
+  const firstSessionBlock = dailySession.blocks[0] ?? null;
+  const sessionTarget = firstSessionBlock?.kind === 'flashcards'
+    ? `/revisions?cards=${firstSessionBlock.cardIds.join(',')}&autostart=1`
+    : firstSessionBlock
+      ? `/quiz?scope=facts&facts=${firstSessionBlock.factIds.join(',')}&format=${firstSessionBlock.kind === 'recall' ? 'recall' : 'mixed'}&count=${Math.max(3, firstSessionBlock.factIds.length)}`
+      : '/cours';
 
   const weakConceptsCard = weakConcepts.length > 0 && (
     <StaggerItem key="weak">
@@ -268,44 +274,30 @@ export function HomePage() {
               Session recommandée
             </p>
 
-            {dueTriage.total === 0 ? (
+            {dailySession.blocks.length === 0 ? (
               <p className="mt-3 text-[0.95rem] text-[var(--ink-soft)]">
-                Aucune carte due pour l’instant — reviens quand la répétition espacée en aura reprogrammé.
+                Importe ou indexe un cours pour obtenir des faits vérifiés à travailler. Aucune recommandation n’est inventée.
               </p>
             ) : (
               <>
                 <p className="mt-2 text-[2rem] font-semibold leading-none tabular-nums">
-                  <CountUp value={dueTriage.total} /> {agree(dueTriage.total, 'question')}
+                  <CountUp value={dailySession.recommendedMinutes} /> min
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {/* La pastille de couleur DIT le niveau : le rond emoji qui la
-                      précédait le répétait une seconde fois, dans une palette
-                      qui n'était pas celle de l'application. */}
-                  {dueTriage.atRisk > 0 && (
-                    <Chip color="var(--danger)">
-                      <Swatch color="var(--danger)" size={7} />
-                      {dueTriage.atRisk} à risque d’oubli
-                    </Chip>
+                  {dailySession.dueCards > 0 && (
+                    <Chip color="var(--danger)">{dailySession.dueCards} cartes dues</Chip>
                   )}
-                  {dueTriage.difficult > 0 && (
-                    <Chip color="var(--warning)">
-                      <Swatch color="var(--warning)" size={7} />
-                      {dueTriage.difficult} difficiles
-                    </Chip>
+                  {dailySession.weakFacts > 0 && (
+                    <Chip color="var(--warning)">{dailySession.weakFacts} faits fragiles</Chip>
                   )}
-                  {dueTriage.normal > 0 && (
-                    <Chip color="var(--mastery-2)">
-                      <Swatch color="var(--mastery-2)" size={7} />
-                      {dueTriage.normal} normales
-                    </Chip>
+                  {dailySession.priorityFacts > 0 && (
+                    <Chip color="var(--mastery-2)">{dailySession.priorityFacts} priorités examen</Chip>
                   )}
                 </div>
-                <p className="mt-2 text-[0.82rem] text-[var(--ink-faint)]">≈ {data.sessionMinutes} min</p>
                 <p className="mt-3 text-[0.85rem] leading-relaxed text-[var(--ink-soft)]">
-                  Sélectionnées selon ta maîtrise réelle et ton historique de révisions — les notions les
-                  moins bien retenues reviennent en premier.
+                  {dailySession.blocks.map((block) => block.reason).join(' · ')}.
                 </p>
-                <Link to="/revisions?autostart=1" className="mt-4 block">
+                <Link to={sessionTarget} className="mt-4 block">
                   <Button size="lg" block>
                     Commencer ma session
                   </Button>

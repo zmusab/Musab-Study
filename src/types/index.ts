@@ -256,6 +256,53 @@ export interface KnowledgeEvidence {
   createdAt: ISODateTime;
 }
 
+// ─────────────────────── Learning / mastery by fact ───────────────────────
+
+/** Verdict pédagogique commun aux flashcards, quiz et rappels libres. */
+export type LearningVerdict = 'correct' | 'partial' | 'incorrect' | 'unable-to-evaluate';
+export type LearningAttemptKind = 'flashcard' | 'quiz' | 'recall' | 'cloze' | 'true-false';
+
+/**
+ * Une tentative sur un fait du Knowledge Engine. Le journal ne remplace pas
+ * `ReviewLog` : celui-ci reste le journal historique des interactions ; cette
+ * table relie explicitement une interaction à la connaissance testée.
+ */
+export interface FactAttempt {
+  id: ID;
+  factId: ID;
+  conceptId: ID;
+  subjectId: ID;
+  chapterId: ID | null;
+  kind: LearningAttemptKind;
+  verdict: LearningVerdict;
+  at: ISODateTime;
+  elapsedMs: number;
+  /** Id de la carte ou de la question, pour remonter au contexte sans dupliquer le texte. */
+  sourceItemId: ID | null;
+}
+
+export type FactLearningStatus = 'unseen' | 'learning' | 'fragile' | 'secure';
+
+/**
+ * Projection déterministe des tentatives. C'est un indicateur explicable de
+ * maîtrise, pas une probabilité médicale ou une prédiction de note.
+ */
+export interface LearnerFactState {
+  factId: ID;
+  conceptId: ID;
+  subjectId: ID;
+  chapterId: ID | null;
+  status: FactLearningStatus;
+  mastery: number | null;
+  attempts: number;
+  correctAttempts: number;
+  partialAttempts: number;
+  incorrectAttempts: number;
+  lastAttemptAt: ISODateTime | null;
+  nextReviewAt: ISODateTime | null;
+  updatedAt: ISODateTime;
+}
+
 // ──────────────────────────── Flashcards ────────────────────────────
 
 /** 1 = normale, 2 = importante, 3 = tombe à l'examen. */
@@ -318,6 +365,8 @@ export interface Flashcard {
   /** Fait(s) du knowledge engine testés par cette carte. Additif : les cartes existantes restent lisibles. */
   knowledgeFactIds?: ID[];
   knowledgeConceptId?: ID | null;
+  /** Décision explicite prise dans « Nettoyer mes cartes », jamais déduite d'une ancienne carte. */
+  qualityReviewedAt?: ISODateTime | null;
 
   /**
    * SUSPENDUE — retirée des révisions jusqu'à réactivation explicite.
@@ -407,6 +456,10 @@ export interface ReviewLog {
   correct: boolean;
   rating: Rating | null;
   confidence: Confidence | null;
+  /** Faits réellement testés, absent sur les journaux historiques. */
+  knowledgeFactIds?: ID[];
+  /** Verdict automatique lorsqu'il existe ; la note SM-2 reste séparée. */
+  verdict?: LearningVerdict | null;
   /** Temps de réflexion en millisecondes — alimente le « temps étudié ». */
   elapsedMs: number;
 }
@@ -642,7 +695,7 @@ export interface ChapterAnalysis {
 
 /** Format d'export/import complet. `v` permet les migrations futures. */
 export interface BackupBundle {
-  v: 2;
+  v: 2 | 3;
   exportedAt: ISODateTime;
   profile: Profile | null;
   subjects: Subject[];
@@ -656,6 +709,13 @@ export interface BackupBundle {
   anatomyStructures: AnatomyStructure[];
   anatomySheets: AnatomySheet[];
   chatMessages: ChatMessage[];
+  /** Ajouts v3. Absents d'une sauvegarde v2, jamais requis pour la restaurer. */
+  knowledgeConcepts?: KnowledgeConcept[];
+  knowledgeFacts?: KnowledgeFact[];
+  knowledgeEvidence?: KnowledgeEvidence[];
+  quizRuns?: QuizRun[];
+  factAttempts?: FactAttempt[];
+  learnerFactStates?: LearnerFactState[];
 }
 
 // ────────────────────────── Couche IA — cache et usage ──────────────────────────

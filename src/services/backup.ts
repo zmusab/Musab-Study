@@ -1,4 +1,4 @@
-import { db, clearAllData } from '@/data/db';
+import { db } from '@/data/db';
 import { nowISO } from '@/lib/date';
 import { uid } from '@/lib/id';
 import { chunkDocument } from '@/services/rag/chunking';
@@ -25,6 +25,12 @@ export async function exportBackup(): Promise<BackupBundle> {
     anatomyStructures,
     anatomySheets,
     chatMessages,
+    knowledgeConcepts,
+    knowledgeFacts,
+    knowledgeEvidence,
+    quizRuns,
+    factAttempts,
+    learnerFactStates,
   ] = await Promise.all([
     db.profile.get('me'),
     db.subjects.toArray(),
@@ -38,10 +44,16 @@ export async function exportBackup(): Promise<BackupBundle> {
     db.anatomyStructures.toArray(),
     db.anatomySheets.toArray(),
     db.chatMessages.toArray(),
+    db.knowledgeConcepts.toArray(),
+    db.knowledgeFacts.toArray(),
+    db.knowledgeEvidence.toArray(),
+    db.quizRuns.toArray(),
+    db.factAttempts.toArray(),
+    db.learnerFactStates.toArray(),
   ]);
 
   return {
-    v: 2,
+    v: 3,
     exportedAt: nowISO(),
     profile: profile ?? null,
     subjects,
@@ -65,6 +77,12 @@ export async function exportBackup(): Promise<BackupBundle> {
     anatomyStructures,
     anatomySheets,
     chatMessages,
+    knowledgeConcepts,
+    knowledgeFacts,
+    knowledgeEvidence,
+    quizRuns,
+    factAttempts,
+    learnerFactStates,
   };
 }
 
@@ -78,6 +96,7 @@ export interface ImportReport {
   notes: number;
   calendarEvents: number;
   anatomyStructures: number;
+  knowledgeFacts: number;
   /** Vrai si le fichier venait du prototype HTML d'origine. */
   fromLegacyPrototype: boolean;
 }
@@ -102,15 +121,36 @@ function rebuildChunks(documents: StudyDocument[]): DocumentChunk[] {
   );
 }
 
+/** Validation intégrale AVANT la moindre écriture : une sauvegarde abîmée ne peut pas vider la bibliothèque. */
+function assertBackupBundle(bundle: BackupBundle): void {
+  if (!bundle || typeof bundle !== 'object') throw new Error('Sauvegarde illisible.');
+  const required = ['subjects', 'chapters', 'documents', 'flashcards', 'quizQuestions', 'reviewLogs', 'notes', 'calendarEvents', 'anatomyStructures', 'anatomySheets', 'chatMessages'] as const;
+  for (const key of required) {
+    if (!Array.isArray(bundle[key])) throw new Error(`Sauvegarde invalide : ${key} est absent ou corrompu.`);
+  }
+  if (bundle.v !== 2 && bundle.v !== 3) throw new Error('Version de sauvegarde non prise en charge.');
+}
+
 /**
  * Restaure une sauvegarde. REMPLACE les données existantes : la restauration
  * doit produire l'état exact du fichier, pas une fusion imprévisible.
  */
 export async function importBackup(bundle: BackupBundle): Promise<ImportReport> {
+  assertBackupBundle(bundle);
   const chunks = rebuildChunks(bundle.documents);
+  const knowledgeConcepts = bundle.knowledgeConcepts ?? [];
+  const knowledgeFacts = bundle.knowledgeFacts ?? [];
+  const knowledgeEvidence = bundle.knowledgeEvidence ?? [];
+  const quizRuns = bundle.quizRuns ?? [];
+  const factAttempts = bundle.factAttempts ?? [];
+  const learnerFactStates = bundle.learnerFactStates ?? [];
 
-  await clearAllData();
+  // Une transaction unique : si l'une des écritures échoue, Dexie restaure
+  // l'état précédent. L'ancienne version appelait `clearAllData()` AVANT la
+  // transaction, ce qui rendait une sauvegarde partiellement invalide
+  // destructrice.
   await db.transaction('rw', db.tables, async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
     if (bundle.profile) await db.profile.put(bundle.profile);
     await Promise.all([
       db.subjects.bulkAdd(bundle.subjects),
@@ -125,6 +165,12 @@ export async function importBackup(bundle: BackupBundle): Promise<ImportReport> 
       db.anatomyStructures.bulkAdd(bundle.anatomyStructures),
       db.anatomySheets.bulkAdd(bundle.anatomySheets),
       db.chatMessages.bulkAdd(bundle.chatMessages),
+      db.knowledgeConcepts.bulkAdd(knowledgeConcepts),
+      db.knowledgeFacts.bulkAdd(knowledgeFacts),
+      db.knowledgeEvidence.bulkAdd(knowledgeEvidence),
+      db.quizRuns.bulkAdd(quizRuns),
+      db.factAttempts.bulkAdd(factAttempts),
+      db.learnerFactStates.bulkAdd(learnerFactStates),
     ]);
   });
 
@@ -138,6 +184,7 @@ export async function importBackup(bundle: BackupBundle): Promise<ImportReport> 
     notes: bundle.notes.length,
     calendarEvents: bundle.calendarEvents.length,
     anatomyStructures: bundle.anatomyStructures.length,
+    knowledgeFacts: knowledgeFacts.length,
     fromLegacyPrototype: false,
   };
 }

@@ -45,6 +45,9 @@ export function QuizPage() {
   // renforcent l'estimation « Examen probable » quand elles existent, sans
   // jamais être requises pour que le reste du Quiz fonctionne.
   const chapterAnalyses = useLiveQuery(() => db.chapterAnalyses.toArray(), []) ?? [];
+  const knowledgeFacts = useLiveQuery(() => db.knowledgeFacts.toArray(), []) ?? [];
+  const knowledgeConcepts = useLiveQuery(() => db.knowledgeConcepts.toArray(), []) ?? [];
+  const knowledgeEvidence = useLiveQuery(() => db.knowledgeEvidence.toArray(), []) ?? [];
 
   const [built, setBuilt] = useState<QuizBuildResult | null>(null);
   const [answers, setAnswers] = useState<QuizAnswerRecord[]>([]);
@@ -54,8 +57,8 @@ export function QuizPage() {
   const [autoStarted, setAutoStarted] = useState(false);
 
   const quizTables: QuizTables | null = useMemo(
-    () => (source ? { ...source.tables, chapterAnalyses } : null),
-    [source, chapterAnalyses],
+    () => (source ? { ...source.tables, chapterAnalyses, knowledgeFacts, knowledgeConcepts, knowledgeEvidence } : null),
+    [source, chapterAnalyses, knowledgeFacts, knowledgeConcepts, knowledgeEvidence],
   );
 
   const cardCountBySubject = useMemo(() => {
@@ -162,8 +165,9 @@ export function QuizPage() {
 
   /** « Refaire les questions importantes » — rejoue directement les cartes en probabilité élevée du quiz précédent. */
   const retryImportant = (cardIds: ID[]) => {
+    const factIds = cardIds.filter((id) => knowledgeFacts.some((fact) => fact.id === id));
     const generated = buildQuiz(
-      { kind: 'cards', cardIds },
+      factIds.length === cardIds.length ? { kind: 'facts', factIds } : { kind: 'cards', cardIds },
       quizTables!,
       { count: cardIds.length, difficulty: 'mixed', format: 'mixed', now: new Date(source.loadedAt) },
     );
