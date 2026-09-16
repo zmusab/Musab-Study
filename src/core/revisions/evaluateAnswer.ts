@@ -38,6 +38,7 @@ export interface AnswerEvaluation {
 
 const VRAI_TOKENS = new Set(['vrai', 'v']);
 const FAUX_TOKENS = new Set(['faux', 'f']);
+const UNKNOWN_ANSWER_PATTERN = /^(?:je\s+)?(?:ne\s+)?(?:sais|sais\s+pas|ne\s+comprends\s+pas|aucune\s+idee|pas\s+du\s+tout|idk)$/i;
 
 /** Reconnaît un texte réduit à « vrai »/« v » ou « faux »/« f » — jamais une devinette sur un texte plus long. */
 function detectBooleanToken(text: string): 'vrai' | 'faux' | null {
@@ -84,6 +85,9 @@ export function evaluateAnswer(
 ): AnswerEvaluation {
   const trimmedAttempt = attempt.trim();
   if (trimmedAttempt.length === 0) return { verdict: 'indeterminate', explanation: null };
+  if (UNKNOWN_ANSWER_PATTERN.test(normalizeText(trimmedAttempt))) {
+    return { verdict: 'incorrect', explanation: 'Tu as indiqué ne pas connaître la réponse.' };
+  }
 
   // ── Vrai/Faux : la réponse attendue est exactement « Vrai » ou « Faux ». ──
   const expectedBoolean = detectBooleanToken(expectedAnswer);
