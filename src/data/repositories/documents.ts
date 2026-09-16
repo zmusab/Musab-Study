@@ -3,6 +3,7 @@ import { uid } from '@/lib/id';
 import { nowISO } from '@/lib/date';
 import { chunkDocument } from '@/services/rag/chunking';
 import { restoreCourseLayoutPages } from '@/services/local/courseLayout';
+import { syncKnowledgeForChunks } from './knowledge';
 import type { DocumentChunk, DocumentFile, DocumentSource, ID, StudyDocument } from '@/types';
 
 /** Métadonnées d'un document, SANS son texte intégral. */
@@ -111,6 +112,11 @@ export async function addDocument(input: AddDocumentInput): Promise<StudyDocumen
     if (input.file) await db.documentFiles.add({ documentId: doc.id, blob: input.file });
   });
 
+  // Les mêmes fragments alimentent immédiatement le graphe de connaissances.
+  // Une carte, un quiz et le tuteur ne doivent plus reconstruire chacun leur
+  // propre interprétation du PDF.
+  await syncKnowledgeForChunks(chunks);
+
   return doc;
 }
 
@@ -180,6 +186,7 @@ export async function reindexDocument(id: ID): Promise<boolean> {
     await db.chunks.where('documentId').equals(id).delete();
     if (chunks.length > 0) await db.chunks.bulkAdd(chunks);
   });
+  await syncKnowledgeForChunks(chunks);
 
   return true;
 }
