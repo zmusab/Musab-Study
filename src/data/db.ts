@@ -48,6 +48,10 @@ export class MusabStudyDatabase extends Dexie {
   chapterAnalyses!: EntityTable<ChapterAnalysis, 'id'>;
   aiCache!: EntityTable<AiCacheEntry, 'key'>;
   aiUsage!: EntityTable<AiUsageDay, 'day'>;
+  knowledgeConcepts!: EntityTable<import('@/types').KnowledgeConcept, 'id'>;
+  knowledgeFacts!: EntityTable<import('@/types').KnowledgeFact, 'id'>;
+  knowledgeEvidence!: EntityTable<import('@/types').KnowledgeEvidence, 'id'>;
+  quizRuns!: EntityTable<import('@/types').QuizRun, 'id'>;
 
   constructor() {
     super('musab-study');
@@ -122,6 +126,16 @@ export class MusabStudyDatabase extends Dexie {
     */
     this.version(5).stores({
       podcastEpisodes: null,
+    });
+
+    // v6 : socle additif du moteur de connaissances et mémoire des quiz.
+    // Aucune carte, aucun PDF et aucun historique existant n'est réécrit par
+    // cette migration : le remplissage est progressif et vérifiable.
+    this.version(6).stores({
+      knowledgeConcepts: 'id, subjectId, chapterId, normalizedLabel, [subjectId+normalizedLabel]',
+      knowledgeFacts: 'id, subjectId, chapterId, conceptId, status, [conceptId+predicate]',
+      knowledgeEvidence: 'id, factId, documentId, sourceChunkId, active, [documentId+active]',
+      quizRuns: 'id, createdAt, completedAt',
     });
   }
 }
