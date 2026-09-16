@@ -1,6 +1,6 @@
 import { masteryPct } from '@/core/mastery';
 import { isBuried } from '@/core/srs';
-import { singularize } from '@/core/text';
+import { comparisonKey, singularize } from '@/core/text';
 import { chapterProgress, weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
 import {
@@ -134,6 +134,8 @@ export interface QuizBuildResult {
   requestedCount: number;
   /** Raison quand aucune question n'a pu être construite. */
   blocked: string | null;
+  /** Transparence : un quiz plus court vaut mieux que des distracteurs absurdes. */
+  notice: string | null;
 }
 
 export interface QuizBuildOptions {
@@ -143,6 +145,8 @@ export interface QuizBuildOptions {
   format?: QuizFormat;
   now?: Date;
   random?: () => number;
+  /** Options posées récemment dans des séries terminées. Les éviter est plus important que remplir artificiellement le quiz. */
+  recentOptionKeys?: readonly string[];
 }
 
 /** Fisher-Yates avec générateur injectable — déterministe en test. */
@@ -155,7 +159,7 @@ function shuffle<T>(items: readonly T[], random: () => number): T[] {
   return copy;
 }
 
-const normalize = (text: string): string => text.trim().toLowerCase();
+const normalize = (text: string): string => comparisonKey(text);
 
 /**
  * Normalisation plus large que `normalize` : accents retirés, ponctuation
@@ -358,7 +362,14 @@ function answerKind(card: Pick<Flashcard, 'question' | 'answer'>): AnswerKind {
  * restent sous le contrôle explicite de l'étudiant.
  */
 function isQuizCardCoherent(card: Flashcard): boolean {
-  if (card.origin === 'manual' || card.origin === 'quiz-error') return true;
+  const prompt = semanticText(card.question).trim();
+  const answer = semanticText(card.answer).trim();
+  // Une carte visible dans la bibliothèque peut être personnelle ou ancienne ;
+  // elle n'est pas pour autant une bonne question de quiz. Le quiz s'abstient
+  // plutôt que de faire apprendre une formulation cassée.
+  if (prompt.length < 8 || answer.length < 2) return false;
+  if (/^(?:[ivxlcdm]+|[→➔⇒•\-]+|composee?\s+par|composes?\s+de)$/i.test(answer)) return false;
+  if (/^(?:qu.?est.ce que|de quoi se compose|quel(?:le)?s? sont)\s*(?:[ivxlcdm]+|[→➔⇒•\-]+)\s*\?*$/i.test(prompt)) return false;
   const family = answerFamily(card.question);
   const kind = answerKind(card);
   if (family === 'list') return ['branches', 'relations', 'list', 'number'].includes(kind);
@@ -401,6 +412,10 @@ function pickRelevantAnswers(
       const family = answerFamily(card.question);
       if (other.subjectId !== card.subjectId || answerFamily(other.question) !== family) continue;
       if (entityFamily(other.question) !== entityFamily(card.question)) continue;
+      // Deux cartes d'une même notion testent souvent deux formulations du
+      // même fait. Les opposer dans un QCM fait croire à une erreur là où les
+      // deux options peuvent être vraies.
+      if (card.notionKey && other.notionKey && card.notionKey === other.notionKey) continue;
       if (family !== 'other' && answerKind(other) !== answerKind(card)) continue;
       const text = other.answer.trim();
       const lengthRatio = text.length / Math.max(1, card.answer.trim().length);
@@ -532,7 +547,7 @@ export function buildQuiz(
 ): QuizBuildResult {
   const now = options.now ?? new Date();
   const random = options.random ?? Math.random;
-  const empty = (blocked: string): QuizBuildResult => ({ questions: [], requestedCount: options.count, blocked });
+  const empty = (blocked: string): QuizBuildResult => ({ questions: [], requestedCount: options.count, blocked, notice: null });
 
   const pool = scopeCards(scope, tables, now).filter(isQuizCardCoherent);
   if (pool.length === 0) {
@@ -623,7 +638,13 @@ export function buildQuiz(
   }
 
   const questions: QuizQuestionInstance[] = [];
-  const optionUsage = new Map<string, number>();
+  // La mémoire de la série commence avec les propositions récentes. Elle est
+  // ensuite enrichie à chaque QCM : une réponse correcte ou un distracteur ne
+  // peut pas revenir bêtement à la question suivante, ni dans une relance
+  // immédiate du même entraînement.
+  const optionUsage = new Map<string, number>(
+    (options.recentOptionKeys ?? []).map((key) => [key, 1]),
+  );
   let counter = 0;
   for (const card of ordered) {
     if (questions.length >= options.count) break;
@@ -660,7 +681,14 @@ export function buildQuiz(
     );
   }
 
-  return { questions, requestedCount: options.count, blocked: null };
+  return {
+    questions,
+    requestedCount: options.count,
+    blocked: null,
+    notice: questions.length < options.count
+      ? `${questions.length} question${questions.length > 1 ? 's' : ''} cohérente${questions.length > 1 ? 's' : ''} disponible${questions.length > 1 ? 's' : ''} : les autres ont été écartées car elles n’avaient pas assez de distracteurs fiables.`
+      : null,
+  };
 }
 
 // ────────────────────────────── Résultat d'un quiz ──────────────────────────────
