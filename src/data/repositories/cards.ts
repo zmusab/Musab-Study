@@ -2,6 +2,7 @@ import Dexie from 'dexie';
 import { db } from '@/data/db';
 import { uid } from '@/lib/id';
 import { dayKey } from '@/lib/date';
+import { linkFlashcardToKnowledge } from './knowledge';
 import {
   buildDueQueue,
   buryUntil,
@@ -16,7 +17,7 @@ export type NewFlashcard = Pick<Flashcard, 'subjectId' | 'chapterId' | 'question
   Partial<
     Pick<
       Flashcard,
-      'importance' | 'difficulty' | 'origin' | 'sourceChunkIds' | 'notionKey' | 'notionLabel'
+      'importance' | 'difficulty' | 'origin' | 'sourceChunkIds' | 'notionKey' | 'notionLabel' | 'knowledgeFactIds' | 'knowledgeConceptId'
     >
   >;
 
@@ -33,20 +34,29 @@ export function buildFlashcard(input: NewFlashcard, now: Date = new Date()): Fla
     sourceChunkIds: input.sourceChunkIds ?? [],
     notionKey: input.notionKey ?? null,
     notionLabel: input.notionLabel ?? null,
+    knowledgeFactIds: input.knowledgeFactIds ?? [],
+    knowledgeConceptId: input.knowledgeConceptId ?? null,
     createdAt: now.toISOString(),
     ...initialSchedulingState(now),
   };
 }
 
 export async function createFlashcard(input: NewFlashcard): Promise<Flashcard> {
-  const card = buildFlashcard(input);
+  let card = buildFlashcard(input);
   await db.flashcards.add(card);
+  if (card.origin === 'local' && (card.knowledgeFactIds?.length ?? 0) === 0) {
+    const link = await linkFlashcardToKnowledge(card);
+    if ((link.knowledgeFactIds?.length ?? 0) > 0) {
+      card = { ...card, ...link };
+      await db.flashcards.update(card.id, link);
+    }
+  }
   return card;
 }
 
 export async function createFlashcards(inputs: NewFlashcard[]): Promise<Flashcard[]> {
-  const cards = inputs.map((input) => buildFlashcard(input));
-  await db.flashcards.bulkAdd(cards);
+  const cards: Flashcard[] = [];
+  for (const input of inputs) cards.push(await createFlashcard(input));
   return cards;
 }
 
