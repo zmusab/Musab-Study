@@ -55,6 +55,8 @@ export interface Profile {
    * retard. Champ additif non indexé : aucune migration Dexie.
    */
   courseLayoutVersion?: number;
+  /** Version du remplissage du knowledge engine appliquée à cette bibliothèque. */
+  knowledgeEngineVersion?: number;
   /** Durée par défaut d'une séance planifiée, en minutes. */
   sessionMinutes?: number;
 }
@@ -197,6 +199,63 @@ export interface DocumentChunk {
   embedding: number[] | null;
 }
 
+// ─────────────────────── Knowledge engine ───────────────────────
+
+/**
+ * Provenance d'une connaissance, distincte de la provenance d'un message.
+ * Une information extérieure ou une inférence ne peut donc jamais se
+ * présenter comme un fait extrait du cours.
+ */
+export type KnowledgeOrigin = 'course-local' | 'course-ai' | 'external' | 'inference' | 'legacy';
+export type KnowledgeStatus = 'candidate' | 'verified' | 'needs-review' | 'rejected';
+
+/** Une notion canonique, par exemple « Nerf ophtalmique (V1) ». */
+export interface KnowledgeConcept {
+  id: ID;
+  subjectId: ID;
+  chapterId: ID | null;
+  label: string;
+  normalizedLabel: string;
+  /** nerf, muscle, dent, notion clinique… quand le moteur peut l'établir. */
+  kind: string | null;
+  aliases: string[];
+  origin: KnowledgeOrigin;
+  status: KnowledgeStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+/** Un fait atomique relié à une notion — jamais une carte ou une réponse UI. */
+export interface KnowledgeFact {
+  id: ID;
+  subjectId: ID;
+  chapterId: ID | null;
+  conceptId: ID;
+  predicate: string;
+  objectText: string;
+  objectConceptId: ID | null;
+  items: string[] | null;
+  confidence: 'high' | 'medium' | 'low';
+  importance: Importance;
+  origin: KnowledgeOrigin;
+  status: KnowledgeStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+/** Preuve exacte d'un fait dans un document, indépendante de sa carte. */
+export interface KnowledgeEvidence {
+  id: ID;
+  factId: ID;
+  documentId: ID;
+  sourceChunkId: ID;
+  excerpt: string;
+  page: number | null;
+  /** Une preuve devient obsolète au lieu de pointer silencieusement vers un chunk recréé. */
+  active: boolean;
+  createdAt: ISODateTime;
+}
+
 // ──────────────────────────── Flashcards ────────────────────────────
 
 /** 1 = normale, 2 = importante, 3 = tombe à l'examen. */
@@ -256,6 +315,9 @@ export interface Flashcard {
    */
   notionKey?: string | null;
   notionLabel?: string | null;
+  /** Fait(s) du knowledge engine testés par cette carte. Additif : les cartes existantes restent lisibles. */
+  knowledgeFactIds?: ID[];
+  knowledgeConceptId?: ID | null;
 
   /**
    * SUSPENDUE — retirée des révisions jusqu'à réactivation explicite.
@@ -300,6 +362,19 @@ export interface QuizQuestion {
   difficulty: Difficulty;
   sourceChunkIds: ID[];
   createdAt: ISODateTime;
+}
+
+/** État durable d'une série : évite de recycler les mêmes options à chaque relance. */
+export interface QuizRun {
+  id: ID;
+  createdAt: ISODateTime;
+  completedAt: ISODateTime | null;
+  subjectIds: ID[];
+  questionCardIds: ID[];
+  testedConceptIds: ID[];
+  usedCorrectAnswerKeys: string[];
+  usedDistractorKeys: string[];
+  optionFrequency: Record<string, number>;
 }
 
 // ─────────────────────── Historique de révision ───────────────────────
