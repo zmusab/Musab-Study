@@ -9,7 +9,7 @@ import { QuizSession } from '@/components/features/quiz/QuizSession';
 import { QuizResults } from '@/components/features/quiz/QuizResults';
 import { useProgress } from '@/hooks/useProgress';
 import { db } from '@/data/db';
-import { recordQuizResults } from '@/data/repositories/quiz';
+import { listRecentQuizOptionKeys, recordQuizResults } from '@/data/repositories/quiz';
 import { weakPoints } from '@/core/progress';
 import { upcomingEvaluations } from '@/core/progress/exam';
 import { parseQuizDeepLink } from '@/core/quiz/deepLink';
@@ -141,12 +141,14 @@ export function QuizPage() {
     );
   }
 
-  const start = (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => {
+  const start = async (scope: QuizScope, count: number, difficulty: QuizDifficulty, format: QuizFormat) => {
+    const recentOptionKeys = await listRecentQuizOptionKeys();
     const generated = buildQuiz(scope, quizTables!, {
       count,
       difficulty,
       format,
       now: new Date(source.loadedAt),
+      recentOptionKeys,
     });
     if (generated.blocked) {
       setBlockedMessage(generated.blocked);
@@ -226,7 +228,7 @@ export function QuizPage() {
       {result ? (
         <QuizResults result={result} onRestart={restart} onRetryImportant={retryImportant} />
       ) : built ? (
-        <QuizSession questions={built.questions} index={answers.length} onAnswer={(r) => void handleAnswer(r)} />
+        <QuizSession questions={built.questions} index={answers.length} notice={built.notice} onAnswer={(r) => void handleAnswer(r)} />
       ) : (
         <>
           {blockedMessage && (
