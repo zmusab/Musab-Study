@@ -553,6 +553,43 @@ describe('buildQuiz — format Vrai/Faux', () => {
   });
 });
 
+describe('buildQuiz — garde-fous pédagogiques persistants', () => {
+  it('écarte une ancienne carte manuelle dont la question annonce une composition mais dont la réponse est un trajet', () => {
+    const malformed = card({
+      id: 'manual-bad',
+      subjectId: 's1',
+      origin: 'manual',
+      question: 'De quoi se compose le nerf maxillaire ?',
+      answer: 'Il chemine par le foramen rond et arrive dans la fosse ptérygo-maxillaire.',
+    });
+    const result = buildQuiz(
+      { kind: 'cards', cardIds: [malformed.id] },
+      emptyTables([malformed, ...richCards]),
+      { count: 1, difficulty: 'mixed', format: 'qcm', now: NOW, random: seeded(31) },
+    );
+    expect(result.questions).toEqual([]);
+    expect(result.blocked).toMatch(/distinctes|Aucune flashcard/);
+  });
+
+  it('n’utilise pas une proposition posée récemment quand des alternatives existent', () => {
+    const recentlyUsed = richCards[1]!.answer;
+    const result = buildQuiz(
+      { kind: 'subject', subjectId: 's1' },
+      emptyTables(),
+      {
+        count: 1,
+        difficulty: 'mixed',
+        format: 'qcm',
+        now: NOW,
+        random: seeded(32),
+        recentOptionKeys: [recentlyUsed.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()],
+      },
+    );
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.options).not.toContain(recentlyUsed);
+  });
+});
+
 describe('summarizeQuiz — résultat, sans donnée fabriquée', () => {
   const built = buildQuiz(
     { kind: 'subject', subjectId: 's1' },
